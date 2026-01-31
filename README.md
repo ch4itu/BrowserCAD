@@ -337,4 +337,4 @@ js/
 
 ---
 
-Try it live: https://ch4itu.github.io/HTMLCAD/
+Try it live: https://ch4itu.github.io/BrowserCAD/
