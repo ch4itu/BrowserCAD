@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="description" content="BrowserCAD - Professional CAD application in pure HTML/CSS/JavaScript with AutoCAD-like interface">
+    <title>BrowserCAD - Web-Based CAD Application</title>
+    <link rel="stylesheet" href="css/style.css">
+
+    <!-- Google Identity Services (Authentication) -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <!-- Google API Client (Drive & Picker) -->
+    <script src="https://apis.google.com/js/api.js" async defer></script>
+
+    <!-- BrowserCAD Google Drive Configuration -->
+    <script>
+        window.CAD_CONFIG = {
+            // API Key: Used for the Picker API (File selection)
+            // IMPORTANT: Restrict this key to your domains in Google Cloud Console.
+            apiKey: 'AIzaSyANnQPov6N6-GsqmqzrNpQEkVG_gDQIP6U',
+
+            // Client ID: Used for Authentication (Sign In)
+            clientId: '478921384117-pek84672fntq2hip7va2rss6m55q9jft.apps.googleusercontent.com',
+
+            // Project Number (first part of Client ID)
+            appId: '478921384117',
+
+            // Scopes: Permissions requested
+            scope: 'https://www.googleapis.com/auth/drive.file'
+        };
+    </script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Title Bar -->
+        <div class="title-bar">
+            <div class="logo">Browser<span>CAD</span></div>
+            <div class="menu-bar">
+                <div class="menu-item" onclick="Storage.openFile()">Open</div>
+                <div class="menu-item" onclick="Storage.saveToLocalStorage()">Save</div>
+                <div class="menu-item" onclick="Storage.exportDXF()">Export DXF</div>
+                <div class="menu-item" onclick="Storage.exportSVG()">Export SVG</div>
+                <div class="menu-item" onclick="Storage.exportJSON()">Export JSON</div>
+                <div class="menu-separator"></div>
+                <div class="menu-item drive-menu" onclick="Storage.openFromDrive()" title="Open from Google Drive">Drive Open</div>
+                <div class="menu-item drive-menu" onclick="Storage.saveToDrivePrompt()" title="Save to Google Drive">Drive Save</div>
+            </div>
+            <div class="spacer"></div>
+            <button class="google-signin-btn" id="googleSignInBtn" onclick="Storage.handleGoogleSignIn()" title="Sign in with Google">
+                <svg width="14" height="14" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                <span id="googleSignInText">Sign In</span>
+            </button>
+            <div class="file-name" id="fileName">Untitled.dxf</div>
+            <button class="mobile-menu-btn" onclick="MobileUI.toggleMenu()" title="Menu">&#9776;</button>
+        </div>
+
+        <!-- Ribbon Toolbar -->
+        <div class="ribbon" id="ribbon">
+            <div class="ribbon-tabs">
+                <div class="ribbon-tab active" data-tab="home" onclick="UI.switchRibbonTab('home')">Home</div>
+                <div class="ribbon-tab" data-tab="draw" onclick="UI.switchRibbonTab('draw')">Draw</div>
+                <div class="ribbon-tab" data-tab="modify" onclick="UI.switchRibbonTab('modify')">Modify</div>
+                <div class="ribbon-tab" data-tab="view" onclick="UI.switchRibbonTab('view')">View</div>
+                <div class="ribbon-spacer"></div>
+                <button class="ribbon-collapse-btn" onclick="UI.toggleRibbon()" title="Collapse/Expand Ribbon (Ctrl+F1)">
+                    <span id="ribbonCollapseIcon">▲</span>
+                </button>
+            </div>
+
+            <!-- Home Tab Content -->
+            <div class="ribbon-content" data-tab="home" style="display: flex;">
+                <!-- Draw Panel -->
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" data-cmd="line" onclick="App.executeCommand('line')" title="Line (L)">
+                            <i class="icon">/</i>
+                            <span class="label">Line</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="polyline" onclick="App.executeCommand('polyline')" title="Polyline (PL)">
+                            <i class="icon">~</i>
+                            <span class="label">Polyline</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="circle" onclick="App.executeCommand('circle')" title="Circle (C)">
+                            <i class="icon">&#9675;</i>
+                            <span class="label">Circle</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="arc" onclick="App.executeCommand('arc')" title="Arc (A)">
+                            <i class="icon">&#8978;</i>
+                            <span class="label">Arc</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="rect" onclick="App.executeCommand('rect')" title="Rectangle (REC)">
+                            <i class="icon">&#9633;</i>
+                            <span class="label">Rectangle</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="ellipse" onclick="App.executeCommand('ellipse')" title="Ellipse (EL)">
+                            <i class="icon">&#11053;</i>
+                            <span class="label">Ellipse</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="imageattach" onclick="App.executeCommand('imageattach')" title="Attach Image (IMAGEATTACH)">
+                            <i class="icon">&#128247;</i>
+                            <span class="label">Image</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Draw</div>
+                </div>
+
+                <!-- Modify Panel -->
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" data-cmd="move" onclick="App.executeCommand('move')" title="Move (M)">
+                            <i class="icon">&#8680;</i>
+                            <span class="label">Move</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="copy" onclick="App.executeCommand('copy')" title="Copy (CO)">
+                            <i class="icon">&#8658;</i>
+                            <span class="label">Copy</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="rotate" onclick="App.executeCommand('rotate')" title="Rotate (RO)">
+                            <i class="icon">&#8635;</i>
+                            <span class="label">Rotate</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="mirror" onclick="App.executeCommand('mirror')" title="Mirror (MI)">
+                            <i class="icon">&#8696;</i>
+                            <span class="label">Mirror</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="scale" onclick="App.executeCommand('scale')" title="Scale (SC)">
+                            <i class="icon">&#8690;</i>
+                            <span class="label">Scale</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="trim" onclick="App.executeCommand('trim')" title="Trim (TR)">
+                            <i class="icon">&#9986;</i>
+                            <span class="label">Trim</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="offset" onclick="App.executeCommand('offset')" title="Offset (O)">
+                            <i class="icon">&#8741;</i>
+                            <span class="label">Offset</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="erase" onclick="App.executeCommand('erase')" title="Erase (E)">
+                            <i class="icon">&#10005;</i>
+                            <span class="label">Erase</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Modify</div>
+                </div>
+
+                <!-- Layers Panel -->
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <div class="layer-control">
+                            <button class="tool-btn small" onclick="UI.addNewLayer()" title="New Layer">
+                                <i class="icon">+</i>
+                            </button>
+                            <select id="layerSelect" class="layer-select" onchange="UI.onLayerChange()"></select>
+                            <button class="color-btn" id="layerColorBtn" onclick="UI.showLayerColorPicker()" title="Layer Color">
+                                <span class="color-swatch" id="layerColorSwatch"></span>
+                            </button>
+                            <input type="hidden" id="layerColor" value="#ffffff">
+                        </div>
+                    </div>
+                    <div class="ribbon-panel-title">Layers</div>
+                </div>
+
+                <!-- Utilities Panel -->
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" onclick="Commands.undo()" title="Undo (Ctrl+Z)">
+                            <i class="icon">&#8630;</i>
+                            <span class="label">Undo</span>
+                        </button>
+                        <button class="tool-btn" onclick="Commands.redo()" title="Redo (Ctrl+Y)">
+                            <i class="icon">&#8631;</i>
+                            <span class="label">Redo</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="appload" onclick="App.executeCommand('appload')" title="Load LISP (APPLOAD)">
+                            <i class="icon">&#128194;</i>
+                            <span class="label">Load LISP</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Utilities</div>
+                </div>
+
+                <!-- Blocks Panel -->
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" data-cmd="block" onclick="App.executeCommand('block')" title="Create Block (B)">
+                            <i class="icon">&#9638;</i>
+                            <span class="label">Block</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="insert" onclick="App.executeCommand('insert')" title="Insert Block (I)">
+                            <i class="icon">&#10010;</i>
+                            <span class="label">Insert</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Blocks</div>
+                </div>
+            </div>
+
+            <!-- Draw Tab Content -->
+            <div class="ribbon-content" data-tab="draw" style="display: none;">
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" data-cmd="line" onclick="App.executeCommand('line')" title="Line (L)">
+                            <i class="icon">/</i>
+                            <span class="label">Line</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="polyline" onclick="App.executeCommand('polyline')" title="Polyline (PL)">
+                            <i class="icon">~</i>
+                            <span class="label">Polyline</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="circle" onclick="App.executeCommand('circle')" title="Circle (C)">
+                            <i class="icon">&#9675;</i>
+                            <span class="label">Circle</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="arc" onclick="App.executeCommand('arc')" title="Arc (A)">
+                            <i class="icon">&#8978;</i>
+                            <span class="label">Arc</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="rect" onclick="App.executeCommand('rect')" title="Rectangle (REC)">
+                            <i class="icon">&#9633;</i>
+                            <span class="label">Rectangle</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="ellipse" onclick="App.executeCommand('ellipse')" title="Ellipse (EL)">
+                            <i class="icon">&#11053;</i>
+                            <span class="label">Ellipse</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="imageattach" onclick="App.executeCommand('imageattach')" title="Attach Image (IMAGEATTACH)">
+                            <i class="icon">&#128247;</i>
+                            <span class="label">Image</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="text" onclick="App.executeCommand('text')" title="Text (T)">
+                            <i class="icon">A</i>
+                            <span class="label">Text</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="hatch" onclick="App.executeCommand('hatch')" title="Hatch (H)">
+                            <i class="icon">&#9618;</i>
+                            <span class="label">Hatch</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="polygon" onclick="App.executeCommand('polygon')" title="Polygon (POL)">
+                            <i class="icon">&#11039;</i>
+                            <span class="label">Polygon</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="donut" onclick="App.executeCommand('donut')" title="Donut (DO)">
+                            <i class="icon">&#9678;</i>
+                            <span class="label">Donut</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="revcloud" onclick="App.executeCommand('revcloud')" title="Revision Cloud (RC)">
+                            <i class="icon">&#9729;</i>
+                            <span class="label">RevCloud</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="wipeout" onclick="App.executeCommand('wipeout')" title="Wipeout">
+                            <i class="icon">&#9634;</i>
+                            <span class="label">Wipeout</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="solid" onclick="App.executeCommand('solid')" title="Solid (SO)">
+                            <i class="icon">&#9632;</i>
+                            <span class="label">Solid</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="region" onclick="App.executeCommand('region')" title="Region (REG)">
+                            <i class="icon">&#9683;</i>
+                            <span class="label">Region</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="boundary" onclick="App.executeCommand('boundary')" title="Boundary (BO)">
+                            <i class="icon">&#11035;</i>
+                            <span class="label">Boundary</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="mline" onclick="App.executeCommand('mline')" title="Multiline (ML)">
+                            <i class="icon">&#9552;</i>
+                            <span class="label">MLine</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="table" onclick="App.executeCommand('table')" title="Table (TB)">
+                            <i class="icon">&#9638;</i>
+                            <span class="label">Table</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Draw</div>
+                </div>
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" data-cmd="dimlinear" onclick="App.executeCommand('dimlinear')" title="Linear Dimension (DIM)">
+                            <i class="icon">&#8596;</i>
+                            <span class="label">DimLinear</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="dimradius" onclick="App.executeCommand('dimradius')" title="Radius Dimension">
+                            <i class="icon">R</i>
+                            <span class="label">DimRadius</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="dimdiameter" onclick="App.executeCommand('dimdiameter')" title="Diameter Dimension">
+                            <i class="icon">&#8960;</i>
+                            <span class="label">DimDia</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="dimordinate" onclick="App.executeCommand('dimordinate')" title="Ordinate Dimension (DOR)">
+                            <i class="icon">&#8614;</i>
+                            <span class="label">DimOrd</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="qdim" onclick="App.executeCommand('qdim')" title="Quick Dimension (QDIM)">
+                            <i class="icon">&#9889;</i>
+                            <span class="label">QDim</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="dimarc" onclick="App.executeCommand('dimarc')" title="Arc Length Dimension">
+                            <i class="icon">&#8994;</i>
+                            <span class="label">DimArc</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Dimension</div>
+                </div>
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" data-cmd="block" onclick="App.executeCommand('block')" title="Create Block (B)">
+                            <i class="icon">&#9638;</i>
+                            <span class="label">Block</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="insert" onclick="App.executeCommand('insert')" title="Insert Block (I)">
+                            <i class="icon">&#10010;</i>
+                            <span class="label">Insert</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Blocks</div>
+                </div>
+            </div>
+
+            <!-- Modify Tab Content -->
+            <div class="ribbon-content" data-tab="modify" style="display: none;">
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" data-cmd="move" onclick="App.executeCommand('move')" title="Move (M)">
+                            <i class="icon">&#8680;</i>
+                            <span class="label">Move</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="copy" onclick="App.executeCommand('copy')" title="Copy (CO)">
+                            <i class="icon">&#8658;</i>
+                            <span class="label">Copy</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="rotate" onclick="App.executeCommand('rotate')" title="Rotate (RO)">
+                            <i class="icon">&#8635;</i>
+                            <span class="label">Rotate</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="mirror" onclick="App.executeCommand('mirror')" title="Mirror (MI)">
+                            <i class="icon">&#8696;</i>
+                            <span class="label">Mirror</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="scale" onclick="App.executeCommand('scale')" title="Scale (SC)">
+                            <i class="icon">&#8690;</i>
+                            <span class="label">Scale</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Move/Copy</div>
+                </div>
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" data-cmd="trim" onclick="App.executeCommand('trim')" title="Trim (TR)">
+                            <i class="icon">&#9986;</i>
+                            <span class="label">Trim</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="offset" onclick="App.executeCommand('offset')" title="Offset (O)">
+                            <i class="icon">&#8741;</i>
+                            <span class="label">Offset</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="explode" onclick="App.executeCommand('explode')" title="Explode (X)">
+                            <i class="icon">&#10043;</i>
+                            <span class="label">Explode</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="erase" onclick="App.executeCommand('erase')" title="Erase (E)">
+                            <i class="icon">&#10005;</i>
+                            <span class="label">Erase</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Edit</div>
+                </div>
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" data-cmd="array" onclick="App.executeCommand('array')" title="Rectangular Array (AR)">
+                            <i class="icon">&#9638;</i>
+                            <span class="label">Array</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="fillet" onclick="App.executeCommand('fillet')" title="Fillet (F)">
+                            <i class="icon">&#8735;</i>
+                            <span class="label">Fillet</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="chamfer" onclick="App.executeCommand('chamfer')" title="Chamfer (CHA)">
+                            <i class="icon">&#9699;</i>
+                            <span class="label">Chamfer</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="break" onclick="App.executeCommand('break')" title="Break (BR)">
+                            <i class="icon">&#8689;</i>
+                            <span class="label">Break</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Advanced</div>
+                </div>
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" data-cmd="matchprop" onclick="App.executeCommand('matchprop')" title="Match Properties (MA)">
+                            <i class="icon">&#9898;</i>
+                            <span class="label">MatchProp</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="divide" onclick="App.executeCommand('divide')" title="Divide (DIV)">
+                            <i class="icon">&#8942;</i>
+                            <span class="label">Divide</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="measure" onclick="App.executeCommand('measure')" title="Measure (ME)">
+                            <i class="icon">&#8943;</i>
+                            <span class="label">Measure</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="overkill" onclick="App.executeCommand('overkill')" title="Overkill - Remove Duplicates">
+                            <i class="icon">&#10060;</i>
+                            <span class="label">Overkill</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="align" onclick="App.executeCommand('align')" title="Align (AL)">
+                            <i class="icon">&#8677;</i>
+                            <span class="label">Align</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="find" onclick="App.executeCommand('find')" title="Find & Replace Text">
+                            <i class="icon">&#128269;</i>
+                            <span class="label">Find</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="purge" onclick="App.executeCommand('purge')" title="Purge Unused (PU)">
+                            <i class="icon">&#128465;</i>
+                            <span class="label">Purge</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Utilities</div>
+                </div>
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" data-cmd="filter" onclick="App.executeCommand('filter')" title="Selection Filter (FI)">
+                            <i class="icon">&#9782;</i>
+                            <span class="label">Filter</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="layiso" onclick="App.executeCommand('layiso')" title="Layer Isolate">
+                            <i class="icon">&#9788;</i>
+                            <span class="label">LayIso</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="layuniso" onclick="App.executeCommand('layuniso')" title="Layer Unisolate">
+                            <i class="icon">&#9790;</i>
+                            <span class="label">LayUniso</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Selection</div>
+                </div>
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" data-cmd="chprop" onclick="App.executeCommand('chprop')" title="Change Properties (CH)">
+                            <i class="icon">&#9998;</i>
+                            <span class="label">ChProp</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="draworderfront" onclick="App.executeCommand('draworderfront')" title="Bring to Front">
+                            <i class="icon">&#8679;</i>
+                            <span class="label">ToFront</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="draworderback" onclick="App.executeCommand('draworderback')" title="Send to Back">
+                            <i class="icon">&#8681;</i>
+                            <span class="label">ToBack</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="group" onclick="App.executeCommand('group')" title="Group Objects (G)">
+                            <i class="icon">&#9881;</i>
+                            <span class="label">Group</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="hideobjects" onclick="App.executeCommand('hideobjects')" title="Hide Objects">
+                            <i class="icon">&#9676;</i>
+                            <span class="label">Hide</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="unisolateobjects" onclick="App.executeCommand('unisolateobjects')" title="Show All Objects">
+                            <i class="icon">&#9673;</i>
+                            <span class="label">ShowAll</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="reverse" onclick="App.executeCommand('reverse')" title="Reverse Direction">
+                            <i class="icon">&#8634;</i>
+                            <span class="label">Reverse</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Advanced</div>
+                </div>
+            </div>
+
+            <!-- View Tab Content -->
+            <div class="ribbon-content" data-tab="view" style="display: none;">
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" onclick="Commands.zoomExtents()" title="Zoom Extents">
+                            <i class="icon">&#8703;</i>
+                            <span class="label">Extents</span>
+                        </button>
+                        <button class="tool-btn" onclick="CAD.zoomIn(); Renderer.draw();" title="Zoom In">
+                            <i class="icon">+</i>
+                            <span class="label">Zoom In</span>
+                        </button>
+                        <button class="tool-btn" onclick="CAD.zoomOut(); Renderer.draw();" title="Zoom Out">
+                            <i class="icon">-</i>
+                            <span class="label">Zoom Out</span>
+                        </button>
+                        <button class="tool-btn" onclick="App.centerView()" title="Center View">
+                            <i class="icon">&#9678;</i>
+                            <span class="label">Center</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="view" onclick="App.executeCommand('view')" title="Named Views (VIEW)">
+                            <i class="icon">&#9673;</i>
+                            <span class="label">Views</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Zoom</div>
+                </div>
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" onclick="UI.toggleGrid()" title="Toggle Grid (F2)">
+                            <i class="icon">#</i>
+                            <span class="label">Grid</span>
+                        </button>
+                        <button class="tool-btn" onclick="UI.toggleSnap()" title="Toggle Snap (F3)">
+                            <i class="icon">&#8982;</i>
+                            <span class="label">Snap</span>
+                        </button>
+                        <button class="tool-btn" onclick="UI.toggleOrtho()" title="Toggle Ortho (F8)">
+                            <i class="icon">&#9482;</i>
+                            <span class="label">Ortho</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Display</div>
+                </div>
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" data-cmd="distance" onclick="App.executeCommand('distance')" title="Measure Distance (DI)">
+                            <i class="icon">&#8614;</i>
+                            <span class="label">Distance</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="area" onclick="App.executeCommand('area')" title="Measure Area (AA)">
+                            <i class="icon">&#9633;</i>
+                            <span class="label">Area</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="list" onclick="App.executeCommand('list')" title="List Properties (LI)">
+                            <i class="icon">&#9776;</i>
+                            <span class="label">List</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Inquiry</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Selection Ribbon (appears when entities are selected or during modify commands) -->
+        <div class="selection-ribbon" id="selectionRibbon" style="display: none;">
+            <div class="selection-info">
+                <span id="selectionCount">0</span> object(s) selected
+            </div>
+            <div class="selection-actions" id="selectionActions">
+                <button class="sel-btn" onclick="App.executeCommand('move')" title="Move (M)">
+                    <i class="icon">↔</i> Move
+                </button>
+                <button class="sel-btn" onclick="App.executeCommand('copy')" title="Copy (CO)">
+                    <i class="icon">⧉</i> Copy
+                </button>
+                <button class="sel-btn" onclick="App.executeCommand('rotate')" title="Rotate (RO)">
+                    <i class="icon">↻</i> Rotate
+                </button>
+                <button class="sel-btn" onclick="App.executeCommand('scale')" title="Scale (SC)">
+                    <i class="icon">⤢</i> Scale
+                </button>
+                <button class="sel-btn" onclick="App.executeCommand('mirror')" title="Mirror (MI)">
+                    <i class="icon">⇿</i> Mirror
+                </button>
+                <button class="sel-btn" onclick="App.executeCommand('erase')" title="Erase (E)">
+                    <i class="icon">✕</i> Erase
+                </button>
+                <button class="sel-btn" onclick="Commands.listEntities()" title="Properties">
+                    <i class="icon">ℹ</i> Properties
+                </button>
+                <div class="sel-separator"></div>
+                <button class="sel-btn deselect" onclick="CAD.clearSelection(); Renderer.draw();" title="Deselect All (Esc)">
+                    <i class="icon">⊗</i> Deselect
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Workspace -->
+        <div class="workspace">
+            <!-- Properties Panel (Left) -->
+            <div class="panel-left" id="panelLeft">
+                <div class="panel-header" onclick="UI.togglePropertiesPanel()">
+                    <span class="panel-toggle" id="panelToggle">◀</span>
+                    Properties
+                </div>
+                <div class="panel-content" id="propertiesPanel">
+                    <div class="property-group">
+                        <p style="color: var(--text-muted);">No selection</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Viewport Container -->
+            <div class="viewport-container">
+                <!-- Viewport Tabs -->
+                <div class="viewport-tabs">
+                    <div class="viewport-tab active">
+                        Model
+                    </div>
+                </div>
+
+                <!-- Canvas Viewport -->
+                <div class="viewport" id="viewport">
+                    <canvas id="canvas"></canvas>
+
+                    <!-- Mobile quick action buttons (undo/redo/cancel) -->
+                    <div class="mobile-quick-actions" id="mobileQuickActions">
+                        <button class="mobile-quick-btn" onclick="Commands.undo()" title="Undo">&#8630;</button>
+                        <button class="mobile-quick-btn" onclick="Commands.redo()" title="Redo">&#8631;</button>
+                        <button class="mobile-quick-btn" onclick="Commands.cancelCommand()" title="Cancel">&#10005;</button>
+                    </div>
+
+                    <!-- Mobile coordinate display -->
+                    <div class="mobile-coords-overlay" id="mobileCoordsOverlay">0.00, 0.00</div>
+
+                    <!-- Floating Canvas Selection Toolbar -->
+                    <div class="canvas-selection-toolbar" id="canvasSelectionToolbar" style="display: none;">
+                        <div class="cst-title">Select Objects:</div>
+                        <div class="cst-buttons">
+                            <button class="cst-btn" onclick="UI.canvasSelectWindow()" title="Window Selection (left to right)">
+                                <span class="cst-icon">⬚</span>
+                                <span>Window</span>
+                            </button>
+                            <button class="cst-btn" onclick="UI.canvasSelectCrossing()" title="Crossing Selection (right to left)">
+                                <span class="cst-icon">⬡</span>
+                                <span>Crossing</span>
+                            </button>
+                            <button class="cst-btn" onclick="UI.canvasSelectAll()" title="Select All Objects">
+                                <span class="cst-icon">☑</span>
+                                <span>All</span>
+                            </button>
+                            <button class="cst-btn" onclick="UI.canvasSelectPrevious()" title="Select Previous Selection">
+                                <span class="cst-icon">↺</span>
+                                <span>Previous</span>
+                            </button>
+                            <button class="cst-btn" onclick="UI.canvasSelectLast()" title="Select Last Created Entity">
+                                <span class="cst-icon">⟳</span>
+                                <span>Last</span>
+                            </button>
+                        </div>
+                        <div class="cst-info" id="cstInfo">Click entities or use selection mode</div>
+                        <div class="cst-actions">
+                            <button class="cst-btn cst-confirm" onclick="UI.confirmCanvasSelection()" title="Confirm Selection (Enter)">
+                                <span class="cst-icon">✓</span>
+                                <span>Confirm</span>
+                            </button>
+                            <button class="cst-btn cst-cancel" onclick="Commands.cancelCommand()" title="Cancel (Esc)">
+                                <span class="cst-icon">✕</span>
+                                <span>Cancel</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Command Line Panel (desktop primary, hidden on mobile) -->
+        <div class="command-panel">
+            <div class="command-history" id="cmdHistory">
+                <div class="line">Welcome to BrowserCAD - A Web-Based CAD Application</div>
+                <div class="line">Type commands or use toolbar buttons. Press F1 for help.</div>
+            </div>
+            <div class="command-input-row">
+                <span class="command-prompt" id="commandPrompt">Command:</span>
+                <input type="text" id="cmdInput" class="command-input"
+                       placeholder="Type command here..." autocomplete="off" autofocus>
+            </div>
+        </div>
+
+        <!-- Mobile Drawing Interface -->
+        <div class="mobile-draw-bar" id="mobileDrawBar">
+            <div class="mdb-prompt-row" id="mdbPromptRow">
+                <span class="mdb-tool-badge" id="mdbToolBadge"></span>
+                <span class="mdb-prompt-text" id="mdbPromptText">Tap a tool to begin</span>
+            </div>
+            <div class="mdb-input-row" id="mdbInputRow">
+                <input type="text" class="mdb-input" id="mdbInput" readonly
+                       placeholder="Tap keys or canvas...">
+                <button class="mdb-input-clear" id="mdbInputClear" onclick="MobileUI.numpadClear()">&#10005;</button>
+            </div>
+            <div class="mdb-actions" id="mdbActions">
+                <button class="mdb-btn mdb-done" id="mdbDone" onclick="MobileUI.submitInput()">
+                    &#10003; Done
+                </button>
+                <button class="mdb-btn mdb-close" id="mdbClose" onclick="MobileUI.submitValue('C')">
+                    &#9634; Close
+                </button>
+                <button class="mdb-btn mdb-undo" onclick="Commands.undo(); Renderer.draw();">
+                    &#8630; Undo
+                </button>
+                <button class="mdb-btn mdb-cancel" onclick="MobileUI.cancelCommand()">
+                    &#10005; Cancel
+                </button>
+                <div class="mdb-spacer"></div>
+                <button class="mdb-btn mdb-numpad-toggle" id="mdbNumpadBtn" onclick="MobileUI.toggleNumpad()">
+                    #
+                </button>
+                <button class="mdb-btn mdb-kbd-toggle" onclick="MobileUI.showKeyboard()">
+                    Aa
+                </button>
+            </div>
+        </div>
+
+        <!-- Mobile Numeric Keypad -->
+        <div class="mobile-numpad" id="mobileNumpad">
+            <div class="numpad-grid">
+                <button class="nk" onclick="MobileUI.numpadPress('7')">7</button>
+                <button class="nk" onclick="MobileUI.numpadPress('8')">8</button>
+                <button class="nk" onclick="MobileUI.numpadPress('9')">9</button>
+                <button class="nk nk-func" onclick="MobileUI.numpadPress('backspace')">&#9003;</button>
+                <button class="nk" onclick="MobileUI.numpadPress('4')">4</button>
+                <button class="nk" onclick="MobileUI.numpadPress('5')">5</button>
+                <button class="nk" onclick="MobileUI.numpadPress('6')">6</button>
+                <button class="nk nk-op" onclick="MobileUI.numpadPress('-')">&#8722;</button>
+                <button class="nk" onclick="MobileUI.numpadPress('1')">1</button>
+                <button class="nk" onclick="MobileUI.numpadPress('2')">2</button>
+                <button class="nk" onclick="MobileUI.numpadPress('3')">3</button>
+                <button class="nk nk-op" onclick="MobileUI.numpadPress(',')">,</button>
+                <button class="nk nk-zero" onclick="MobileUI.numpadPress('0')">0</button>
+                <button class="nk nk-op" onclick="MobileUI.numpadPress('.')">.</button>
+                <button class="nk nk-op" onclick="MobileUI.numpadPress('@')">@</button>
+                <button class="nk nk-enter" onclick="MobileUI.submitInput()">&#9166;</button>
+            </div>
+        </div>
+
+        <input type="file" id="imageAttachInput" accept="image/*" style="display: none;">
+        <input type="file" id="lispScriptInput" accept=".lsp,.lisp,.vlx,.txt" style="display: none;">
+
+        <!-- Mobile Bottom Toolbar -->
+        <div class="mobile-toolbar" id="mobileToolbar">
+            <div class="mobile-toolbar-tabs">
+                <button class="mobile-tab active" data-mtab="draw" onclick="MobileUI.switchTab('draw')">Draw</button>
+                <button class="mobile-tab" data-mtab="modify" onclick="MobileUI.switchTab('modify')">Modify</button>
+                <button class="mobile-tab" data-mtab="dims" onclick="MobileUI.switchTab('dims')">Dims</button>
+                <button class="mobile-tab" data-mtab="view" onclick="MobileUI.switchTab('view')">View</button>
+                <button class="mobile-tab" data-mtab="snap" onclick="MobileUI.switchTab('snap')">Snap</button>
+            </div>
+            <!-- Draw tools -->
+            <div class="mobile-tool-row active" data-mtab="draw">
+                <button class="mobile-tool-btn" onclick="App.executeCommand('line')"><i class="m-icon">/</i><span class="m-label">Line</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('polyline')"><i class="m-icon">~</i><span class="m-label">Pline</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('circle')"><i class="m-icon">&#9675;</i><span class="m-label">Circle</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('arc')"><i class="m-icon">&#8978;</i><span class="m-label">Arc</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('rect')"><i class="m-icon">&#9633;</i><span class="m-label">Rect</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('ellipse')"><i class="m-icon">&#11053;</i><span class="m-label">Ellipse</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('polygon')"><i class="m-icon">&#11039;</i><span class="m-label">Polygon</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('text')"><i class="m-icon">A</i><span class="m-label">Text</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('hatch')"><i class="m-icon">&#9618;</i><span class="m-label">Hatch</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('donut')"><i class="m-icon">&#9678;</i><span class="m-label">Donut</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('spline')"><i class="m-icon">&#8767;</i><span class="m-label">Spline</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('point')"><i class="m-icon">&#8226;</i><span class="m-label">Point</span></button>
+            </div>
+            <!-- Modify tools -->
+            <div class="mobile-tool-row" data-mtab="modify">
+                <button class="mobile-tool-btn" onclick="App.executeCommand('move')"><i class="m-icon">&#8680;</i><span class="m-label">Move</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('copy')"><i class="m-icon">&#8658;</i><span class="m-label">Copy</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('rotate')"><i class="m-icon">&#8635;</i><span class="m-label">Rotate</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('mirror')"><i class="m-icon">&#8696;</i><span class="m-label">Mirror</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('scale')"><i class="m-icon">&#8690;</i><span class="m-label">Scale</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('trim')"><i class="m-icon">&#9986;</i><span class="m-label">Trim</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('offset')"><i class="m-icon">&#8741;</i><span class="m-label">Offset</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('fillet')"><i class="m-icon">&#8735;</i><span class="m-label">Fillet</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('chamfer')"><i class="m-icon">&#9699;</i><span class="m-label">Chamfer</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('erase')"><i class="m-icon">&#10005;</i><span class="m-label">Erase</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('explode')"><i class="m-icon">&#10043;</i><span class="m-label">Explode</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('array')"><i class="m-icon">&#9638;</i><span class="m-label">Array</span></button>
+            </div>
+            <!-- Dimension tools -->
+            <div class="mobile-tool-row" data-mtab="dims">
+                <button class="mobile-tool-btn" onclick="App.executeCommand('dimlinear')"><i class="m-icon">&#8596;</i><span class="m-label">Linear</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('dimaligned')"><i class="m-icon">&#8598;</i><span class="m-label">Aligned</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('dimangular')"><i class="m-icon">&#8736;</i><span class="m-label">Angular</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('dimradius')"><i class="m-icon">R</i><span class="m-label">Radius</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('dimdiameter')"><i class="m-icon">&#8960;</i><span class="m-label">Diameter</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('dimordinate')"><i class="m-icon">&#8614;</i><span class="m-label">Ordinate</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('qdim')"><i class="m-icon">&#9889;</i><span class="m-label">QDim</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('leader')"><i class="m-icon">&#10145;</i><span class="m-label">Leader</span></button>
+            </div>
+            <!-- View tools -->
+            <div class="mobile-tool-row" data-mtab="view">
+                <button class="mobile-tool-btn" onclick="Commands.zoomExtents()"><i class="m-icon">&#8703;</i><span class="m-label">Extents</span></button>
+                <button class="mobile-tool-btn" onclick="CAD.zoomIn(); Renderer.draw();"><i class="m-icon">+</i><span class="m-label">Zoom In</span></button>
+                <button class="mobile-tool-btn" onclick="CAD.zoomOut(); Renderer.draw();"><i class="m-icon">-</i><span class="m-label">Zoom Out</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('distance')"><i class="m-icon">&#8614;</i><span class="m-label">Distance</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('area')"><i class="m-icon">&#9633;</i><span class="m-label">Area</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('list')"><i class="m-icon">&#9776;</i><span class="m-label">List</span></button>
+                <button class="mobile-tool-btn" onclick="MobileUI.showLayerPanel()"><i class="m-icon">&#9783;</i><span class="m-label">Layer</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('help')"><i class="m-icon">?</i><span class="m-label">Help</span></button>
+            </div>
+            <!-- Snap controls -->
+            <div class="mobile-tool-row" data-mtab="snap">
+                <button class="mobile-tool-btn" id="mSnapOsnap" onclick="MobileUI.toggleSnap('osnap')"><i class="m-icon">&#9678;</i><span class="m-label">OSNAP</span></button>
+                <button class="mobile-tool-btn" id="mSnapGrid" onclick="MobileUI.toggleSnap('grid')"><i class="m-icon">#</i><span class="m-label">Grid</span></button>
+                <button class="mobile-tool-btn" id="mSnapOrtho" onclick="MobileUI.toggleSnap('ortho')"><i class="m-icon">&#9482;</i><span class="m-label">Ortho</span></button>
+                <button class="mobile-tool-btn" id="mSnapPolar" onclick="MobileUI.toggleSnap('polar')"><i class="m-icon">&#8737;</i><span class="m-label">Polar</span></button>
+                <button class="mobile-tool-btn" onclick="MobileUI.togglePanMode()"><i class="m-icon">&#9995;</i><span class="m-label">Pan</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('osnap')"><i class="m-icon">&#9881;</i><span class="m-label">Settings</span></button>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <div class="status-left">
+                <span class="status-mode">Model</span>
+            </div>
+            <div class="status-center">
+                <button class="status-btn active" id="statusOsnap" onclick="UI.toggleOsnap()" title="Object Snap (F3)">OSNAP</button>
+                <button class="status-btn" id="statusGridSnap" onclick="UI.toggleGridSnap()" title="Grid Snap (F9)">SNAP</button>
+                <button class="status-btn active" id="statusGrid" onclick="UI.toggleGrid()" title="Grid Display (F7)">GRID</button>
+                <button class="status-btn" id="statusOrtho" onclick="UI.toggleOrtho()" title="Ortho Mode (F8)">ORTHO</button>
+                <button class="status-btn" id="statusPolar" onclick="UI.togglePolar()" title="Polar Tracking (F10)">POLAR</button>
+            </div>
+            <div class="status-right">
+                <span class="status-coords" id="coordDisplay">0.0000, 0.0000, 0.0000</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- AutoCAD-style Color Picker Dialog -->
+    <div class="color-picker-dialog" id="colorPickerDialog" style="display: none;">
+        <div class="color-picker-content">
+            <div class="color-picker-header">
+                <span>Select Color</span>
+                <button class="color-picker-close" onclick="UI.hideColorPicker()">&times;</button>
+            </div>
+            <div class="color-picker-tabs">
+                <button class="color-tab active" data-tab="index" onclick="UI.switchColorTab('index')">Index Color</button>
+                <button class="color-tab" data-tab="true" onclick="UI.switchColorTab('true')">True Color</button>
+            </div>
+            <div class="color-picker-body">
+                <!-- Index Colors Tab -->
+                <div class="color-tab-content" id="colorTabIndex">
+                    <div class="aci-standard-colors">
+                        <div class="aci-row aci-primary"></div>
+                    </div>
+                    <div class="aci-gray-colors"></div>
+                    <div class="aci-full-palette"></div>
+                </div>
+                <!-- True Color Tab -->
+                <div class="color-tab-content" id="colorTabTrue" style="display: none;">
+                    <div class="true-color-inputs">
+                        <label>Red: <input type="number" id="colorR" min="0" max="255" value="255"></label>
+                        <label>Green: <input type="number" id="colorG" min="0" max="255" value="255"></label>
+                        <label>Blue: <input type="number" id="colorB" min="0" max="255" value="255"></label>
+                    </div>
+                    <input type="color" id="colorHexPicker" value="#ffffff" class="true-color-picker">
+                </div>
+            </div>
+            <div class="color-picker-preview">
+                <span>Selected:</span>
+                <div class="color-preview-box" id="colorPreviewBox"></div>
+                <span id="colorPreviewText">#FFFFFF</span>
+            </div>
+            <div class="color-picker-actions">
+                <button class="btn-ok" onclick="UI.confirmColorPicker()">OK</button>
+                <button class="btn-cancel" onclick="UI.hideColorPicker()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Context Menu -->
+    <div class="context-menu" id="contextMenu">
+        <div class="context-menu-item" onclick="Commands.execute('copy'); UI.hideContextMenu();">
+            Copy <span class="shortcut">Ctrl+C</span>
+        </div>
+        <div class="context-menu-item" onclick="CAD.paste(); Renderer.draw(); UI.hideContextMenu();">
+            Paste <span class="shortcut">Ctrl+V</span>
+        </div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item" data-requires-selection onclick="Commands.execute('erase'); UI.hideContextMenu();">
+            Erase <span class="shortcut">Delete</span>
+        </div>
+        <div class="context-menu-item" data-requires-selection onclick="Commands.execute('move'); UI.hideContextMenu();">
+            Move <span class="shortcut">M</span>
+        </div>
+        <div class="context-menu-item" data-requires-selection onclick="Commands.execute('copy'); UI.hideContextMenu();">
+            Copy Objects <span class="shortcut">CO</span>
+        </div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item" onclick="Commands.zoomExtents(); UI.hideContextMenu();">
+            Zoom Extents
+        </div>
+        <div class="context-menu-item" onclick="Commands.undo(); UI.hideContextMenu();">
+            Undo <span class="shortcut">Ctrl+Z</span>
+        </div>
+        <div class="context-menu-item" onclick="Commands.redo(); UI.hideContextMenu();">
+            Redo <span class="shortcut">Ctrl+Y</span>
+        </div>
+    </div>
+
+    <!-- Modal Overlay -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">Title</span>
+                <button class="modal-close" onclick="UI.hideModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                Content
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="UI.hideModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="UI.hideModal()">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Layer Manager Panel (AutoCAD-style) -->
+    <div class="layer-mgr-overlay" id="layerMgrOverlay" onclick="MobileUI.closeLayerPanel(event)">
+        <div class="layer-mgr-panel" id="layerMgrPanel">
+            <div class="layer-mgr-header">
+                <span class="layer-mgr-title">Layer Properties Manager</span>
+                <button class="layer-mgr-close" onclick="MobileUI.closeLayerPanel()">&times;</button>
+            </div>
+            <div class="layer-mgr-toolbar">
+                <button class="layer-mgr-tool" onclick="MobileUI.addLayer()" title="New Layer">+ New</button>
+                <button class="layer-mgr-tool layer-mgr-tool-danger" onclick="MobileUI.deleteLayer()" title="Delete Layer">Delete</button>
+                <button class="layer-mgr-tool" onclick="MobileUI.setCurrentFromSelected()" title="Set Current">Set Current</button>
+            </div>
+            <div class="layer-mgr-current">
+                Current: <strong id="layerMgrCurrent">0</strong>
+            </div>
+            <div class="layer-mgr-table-wrap">
+                <table class="layer-mgr-table">
+                    <thead>
+                        <tr>
+                            <th class="lm-col-status"></th>
+                            <th class="lm-col-name">Name</th>
+                            <th class="lm-col-on" title="On/Off">On</th>
+                            <th class="lm-col-freeze" title="Freeze/Thaw">Frz</th>
+                            <th class="lm-col-lock" title="Lock/Unlock">Lock</th>
+                            <th class="lm-col-color">Color</th>
+                            <th class="lm-col-ltype">Linetype</th>
+                            <th class="lm-col-lw">LW</th>
+                        </tr>
+                    </thead>
+                    <tbody id="layerMgrBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Menu Drawer -->
+    <div class="mobile-menu-overlay" id="mobileMenuOverlay" onclick="MobileUI.closeMenu(event)">
+        <div class="mobile-menu-drawer" id="mobileMenuDrawer">
+            <div class="mobile-menu-header">
+                <div class="logo">Browser<span>CAD</span></div>
+                <button class="mobile-menu-close" onclick="MobileUI.closeMenu()">&times;</button>
+            </div>
+            <div class="mobile-menu-section">
+                <div class="mobile-menu-section-title">File</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('new')"><i class="m-icon">&#128196;</i> New Drawing</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('open')"><i class="m-icon">&#128194;</i> Open</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('save')"><i class="m-icon">&#128190;</i> Save</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('exportdxf')"><i class="m-icon">&#128229;</i> Export DXF</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('exportsvg')"><i class="m-icon">&#128229;</i> Export SVG</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('exportjson')"><i class="m-icon">&#128229;</i> Export JSON</div>
+                <div class="mobile-menu-divider"></div>
+                <div class="mobile-menu-section-title">Google Drive</div>
+                <div class="mobile-menu-item" id="mobileGoogleSignIn" onclick="MobileUI.menuAction('googlesignin')"><i class="m-icon">&#128100;</i> <span id="mobileSignInLabel">Sign In to Google</span></div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('driveopen')"><i class="m-icon">&#9729;</i> Open from Drive</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('drivesave')"><i class="m-icon">&#9729;</i> Save to Drive</div>
+            </div>
+            <div class="mobile-menu-section">
+                <div class="mobile-menu-section-title">Selection</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('selectall')"><i class="m-icon">&#9745;</i> Select All</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('filter')"><i class="m-icon">&#9782;</i> Filter Select</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('qselect')"><i class="m-icon">&#9744;</i> Quick Select</div>
+            </div>
+            <div class="mobile-menu-section">
+                <div class="mobile-menu-section-title">Tools</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('block')"><i class="m-icon">&#9638;</i> Create Block</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('insert')"><i class="m-icon">&#10010;</i> Insert Block</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('matchprop')"><i class="m-icon">&#9898;</i> Match Properties</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('overkill')"><i class="m-icon">&#10060;</i> Overkill</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('purge')"><i class="m-icon">&#128465;</i> Purge</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('find')"><i class="m-icon">&#128269;</i> Find & Replace</div>
+            </div>
+            <div class="mobile-menu-section">
+                <div class="mobile-menu-section-title">Settings</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('settings')"><i class="m-icon">&#9881;</i> Drawing Settings</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('help')"><i class="m-icon">?</i> Help</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load JavaScript Modules -->
+    <script src="js/utils.js"></script>
+    <script src="js/state.js"></script>
+    <script src="js/geometry.js"></script>
+    <script src="js/renderer.js"></script>
+    <script src="js/commands.js"></script>
+    <script src="js/autolisp.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
