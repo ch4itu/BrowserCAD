@@ -1439,6 +1439,57 @@ const Storage = {
         return aciColors[absIndex] || '#ffffff';
     },
 
+    dxfTrueColorToHex(colorInt) {
+        const intVal = parseInt(colorInt);
+        if (isNaN(intVal)) return null;
+        const hex = intVal.toString(16).padStart(6, '0');
+        return `#${hex}`;
+    },
+
+    getDXFValue(data, code) {
+        const value = data[code];
+        if (Array.isArray(value)) {
+            return value[value.length - 1];
+        }
+        return value;
+    },
+
+    getDXFEntityColor(data) {
+        const trueColor = this.getDXFValue(data, 420);
+        if (trueColor !== undefined) {
+            return this.dxfTrueColorToHex(trueColor);
+        }
+        const colorIndex = parseInt(this.getDXFValue(data, 62));
+        if (!colorIndex || colorIndex === 256) {
+            return null;
+        }
+        return this.aciToHex(colorIndex);
+    },
+
+    getDXFLineWeight(data) {
+        const weight = parseInt(this.getDXFValue(data, 370));
+        if (isNaN(weight) || weight === -1 || weight === -2 || weight === 0) {
+            return null;
+        }
+        return weight;
+    },
+
+    applyDXFEntityStyle(entity, data) {
+        entity.layer = this.getDXFValue(data, 8) || entity.layer || '0';
+        const lineType = this.getDXFValue(data, 6);
+        if (lineType) {
+            entity.lineType = lineType.toLowerCase();
+        }
+        const color = this.getDXFEntityColor(data);
+        if (color) {
+            entity.color = color;
+        }
+        const lineWeight = this.getDXFLineWeight(data);
+        if (lineWeight !== null) {
+            entity.lineWeight = lineWeight;
+        }
+    },
+
     parseDXF(content) {
         const entities = [];
         // Handle different line endings (Windows \r\n, Unix \n, old Mac \r)
@@ -1504,7 +1555,7 @@ const Storage = {
                         i = result.nextIndex;
                     }
                 } else if (entityType === 'LWPOLYLINE' || entityType === 'POLYLINE') {
-                    const result = this.parseDXFPolyline(lines, i);
+                    const result = this.parseDXFPolyline(lines, i, entityType);
                     if (result) {
                         entities.push(result.entity);
                         i = result.nextIndex;
@@ -1534,10 +1585,13 @@ const Storage = {
                         i = result.nextIndex;
                     }
                 } else if (entityType === 'HATCH') {
-                    // Skip past HATCH entity data (complex format)
-                    // We don't import hatches as they depend on boundary entities
-                    const { nextIndex } = this.readDXFEntity(lines, i);
-                    i = nextIndex;
+                    const result = this.parseDXFHatch(lines, i);
+                    if (result) {
+                        if (result.entity) {
+                            entities.push(result.entity);
+                        }
+                        i = result.nextIndex;
+                    }
                 } else if (entityType === 'INSERT') {
                     const result = this.parseDXFInsert(lines, i);
                     if (result) {
@@ -1635,7 +1689,7 @@ const Storage = {
                         } else if (entityType === 'ARC') {
                             result = this.parseDXFArc(lines, i);
                         } else if (entityType === 'LWPOLYLINE' || entityType === 'POLYLINE') {
-                            result = this.parseDXFPolyline(lines, i);
+                            result = this.parseDXFPolyline(lines, i, entityType);
                         } else if (entityType === 'TEXT' || entityType === 'MTEXT') {
                             result = this.parseDXFText(lines, i, entityType);
                         } else if (entityType === 'POINT') {
@@ -1650,13 +1704,17 @@ const Storage = {
                             result = this.parseDXFInsert(lines, i);
                         } else if (entityType === 'SOLID') {
                             result = this.parseDXFSolid(lines, i);
+                        } else if (entityType === 'HATCH') {
+                            result = this.parseDXFHatch(lines, i);
                         } else {
                             const skipped = this.readDXFEntity(lines, i);
                             i = skipped.nextIndex;
                         }
 
                         if (result) {
-                            entities.push(result.entity);
+                            if (result.entity) {
+                                entities.push(result.entity);
+                            }
                             i = result.nextIndex;
                         }
                     } else {
@@ -1717,10 +1775,9 @@ const Storage = {
             p2: {
                 x: parseFloat(data[11]) || 0,
                 y: -(parseFloat(data[21]) || 0)
-            },
-            layer: data[8] || '0'
+            }
         };
-        if (data[6]) entity.lineType = data[6].toLowerCase();
+        this.applyDXFEntityStyle(entity, data);
 
         return { entity, nextIndex };
     },
@@ -1734,9 +1791,9 @@ const Storage = {
                 x: parseFloat(data[10]) || 0,
                 y: -(parseFloat(data[20]) || 0)
             },
-            r: parseFloat(data[40]) || 1,
-            layer: data[8] || '0'
+            r: parseFloat(data[40]) || 1
         };
+        this.applyDXFEntityStyle(entity, data);
 
         return { entity, nextIndex };
     },
@@ -1752,39 +1809,81 @@ const Storage = {
             },
             r: parseFloat(data[40]) || 1,
             start: -Utils.degToRad(parseFloat(data[51]) || 0),
-            end: -Utils.degToRad(parseFloat(data[50]) || 360),
-            layer: data[8] || '0'
+            end: -Utils.degToRad(parseFloat(data[50]) || 360)
         };
+        this.applyDXFEntityStyle(entity, data);
 
         return { entity, nextIndex };
     },
 
-    parseDXFPolyline(lines, startIndex) {
+    parseDXFPolyline(lines, startIndex, entityType = 'LWPOLYLINE') {
+        if (entityType === 'POLYLINE') {
+            const header = this.readDXFEntity(lines, startIndex);
+            const data = header.data;
+            let i = header.nextIndex;
+            const points = [];
+            const bulges = [];
+
+            while (i < lines.length - 1 && lines[i] === '0' && lines[i + 1].toUpperCase() === 'VERTEX') {
+                i += 2;
+                const vertex = this.readDXFEntity(lines, i);
+                const vertexData = vertex.data;
+                i = vertex.nextIndex;
+
+                const vx = parseFloat(vertexData[10]);
+                const vy = parseFloat(vertexData[20]);
+                if (!isNaN(vx) && !isNaN(vy)) {
+                    points.push({ x: vx, y: -vy });
+                    bulges.push(parseFloat(vertexData[42]) || 0);
+                }
+            }
+
+            if (i < lines.length - 1 && lines[i] === '0' && lines[i + 1].toUpperCase() === 'SEQEND') {
+                i += 2;
+            }
+
+            const flags = parseInt(data[70]) || 0;
+            const closed = (flags & 1) !== 0;
+            const resolvedPoints = this.expandBulgePolyline(points, bulges, closed);
+
+            const entity = {
+                type: 'polyline',
+                points: resolvedPoints,
+                closed: closed
+            };
+            this.applyDXFEntityStyle(entity, data);
+
+            return { entity, nextIndex: i };
+        }
+
         const { data, nextIndex } = this.readDXFEntity(lines, startIndex);
 
         // For LWPOLYLINE, vertices are stored with multiple group 10/20 codes
         const xCoords = Array.isArray(data[10]) ? data[10] : (data[10] !== undefined ? [data[10]] : []);
         const yCoords = Array.isArray(data[20]) ? data[20] : (data[20] !== undefined ? [data[20]] : []);
+        const bulgeValues = Array.isArray(data[42]) ? data[42] : (data[42] !== undefined ? [data[42]] : []);
 
         const points = [];
+        const bulges = [];
         for (let j = 0; j < xCoords.length; j++) {
             points.push({
                 x: parseFloat(xCoords[j]) || 0,
                 y: -(parseFloat(yCoords[j]) || 0)
             });
+            bulges.push(parseFloat(bulgeValues[j]) || 0);
         }
 
         // Check closed flag (group code 70, bit 1)
         const flags = parseInt(data[70]) || 0;
         const closed = (flags & 1) !== 0;
+        const resolvedPoints = this.expandBulgePolyline(points, bulges, closed);
 
         const entity = {
             type: 'polyline',
-            points: points,
-            closed: closed,
-            layer: data[8] || '0'
+            points: resolvedPoints,
+            closed: closed
         };
-        if (data[6]) entity.lineType = data[6].toLowerCase();
+        this.applyDXFEntityStyle(entity, data);
 
         return { entity, nextIndex };
     },
@@ -1794,8 +1893,9 @@ const Storage = {
         const isMtext = entityType === 'MTEXT';
         const textParts = [];
 
-        if (data[1]) {
-            textParts.push(data[1]);
+        const baseText = this.getDXFValue(data, 1);
+        if (baseText) {
+            textParts.push(baseText);
         }
         if (data[3]) {
             const extra = Array.isArray(data[3]) ? data[3] : [data[3]];
@@ -1810,13 +1910,13 @@ const Storage = {
             },
             text: textParts.join('').replace(/\\P/g, '\n'),
             height: parseFloat(data[40]) || 10,
-            rotation: parseFloat(data[50]) || 0,
-            layer: data[8] || '0'
+            rotation: parseFloat(data[50]) || 0
         };
 
         if (isMtext && data[41]) {
             entity.width = parseFloat(data[41]) || 0;
         }
+        this.applyDXFEntityStyle(entity, data);
 
         return { entity, nextIndex };
     },
@@ -1829,9 +1929,9 @@ const Storage = {
             position: {
                 x: parseFloat(data[10]) || 0,
                 y: -(parseFloat(data[20]) || 0)
-            },
-            layer: data[8] || '0'
+            }
         };
+        this.applyDXFEntityStyle(entity, data);
 
         return { entity, nextIndex };
     },
@@ -1867,10 +1967,9 @@ const Storage = {
             type: 'polyline',
             points: points,
             isSpline: true,
-            closed: (flags & 1) !== 0,
-            layer: data[8] || '0'
+            closed: (flags & 1) !== 0
         };
-        if (data[6]) entity.lineType = data[6].toLowerCase();
+        this.applyDXFEntityStyle(entity, data);
 
         return { entity, nextIndex };
     },
@@ -1895,9 +1994,9 @@ const Storage = {
             center: { x: centerX, y: centerY },
             rx: majorRadius,
             ry: minorRadius,
-            rotation: rotation,
-            layer: data[8] || '0'
+            rotation: rotation
         };
+        this.applyDXFEntityStyle(entity, data);
 
         return { entity, nextIndex };
     },
@@ -1907,7 +2006,7 @@ const Storage = {
 
         const entity = {
             type: 'block',
-            blockName: data[2] || 'UNNAMED',
+            blockName: this.getDXFValue(data, 2) || 'UNNAMED',
             insertPoint: {
                 x: parseFloat(data[10]) || 0,
                 y: -(parseFloat(data[20]) || 0)
@@ -1916,9 +2015,9 @@ const Storage = {
                 x: parseFloat(data[41]) || 1,
                 y: parseFloat(data[42]) || 1
             },
-            rotation: -Utils.degToRad(parseFloat(data[50]) || 0),
-            layer: data[8] || '0'
+            rotation: -Utils.degToRad(parseFloat(data[50]) || 0)
         };
+        this.applyDXFEntityStyle(entity, data);
 
         return { entity, nextIndex };
     },
@@ -1942,9 +2041,9 @@ const Storage = {
         const entity = {
             type: 'leader',
             points: points,
-            text: data[3] || '',
-            layer: data[8] || '0'
+            text: this.getDXFValue(data, 3) || ''
         };
+        this.applyDXFEntityStyle(entity, data);
 
         return { entity, nextIndex };
     },
@@ -1971,11 +2070,147 @@ const Storage = {
             points: points,
             closed: true,
             isSolid: true,
-            hatch: 'solid',
-            layer: data[8] || '0'
+            hatch: 'solid'
         };
+        this.applyDXFEntityStyle(entity, data);
 
         return { entity, nextIndex };
+    },
+
+    parseDXFHatch(lines, startIndex) {
+        const { data, nextIndex } = this.readDXFEntity(lines, startIndex);
+
+        const boundaryPoints = this.getDXFHatchPolyline(data);
+        const patternName = (this.getDXFValue(data, 2) || 'solid').toLowerCase();
+        const isSolid = parseInt(this.getDXFValue(data, 70)) === 1 || patternName === 'solid';
+
+        if (boundaryPoints.length >= 3) {
+            const entity = {
+                type: 'polyline',
+                points: boundaryPoints,
+                closed: true,
+                hatch: { pattern: isSolid ? 'solid' : patternName },
+                noStroke: true
+            };
+            this.applyDXFEntityStyle(entity, data);
+            return { entity, nextIndex };
+        }
+
+        const circleEntity = this.getDXFHatchCircle(data, patternName, isSolid);
+        if (circleEntity) {
+            this.applyDXFEntityStyle(circleEntity, data);
+            return { entity: circleEntity, nextIndex };
+        }
+
+        return { entity: null, nextIndex };
+    },
+
+    getDXFHatchPolyline(data) {
+        const xCoords = Array.isArray(data[10]) ? data[10] : (data[10] !== undefined ? [data[10]] : []);
+        const yCoords = Array.isArray(data[20]) ? data[20] : (data[20] !== undefined ? [data[20]] : []);
+
+        const points = [];
+        for (let i = 0; i < Math.min(xCoords.length, yCoords.length); i++) {
+            const x = parseFloat(xCoords[i]);
+            const y = parseFloat(yCoords[i]);
+            if (!isNaN(x) && !isNaN(y)) {
+                points.push({ x, y: -y });
+            }
+        }
+        return points;
+    },
+
+    getDXFHatchCircle(data, patternName, isSolid) {
+        const edgeType = parseInt(this.getDXFValue(data, 72));
+        if (edgeType !== 2) {
+            return null;
+        }
+        const centerX = parseFloat(this.getDXFValue(data, 10));
+        const centerY = parseFloat(this.getDXFValue(data, 20));
+        const radius = parseFloat(this.getDXFValue(data, 40));
+        const startAngle = parseFloat(this.getDXFValue(data, 50)) || 0;
+        const endAngle = parseFloat(this.getDXFValue(data, 51)) || 0;
+
+        if ([centerX, centerY, radius].some(value => isNaN(value))) {
+            return null;
+        }
+
+        if (Math.abs(endAngle - startAngle) >= 360) {
+            return {
+                type: 'circle',
+                center: { x: centerX, y: -centerY },
+                r: radius,
+                hatch: { pattern: isSolid ? 'solid' : (patternName || 'solid') },
+                noStroke: true
+            };
+        }
+
+        return null;
+    },
+
+    expandBulgePolyline(points, bulges, closed) {
+        if (points.length === 0) return [];
+        if (!bulges || bulges.every(b => !b)) {
+            return points;
+        }
+
+        const result = [points[0]];
+        const limit = closed ? points.length : points.length - 1;
+
+        for (let i = 0; i < limit; i++) {
+            const start = points[i];
+            const end = points[(i + 1) % points.length];
+            const bulge = bulges[i] || 0;
+
+            if (!bulge) {
+                if (!(closed && i === limit - 1)) {
+                    result.push(end);
+                }
+                continue;
+            }
+
+            const arcPoints = this.bulgeToArcPoints(start, end, bulge);
+            if (arcPoints.length) {
+                if (closed && i === limit - 1) {
+                    arcPoints.pop();
+                }
+                result.push(...arcPoints);
+            }
+        }
+
+        return result;
+    },
+
+    bulgeToArcPoints(start, end, bulge) {
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const chord = Math.sqrt(dx * dx + dy * dy);
+        if (chord === 0) return [end];
+
+        const theta = 4 * Math.atan(bulge);
+        const radius = Math.abs(chord / (2 * Math.sin(theta / 2)));
+        const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+        const perp = { x: -dy / chord, y: dx / chord };
+        const offset = radius * Math.cos(theta / 2);
+        const direction = bulge >= 0 ? 1 : -1;
+        const center = {
+            x: mid.x + perp.x * offset * direction,
+            y: mid.y + perp.y * offset * direction
+        };
+
+        const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
+        const segments = Math.max(4, Math.ceil(Math.abs(theta) / (Math.PI / 8)));
+
+        const points = [];
+        for (let i = 1; i <= segments; i++) {
+            const angle = startAngle + (theta * i) / segments;
+            points.push({
+                x: center.x + radius * Math.cos(angle),
+                y: center.y + radius * Math.sin(angle)
+            });
+        }
+
+        return points;
     },
 
     openFile() {
