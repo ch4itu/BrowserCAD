@@ -5,6 +5,97 @@
 const Storage = {
     STORAGE_KEY: 'htmlcad_drawing',
     SETTINGS_KEY: 'htmlcad_settings',
+    _googleApisLoadingPromise: null,
+
+    loadGoogleApis(callback) {
+        if (this._gisInited && this._gapiInited) {
+            callback();
+            return;
+        }
+
+        if (this._googleApisLoadingPromise) {
+            this._googleApisLoadingPromise.then(callback).catch(() => {});
+            return;
+        }
+
+        this._googleApisLoadingPromise = new Promise((resolve, reject) => {
+            const readyTimeoutMs = 15000;
+            let gsiLoaded = false;
+            let gapiLoaded = false;
+            let readyTimer;
+            let timeoutTimer;
+
+            const checkReady = () => {
+                if (!gsiLoaded || !gapiLoaded) {
+                    return;
+                }
+                if (readyTimer) return;
+                readyTimer = setInterval(() => {
+                    if (this._gisInited && this._gapiInited) {
+                        clearInterval(readyTimer);
+                        clearTimeout(timeoutTimer);
+                        resolve();
+                    }
+                }, 100);
+
+                timeoutTimer = setTimeout(() => {
+                    clearInterval(readyTimer);
+                    reject(new Error('Google APIs initialization timed out.'));
+                }, readyTimeoutMs);
+            };
+
+            const loadGapi = () => {
+                if (typeof gapi !== 'undefined') {
+                    this.initGapiClient();
+                    gapiLoaded = true;
+                    checkReady();
+                    return;
+                }
+
+                const apiScript = document.createElement('script');
+                apiScript.src = 'https://apis.google.com/js/api.js';
+                apiScript.async = true;
+                apiScript.defer = true;
+                apiScript.onload = () => {
+                    this.initGapiClient();
+                    gapiLoaded = true;
+                    checkReady();
+                };
+                apiScript.onerror = () => {
+                    reject(new Error('Error loading Google API Client.'));
+                };
+                document.head.appendChild(apiScript);
+            };
+
+            if (typeof google !== 'undefined' && google.accounts) {
+                this.initGisClient();
+                gsiLoaded = true;
+                loadGapi();
+                return;
+            }
+
+            const gsiScript = document.createElement('script');
+            gsiScript.src = 'https://accounts.google.com/gsi/client';
+            gsiScript.async = true;
+            gsiScript.defer = true;
+            gsiScript.onload = () => {
+                this.initGisClient();
+                gsiLoaded = true;
+                loadGapi();
+            };
+            gsiScript.onerror = () => {
+                reject(new Error('Error loading Google Identity Services.'));
+            };
+            document.head.appendChild(gsiScript);
+        });
+
+        this._googleApisLoadingPromise
+            .then(callback)
+            .catch((err) => {
+                this._googleApisLoadingPromise = null;
+                UI.log(err.message, 'error');
+            });
+    },
 
     // ==========================================
     // LOCAL STORAGE OPERATIONS
@@ -2151,25 +2242,27 @@ const Storage = {
      * Handle the Sign In / Sign Out button click.
      */
     handleGoogleSignIn() {
-        if (this._accessToken) {
-            // Sign out
-            google.accounts.oauth2.revoke(this._accessToken, () => {
-                this._accessToken = null;
-                this._currentDriveFileId = null;
-                this._updateSignInUI(false);
-                UI.log('Signed out of Google.');
-            });
-            return;
-        }
-
-        // Sign in: request an access token
-        this._getAccessToken().then(token => {
-            if (token) {
-                this._updateSignInUI(true);
-                UI.log('Signed in to Google successfully.');
+        this.loadGoogleApis(() => {
+            if (this._accessToken) {
+                // Sign out
+                google.accounts.oauth2.revoke(this._accessToken, () => {
+                    this._accessToken = null;
+                    this._currentDriveFileId = null;
+                    this._updateSignInUI(false);
+                    UI.log('Signed out of Google.');
+                });
+                return;
             }
-        }).catch(err => {
-            UI.log('Google sign-in failed: ' + err.message, 'error');
+
+            // Sign in: request an access token
+            this._getAccessToken().then(token => {
+                if (token) {
+                    this._updateSignInUI(true);
+                    UI.log('Signed in to Google successfully.');
+                }
+            }).catch(err => {
+                UI.log('Google sign-in failed: ' + err.message, 'error');
+            });
         });
     },
 
@@ -2238,35 +2331,37 @@ const Storage = {
      * Open the Google Drive Picker to select a CAD file.
      * Supports .dxf, .json, and .svg files.
      */
-    async openFromDrive() {
-        try {
-            // Always get a fresh token for the Picker
-            const token = await this._getAccessToken(true);
-            this._updateSignInUI(true);
+    openFromDrive() {
+        this.loadGoogleApis(async () => {
+            try {
+                // Always get a fresh token for the Picker
+                const token = await this._getAccessToken(true);
+                this._updateSignInUI(true);
 
-            // Show all files — DXF has no standard MIME type in Drive
-            const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
-                .setMode(google.picker.DocsViewMode.LIST);
+                // Show all files — DXF has no standard MIME type in Drive
+                const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+                    .setMode(google.picker.DocsViewMode.LIST);
 
-            // NOTE: Do NOT pass setDeveloperKey here. The Picker iframe runs
-            // on Google's domain, so HTTP-referrer-restricted API keys get
-            // blocked and cause a perpetual "Sign in" screen. The OAuth token
-            // alone is sufficient for authenticated Picker access.
-            const picker = new google.picker.PickerBuilder()
-                .setOAuthToken(token)
-                .setAppId(window.CAD_CONFIG.appId)
-                .addView(view)
-                .addView(new google.picker.DocsUploadView())
-                .setTitle('Open Drawing from Google Drive (.dxf, .json, .svg)')
-                .setCallback((data) => this._pickerOpenCallback(data))
-                .setOrigin(window.location.protocol + '//' + window.location.host)
-                .build();
+                // NOTE: Do NOT pass setDeveloperKey here. The Picker iframe runs
+                // on Google's domain, so HTTP-referrer-restricted API keys get
+                // blocked and cause a perpetual "Sign in" screen. The OAuth token
+                // alone is sufficient for authenticated Picker access.
+                const picker = new google.picker.PickerBuilder()
+                    .setOAuthToken(token)
+                    .setAppId(window.CAD_CONFIG.appId)
+                    .addView(view)
+                    .addView(new google.picker.DocsUploadView())
+                    .setTitle('Open Drawing from Google Drive (.dxf, .json, .svg)')
+                    .setCallback((data) => this._pickerOpenCallback(data))
+                    .setOrigin(window.location.protocol + '//' + window.location.host)
+                    .build();
 
-            picker.setVisible(true);
-        } catch (err) {
-            UI.log('Could not open Drive picker: ' + err.message, 'error');
-            console.error('Drive Picker error:', err);
-        }
+                picker.setVisible(true);
+            } catch (err) {
+                UI.log('Could not open Drive picker: ' + err.message, 'error');
+                console.error('Drive Picker error:', err);
+            }
+        });
     },
 
     /**
@@ -2388,33 +2483,35 @@ const Storage = {
      * Defaults to .dxf format.
      */
     saveToDrivePrompt() {
-        const defaultName = (CAD.drawingName || 'drawing') + '.dxf';
-        const filename = prompt('Save to Google Drive as:', defaultName);
-        if (!filename) return;
+        this.loadGoogleApis(() => {
+            const defaultName = (CAD.drawingName || 'drawing') + '.dxf';
+            const filename = prompt('Save to Google Drive as:', defaultName);
+            if (!filename) return;
 
-        const ext = filename.split('.').pop().toLowerCase();
-        let content, mimeType;
+            const ext = filename.split('.').pop().toLowerCase();
+            let content, mimeType;
 
-        if (ext === 'json' || ext === 'htmlcad') {
-            content = JSON.stringify(CAD.toJSON(), null, 2);
-            mimeType = 'application/json';
-        } else if (ext === 'svg') {
-            content = this.generateSVG();
-            mimeType = 'image/svg+xml';
-        } else {
-            // Default to DXF — use text/plain so Google Drive stores it as
-            // readable text. 'application/dxf' is non-standard and some
-            // Drive/browser combos drop or mangle the content.
-            content = this.generateDXF();
-            mimeType = 'text/plain';
-        }
+            if (ext === 'json' || ext === 'htmlcad') {
+                content = JSON.stringify(CAD.toJSON(), null, 2);
+                mimeType = 'application/json';
+            } else if (ext === 'svg') {
+                content = this.generateSVG();
+                mimeType = 'image/svg+xml';
+            } else {
+                // Default to DXF — use text/plain so Google Drive stores it as
+                // readable text. 'application/dxf' is non-standard and some
+                // Drive/browser combos drop or mangle the content.
+                content = this.generateDXF();
+                mimeType = 'text/plain';
+            }
 
-        if (!content || content.length === 0) {
-            UI.log('Error: No content to save. Draw something first.', 'error');
-            return;
-        }
+            if (!content || content.length === 0) {
+                UI.log('Error: No content to save. Draw something first.', 'error');
+                return;
+            }
 
-        this.saveToDrive(content, filename, mimeType);
+            this.saveToDrive(content, filename, mimeType);
+        });
     },
 
     /**
@@ -2513,45 +2610,6 @@ const Storage = {
         }
     }
 };
-
-// ==========================================
-// Google API Initialization Callbacks
-// ==========================================
-
-// Called by gapi.js when it finishes loading
-function gapiLoaded() {
-    Storage.initGapiClient();
-}
-
-// Called by GIS library when it finishes loading
-function gisLoaded() {
-    Storage.initGisClient();
-}
-
-// Auto-detect when libraries are available (for async/defer loading)
-(function initGoogleDrive() {
-    // Poll for gapi
-    const gapiCheck = setInterval(() => {
-        if (typeof gapi !== 'undefined') {
-            clearInterval(gapiCheck);
-            Storage.initGapiClient();
-        }
-    }, 200);
-
-    // Poll for google.accounts
-    const gisCheck = setInterval(() => {
-        if (typeof google !== 'undefined' && google.accounts) {
-            clearInterval(gisCheck);
-            Storage.initGisClient();
-        }
-    }, 200);
-
-    // Stop polling after 15 seconds
-    setTimeout(() => {
-        clearInterval(gapiCheck);
-        clearInterval(gisCheck);
-    }, 15000);
-})();
 
 // Export for module usage
 if (typeof module !== 'undefined' && module.exports) {
