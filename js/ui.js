@@ -1015,6 +1015,7 @@ AUTOLISP:
         if (selected.length === 1) {
             const entity = selected[0];
             panel.innerHTML = this.getEntityProperties(entity);
+            this.bindEntityColorControls(entity);
         } else {
             panel.innerHTML = `
                 <div class="property-group">
@@ -1029,6 +1030,9 @@ AUTOLISP:
     },
 
     getEntityProperties(entity) {
+        const resolvedColor = CAD.getEntityColor(entity);
+        const colorLabel = entity.color ? entity.color.toLowerCase() : 'ByLayer';
+        const byLayerDisabled = entity.color ? '' : ' disabled';
         let html = `
             <div class="property-group">
                 <div class="property-group-title">General</div>
@@ -1039,6 +1043,16 @@ AUTOLISP:
                 <div class="property-row">
                     <span class="property-label">Layer</span>
                     <span class="property-value">${entity.layer}</span>
+                </div>
+                <div class="property-row">
+                    <span class="property-label">Color</span>
+                    <div class="property-value property-value--actions">
+                        <button class="property-color-btn" data-action="entity-color" title="Set entity color">
+                            <span class="property-color-swatch" style="background: ${resolvedColor};"></span>
+                            <span class="property-color-label">${colorLabel}</span>
+                        </button>
+                        <button class="property-color-bylayer" data-action="entity-color-bylayer"${byLayerDisabled}>ByLayer</button>
+                    </div>
                 </div>
             </div>
         `;
@@ -1228,6 +1242,33 @@ AUTOLISP:
         }
 
         return html;
+    },
+
+    bindEntityColorControls(entity) {
+        const panel = this.elements.propertiesPanel;
+        if (!panel || !entity) return;
+
+        const colorButton = panel.querySelector('[data-action="entity-color"]');
+        if (colorButton) {
+            colorButton.addEventListener('click', () => {
+                const currentColor = entity.color || CAD.getEntityColor(entity);
+                this.showColorPicker(currentColor, (color) => {
+                    CAD.updateEntity(entity.id, { color });
+                    this.updatePropertiesPanel();
+                    Renderer.draw();
+                });
+            });
+        }
+
+        const byLayerButton = panel.querySelector('[data-action="entity-color-bylayer"]');
+        if (byLayerButton) {
+            byLayerButton.addEventListener('click', () => {
+                if (!entity.color) return;
+                CAD.updateEntity(entity.id, { color: null });
+                this.updatePropertiesPanel();
+                Renderer.draw();
+            });
+        }
     },
 
     // ==========================================

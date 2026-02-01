@@ -271,6 +271,10 @@ When multiple objects overlap at the click point, clicking again in the same spo
 
 Export also supports SVG and JSON formats via the title bar menu.
 
+## Properties & Styles
+
+The Properties panel reflects per-entity attributes, including color overrides (defaulting to ByLayer), and dimension variables can be adjusted via DIMTXT, DIMASZ, DIMSCALE, and DIMDEC commands.
+
 ## AutoLISP Guide
 
 BrowserCAD includes a lightweight AutoLISP interpreter for scripting and automation. Enter expressions in the command line using parentheses:
