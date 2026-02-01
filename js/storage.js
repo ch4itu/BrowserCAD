@@ -5,6 +5,55 @@
 const Storage = {
     STORAGE_KEY: 'htmlcad_drawing',
     SETTINGS_KEY: 'htmlcad_settings',
+    _googleApisLoadingPromise: null,
+
+    loadGoogleApis(callback) {
+        if (this._gisInited && this._gapiInited) {
+            callback();
+            return;
+        }
+
+        if (this._googleApisLoadingPromise) {
+            this._googleApisLoadingPromise.then(callback).catch(() => {});
+            return;
+        }
+
+        const loadScript = (src, errorMessage) => new Promise((resolve, reject) => {
+            const existing = document.querySelector(`script[src="${src}"]`);
+            if (existing) {
+                existing.addEventListener('load', resolve, { once: true });
+                existing.addEventListener('error', () => reject(new Error(errorMessage)), { once: true });
+                return;
+            }
+
+            const script = document.createElement('script');
+            script.src = src;
+            script.async = true;
+            script.defer = true;
+            script.onload = resolve;
+            script.onerror = () => reject(new Error(errorMessage));
+            document.head.appendChild(script);
+        });
+
+        const gisReady = (typeof google !== 'undefined' && google.accounts)
+            ? this.initGisClient()
+            : loadScript('https://accounts.google.com/gsi/client', 'Error loading Google Identity Services.')
+                .then(() => this.initGisClient());
+
+        const gapiReady = (typeof gapi !== 'undefined')
+            ? this.initGapiClient()
+            : loadScript('https://apis.google.com/js/api.js', 'Error loading Google API Client.')
+                .then(() => this.initGapiClient());
+
+        this._googleApisLoadingPromise = Promise.all([gisReady, gapiReady]);
+
+        this._googleApisLoadingPromise
+            .then(() => callback())
+            .catch((err) => {
+                this._googleApisLoadingPromise = null;
+                UI.log(err.message, 'error');
+            });
+    },
 
     // ==========================================
     // LOCAL STORAGE OPERATIONS
@@ -2094,24 +2143,26 @@ const Storage = {
     _accessToken: null,
     _tokenClient: null,
     _currentDriveFileId: null,
-    _pickerInited: false,
 
     /**
      * Initialize the Google API client library (gapi).
      * Called once gapi.js has loaded.
      */
     initGapiClient() {
-        gapi.load('client:picker', async () => {
-            try {
-                await gapi.client.init({});
-                await gapi.client.load('https://www.googleapis.com/discovery/v1/apis/drive/v3/rest');
-                this._gapiInited = true;
-                this._pickerInited = true;
-                console.log('Google API client initialized.');
-                this._maybeEnableDriveButtons();
-            } catch (err) {
-                console.error('Error initializing GAPI client:', err);
-            }
+        return new Promise((resolve, reject) => {
+            gapi.load('client:picker', async () => {
+                try {
+                    await gapi.client.init({});
+                    await gapi.client.load('https://www.googleapis.com/discovery/v1/apis/drive/v3/rest');
+                    this._gapiInited = true;
+                    console.log('Google API client initialized.');
+                    this._maybeEnableDriveButtons();
+                    resolve();
+                } catch (err) {
+                    console.error('Error initializing GAPI client:', err);
+                    reject(err);
+                }
+            });
         });
     },
 
@@ -2123,7 +2174,7 @@ const Storage = {
         const config = window.CAD_CONFIG;
         if (!config || !config.clientId) {
             console.warn('CAD_CONFIG.clientId not set. Google Drive disabled.');
-            return;
+            return Promise.reject(new Error('CAD_CONFIG.clientId not set. Google Drive disabled.'));
         }
 
         this._tokenClient = google.accounts.oauth2.initTokenClient({
@@ -2134,6 +2185,7 @@ const Storage = {
         this._gisInited = true;
         console.log('Google Identity Services initialized.');
         this._maybeEnableDriveButtons();
+        return Promise.resolve();
     },
 
     /**
@@ -2151,25 +2203,27 @@ const Storage = {
      * Handle the Sign In / Sign Out button click.
      */
     handleGoogleSignIn() {
-        if (this._accessToken) {
-            // Sign out
-            google.accounts.oauth2.revoke(this._accessToken, () => {
-                this._accessToken = null;
-                this._currentDriveFileId = null;
-                this._updateSignInUI(false);
-                UI.log('Signed out of Google.');
-            });
-            return;
-        }
-
-        // Sign in: request an access token
-        this._getAccessToken().then(token => {
-            if (token) {
-                this._updateSignInUI(true);
-                UI.log('Signed in to Google successfully.');
+        this.loadGoogleApis(() => {
+            if (this._accessToken) {
+                // Sign out
+                google.accounts.oauth2.revoke(this._accessToken, () => {
+                    this._accessToken = null;
+                    this._currentDriveFileId = null;
+                    this._updateSignInUI(false);
+                    UI.log('Signed out of Google.');
+                });
+                return;
             }
-        }).catch(err => {
-            UI.log('Google sign-in failed: ' + err.message, 'error');
+
+            // Sign in: request an access token
+            this._getAccessToken().then(token => {
+                if (token) {
+                    this._updateSignInUI(true);
+                    UI.log('Signed in to Google successfully.');
+                }
+            }).catch(err => {
+                UI.log('Google sign-in failed: ' + err.message, 'error');
+            });
         });
     },
 
@@ -2238,35 +2292,37 @@ const Storage = {
      * Open the Google Drive Picker to select a CAD file.
      * Supports .dxf, .json, and .svg files.
      */
-    async openFromDrive() {
-        try {
-            // Always get a fresh token for the Picker
-            const token = await this._getAccessToken(true);
-            this._updateSignInUI(true);
+    openFromDrive() {
+        this.loadGoogleApis(async () => {
+            try {
+                // Always get a fresh token for the Picker
+                const token = await this._getAccessToken(true);
+                this._updateSignInUI(true);
 
-            // Show all files — DXF has no standard MIME type in Drive
-            const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
-                .setMode(google.picker.DocsViewMode.LIST);
+                // Show all files — DXF has no standard MIME type in Drive
+                const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+                    .setMode(google.picker.DocsViewMode.LIST);
 
-            // NOTE: Do NOT pass setDeveloperKey here. The Picker iframe runs
-            // on Google's domain, so HTTP-referrer-restricted API keys get
-            // blocked and cause a perpetual "Sign in" screen. The OAuth token
-            // alone is sufficient for authenticated Picker access.
-            const picker = new google.picker.PickerBuilder()
-                .setOAuthToken(token)
-                .setAppId(window.CAD_CONFIG.appId)
-                .addView(view)
-                .addView(new google.picker.DocsUploadView())
-                .setTitle('Open Drawing from Google Drive (.dxf, .json, .svg)')
-                .setCallback((data) => this._pickerOpenCallback(data))
-                .setOrigin(window.location.protocol + '//' + window.location.host)
-                .build();
+                // NOTE: Do NOT pass setDeveloperKey here. The Picker iframe runs
+                // on Google's domain, so HTTP-referrer-restricted API keys get
+                // blocked and cause a perpetual "Sign in" screen. The OAuth token
+                // alone is sufficient for authenticated Picker access.
+                const picker = new google.picker.PickerBuilder()
+                    .setOAuthToken(token)
+                    .setAppId(window.CAD_CONFIG.appId)
+                    .addView(view)
+                    .addView(new google.picker.DocsUploadView())
+                    .setTitle('Open Drawing from Google Drive (.dxf, .json, .svg)')
+                    .setCallback((data) => this._pickerOpenCallback(data))
+                    .setOrigin(window.location.protocol + '//' + window.location.host)
+                    .build();
 
-            picker.setVisible(true);
-        } catch (err) {
-            UI.log('Could not open Drive picker: ' + err.message, 'error');
-            console.error('Drive Picker error:', err);
-        }
+                picker.setVisible(true);
+            } catch (err) {
+                UI.log('Could not open Drive picker: ' + err.message, 'error');
+                console.error('Drive Picker error:', err);
+            }
+        });
     },
 
     /**
@@ -2388,33 +2444,35 @@ const Storage = {
      * Defaults to .dxf format.
      */
     saveToDrivePrompt() {
-        const defaultName = (CAD.drawingName || 'drawing') + '.dxf';
-        const filename = prompt('Save to Google Drive as:', defaultName);
-        if (!filename) return;
+        this.loadGoogleApis(() => {
+            const defaultName = (CAD.drawingName || 'drawing') + '.dxf';
+            const filename = prompt('Save to Google Drive as:', defaultName);
+            if (!filename) return;
 
-        const ext = filename.split('.').pop().toLowerCase();
-        let content, mimeType;
+            const ext = filename.split('.').pop().toLowerCase();
+            let content, mimeType;
 
-        if (ext === 'json' || ext === 'htmlcad') {
-            content = JSON.stringify(CAD.toJSON(), null, 2);
-            mimeType = 'application/json';
-        } else if (ext === 'svg') {
-            content = this.generateSVG();
-            mimeType = 'image/svg+xml';
-        } else {
-            // Default to DXF — use text/plain so Google Drive stores it as
-            // readable text. 'application/dxf' is non-standard and some
-            // Drive/browser combos drop or mangle the content.
-            content = this.generateDXF();
-            mimeType = 'text/plain';
-        }
+            if (ext === 'json' || ext === 'htmlcad') {
+                content = JSON.stringify(CAD.toJSON(), null, 2);
+                mimeType = 'application/json';
+            } else if (ext === 'svg') {
+                content = this.generateSVG();
+                mimeType = 'image/svg+xml';
+            } else {
+                // Default to DXF — use text/plain so Google Drive stores it as
+                // readable text. 'application/dxf' is non-standard and some
+                // Drive/browser combos drop or mangle the content.
+                content = this.generateDXF();
+                mimeType = 'text/plain';
+            }
 
-        if (!content || content.length === 0) {
-            UI.log('Error: No content to save. Draw something first.', 'error');
-            return;
-        }
+            if (!content || content.length === 0) {
+                UI.log('Error: No content to save. Draw something first.', 'error');
+                return;
+            }
 
-        this.saveToDrive(content, filename, mimeType);
+            this.saveToDrive(content, filename, mimeType);
+        });
     },
 
     /**
@@ -2513,45 +2571,6 @@ const Storage = {
         }
     }
 };
-
-// ==========================================
-// Google API Initialization Callbacks
-// ==========================================
-
-// Called by gapi.js when it finishes loading
-function gapiLoaded() {
-    Storage.initGapiClient();
-}
-
-// Called by GIS library when it finishes loading
-function gisLoaded() {
-    Storage.initGisClient();
-}
-
-// Auto-detect when libraries are available (for async/defer loading)
-(function initGoogleDrive() {
-    // Poll for gapi
-    const gapiCheck = setInterval(() => {
-        if (typeof gapi !== 'undefined') {
-            clearInterval(gapiCheck);
-            Storage.initGapiClient();
-        }
-    }, 200);
-
-    // Poll for google.accounts
-    const gisCheck = setInterval(() => {
-        if (typeof google !== 'undefined' && google.accounts) {
-            clearInterval(gisCheck);
-            Storage.initGisClient();
-        }
-    }, 200);
-
-    // Stop polling after 15 seconds
-    setTimeout(() => {
-        clearInterval(gapiCheck);
-        clearInterval(gisCheck);
-    }, 15000);
-})();
 
 // Export for module usage
 if (typeof module !== 'undefined' && module.exports) {
