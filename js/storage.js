@@ -1262,69 +1262,7 @@ const Storage = {
             try {
                 const content = e.target.result;
                 UI.log(`File loaded, parsing DXF (${content.length} bytes)...`);
-
-                // Parse layers first
-                const layers = this.parseDXFLayers(content);
-
-                // Parse entities + blocks
-                const entities = this.parseDXF(content);
-                const blocks = this.parseDXFBlocks(content);
-
-                if (entities.length > 0 || layers.length > 0) {
-                    // Clear existing and set up layers
-                    CAD.entities = [];
-
-                    // Add parsed layers (keep layer 0)
-                    CAD.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false, lineWeight: 'Default' }];
-                    layers.forEach(layer => {
-                        if (layer.name !== '0') {
-                            CAD.layers.push(layer);
-                        } else {
-                            // Update layer 0 color if specified
-                            CAD.layers[0].color = layer.color;
-                        }
-                    });
-
-                    CAD.blocks = blocks;
-
-                    // Add entities
-                    entities.forEach(entity => {
-                        // Ensure layer exists
-                        if (!CAD.getLayer(entity.layer)) {
-                            CAD.layers.push({
-                                name: entity.layer,
-                                color: '#ffffff',
-                                visible: true,
-                                locked: false,
-                                lineWeight: 'Default'
-                            });
-                        }
-                        CAD.addEntity(entity, true);
-                    });
-
-                    // Ensure layers exist for block definition entities
-                    Object.values(CAD.blocks).forEach(block => {
-                        block.entities.forEach(entity => {
-                            if (entity.layer && !CAD.getLayer(entity.layer)) {
-                                CAD.layers.push({
-                                    name: entity.layer,
-                                    color: '#ffffff',
-                                    visible: true,
-                                    locked: false,
-                                    lineWeight: 'Default'
-                                });
-                            }
-                        });
-                    });
-
-                    UI.updateLayerUI();
-                    Renderer.draw();
-                    Commands.zoomExtents();
-                    const blockCount = Object.keys(CAD.blocks).length;
-                    UI.log(`DXF imported: ${entities.length} entities, ${blockCount} blocks, ${CAD.layers.length} layers.`, 'success');
-                } else {
-                    UI.log('No entities found in DXF file.', 'error');
-                }
+                this._loadDXFContent(content, { zoom: true, report: true });
             } catch (err) {
                 UI.log('Error importing DXF: ' + err.message, 'error');
                 console.error('DXF Import Error:', err);
@@ -1334,6 +1272,60 @@ const Storage = {
             UI.log('Error reading file: ' + e.target.error.message, 'error');
         };
         reader.readAsText(file);
+    },
+
+    _ensureLayer(name) {
+        if (!name || CAD.getLayer(name)) return;
+        CAD.layers.push({
+            name,
+            color: '#ffffff',
+            visible: true,
+            locked: false,
+            lineWeight: 'Default'
+        });
+    },
+
+    _loadDXFContent(content, options = {}) {
+        const { zoom = false, report = false } = options;
+        const layers = this.parseDXFLayers(content);
+        const entities = this.parseDXF(content);
+        const blocks = this.parseDXFBlocks(content);
+
+        if (entities.length === 0 && layers.length === 0) {
+            if (report) UI.log('No entities found in DXF file.', 'error');
+            return;
+        }
+
+        CAD.entities = [];
+        CAD.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false, lineWeight: 'Default' }];
+        layers.forEach(layer => {
+            if (layer.name !== '0') {
+                CAD.layers.push(layer);
+            } else {
+                CAD.layers[0].color = layer.color;
+            }
+        });
+
+        CAD.blocks = blocks;
+
+        entities.forEach(entity => {
+            this._ensureLayer(entity.layer);
+            CAD.addEntity(entity, true);
+        });
+
+        Object.values(CAD.blocks).forEach(block => {
+            block.entities.forEach(entity => this._ensureLayer(entity.layer));
+        });
+
+        UI.updateLayerUI();
+        Renderer.draw();
+        if (zoom && entities.length > 0) {
+            Commands.zoomExtents();
+        }
+        if (report) {
+            const blockCount = Object.keys(CAD.blocks).length;
+            UI.log(`DXF imported: ${entities.length} entities, ${blockCount} blocks, ${CAD.layers.length} layers.`, 'success');
+        }
     },
 
     parseDXFLayers(content) {
@@ -2792,51 +2784,7 @@ const Storage = {
      * Import DXF from a raw string (used by Drive open).
      */
     _importDXFFromString(content) {
-        const layers = this.parseDXFLayers(content);
-        const entities = this.parseDXF(content);
-        const blocks = this.parseDXFBlocks(content);
-
-        CAD.entities = [];
-        CAD.blocks = blocks;
-        CAD.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false, lineWeight: 'Default' }];
-        layers.forEach(layer => {
-            if (layer.name !== '0') {
-                CAD.layers.push(layer);
-            } else {
-                CAD.layers[0].color = layer.color;
-            }
-        });
-
-        entities.forEach(entity => {
-            if (!CAD.getLayer(entity.layer)) {
-                CAD.layers.push({
-                    name: entity.layer,
-                    color: '#ffffff',
-                    visible: true,
-                    locked: false,
-                    lineWeight: 'Default'
-                });
-            }
-            CAD.addEntity(entity, true);
-        });
-
-        Object.values(CAD.blocks).forEach(block => {
-            block.entities.forEach(entity => {
-                if (entity.layer && !CAD.getLayer(entity.layer)) {
-                    CAD.layers.push({
-                        name: entity.layer,
-                        color: '#ffffff',
-                        visible: true,
-                        locked: false,
-                        lineWeight: 'Default'
-                    });
-                }
-            });
-        });
-
-        if (entities.length > 0) {
-            Commands.zoomExtents();
-        }
+        this._loadDXFContent(content, { zoom: true });
     },
 
     /**
