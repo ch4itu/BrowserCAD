@@ -207,7 +207,7 @@ const Renderer = {
         state.entities.forEach(entity => {
             if (entity._hidden) return;
             const layer = state.getLayer(entity.layer);
-            if (!layer || !layer.visible) return;
+            if (!layer || !state.isLayerVisible(entity.layer)) return;
 
             const isSelected = state.isSelected(entity.id);
             const isHovered = state.hoveredId === entity.id && !isSelected;
@@ -240,10 +240,14 @@ const Renderer = {
             ctx.beginPath();
             ctx.strokeStyle = color;
 
-            // Line width: selected = 2, hovered = 1.5, normal = 1
-            let lineWidth = 1;
-            if (isSelected) lineWidth = 2;
-            else if (isHovered) lineWidth = 2;
+            // Line width: based on lineweight, boosted for selection/hover
+            const baseLineWeight = this.getLineWeight(entity);
+            let lineWidth = baseLineWeight;
+            if (isSelected) {
+                lineWidth = Math.max(baseLineWeight + 1, 2);
+            } else if (isHovered) {
+                lineWidth = Math.max(baseLineWeight + 0.5, 1.5);
+            }
             ctx.lineWidth = lineWidth / state.zoom;
 
             // Line dash: selected = dashed, others use linetype
@@ -270,18 +274,63 @@ const Renderer = {
         ctx.setLineDash([]);
     },
 
+    normalizeLineType(value) {
+        if (!value) return null;
+        return value.toString().trim().toLowerCase();
+    },
+
+    getEffectiveLineType(entity) {
+        const entityLineType = this.normalizeLineType(entity.lineType);
+        if (entityLineType && entityLineType !== 'bylayer') {
+            return entityLineType;
+        }
+        const layer = CAD.getLayer(entity.layer);
+        const layerLineType = this.normalizeLineType(layer?.lineType);
+        if (layerLineType) return layerLineType;
+        const current = this.normalizeLineType(CAD.lineType);
+        return current || 'continuous';
+    },
+
     getLineDash(entity) {
-        const lineType = (entity.lineType || CAD.lineType || 'continuous').toLowerCase();
+        const lineType = this.getEffectiveLineType(entity);
         const scale = CAD.lineTypeScale || 1;
         const basePatterns = {
             continuous: [],
             dashed: [10, 6],
             dotted: [2, 6],
-            dashdot: [10, 4, 2, 4]
+            dashdot: [10, 4, 2, 4],
+            center: [12, 4, 2, 4],
+            phantom: [12, 4, 2, 4, 2, 4],
+            hidden: [6, 4]
         };
         const pattern = basePatterns[lineType] || [];
         if (pattern.length === 0) return [];
         return pattern.map(value => (value * scale) / CAD.zoom);
+    },
+
+    getLineWeight(entity) {
+        const resolved = this.resolveLineWeight(entity.lineWeight);
+        if (resolved !== null) return resolved;
+        const layer = CAD.getLayer(entity.layer);
+        const layerWeight = this.resolveLineWeight(layer?.lineWeight);
+        if (layerWeight !== null) return layerWeight;
+        return 1;
+    },
+
+    resolveLineWeight(value) {
+        if (value === null || value === undefined) return null;
+        if (typeof value === 'number') {
+            if (value > 10) {
+                const mmWeight = value / 100;
+                return Math.max(1, mmWeight * 2);
+            }
+            return Math.max(1, value);
+        }
+        const normalized = value.toString().trim().toLowerCase();
+        if (!normalized || normalized === 'default' || normalized === 'bylayer') return null;
+        const parsed = parseFloat(normalized);
+        if (Number.isNaN(parsed)) return null;
+        return Math.max(1, parsed * 2);
     },
 
     getImage(src) {
