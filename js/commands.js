@@ -356,6 +356,14 @@ const Commands = {
 
         const command = this.aliases[cmdName];
         if (!command) {
+            if (typeof AutoLISP !== 'undefined') {
+                const lispCmdName = 'C:' + cmdName.toUpperCase();
+                if (AutoLISP.userFunctions && AutoLISP.userFunctions[lispCmdName]) {
+                    this.executeLisp(`(${lispCmdName})`);
+                    return;
+                }
+            }
+            
             UI.log(`Unknown command: ${cmdName}`, 'error');
             return;
         }
