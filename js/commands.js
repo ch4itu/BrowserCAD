@@ -3318,7 +3318,7 @@ const Commands = {
     },
 
     getLinetypeOptions() {
-        return ['continuous', 'dashed', 'dotted', 'dashdot'];
+        return ['bylayer', 'continuous', 'dashed', 'dotted', 'dashdot', 'center', 'phantom', 'hidden'];
     },
 
     undo() {
@@ -6684,7 +6684,12 @@ const Commands = {
             }
             if (action === 'list') {
                 CAD.layers.forEach(layer => {
-                    UI.log(`  ${layer.name} (${layer.visible ? 'On' : 'Off'})`);
+                    const status = [
+                        layer.visible ? 'On' : 'Off',
+                        layer.frozen ? 'Frozen' : 'Thawed',
+                        layer.locked ? 'Locked' : 'Unlocked'
+                    ].join(', ');
+                    UI.log(`  ${layer.name} (${status})`);
                 });
                 this.finishCommand();
                 return true;
@@ -6754,14 +6759,24 @@ const Commands = {
                 UI.log(`LAYER: Layer "${targetName}" not found.`, 'error');
                 return true;
             }
-            if (state.activeCmd === 'layfrz' || state.activeCmd === 'layoff') {
+            if (state.activeCmd === 'layfrz') {
+                layer.frozen = true;
+            } else if (state.activeCmd === 'laythw') {
+                layer.frozen = false;
+            } else if (state.activeCmd === 'layoff') {
                 layer.visible = false;
             } else {
                 layer.visible = true;
             }
             UI.updateLayerUI();
             Renderer.draw();
-            UI.log(`LAYER: Layer "${targetName}" ${layer.visible ? 'On' : 'Off'}.`);
+            if (state.activeCmd === 'layfrz') {
+                UI.log(`LAYER: Layer "${targetName}" frozen.`);
+            } else if (state.activeCmd === 'laythw') {
+                UI.log(`LAYER: Layer "${targetName}" thawed.`);
+            } else {
+                UI.log(`LAYER: Layer "${targetName}" ${layer.visible ? 'On' : 'Off'}.`);
+            }
             this.finishCommand();
             return true;
         }

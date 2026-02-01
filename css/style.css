@@ -281,6 +281,15 @@ body {
     display: none;
 }
 
+.tool-btn.small.show-label .label {
+    display: block;
+    font-size: 9px;
+}
+
+.tool-btn.small.show-label {
+    min-width: 56px;
+}
+
 /* Tool button group for horizontal layouts */
 .tool-btn-group {
     display: flex;
@@ -299,6 +308,23 @@ body {
     align-items: center;
     gap: 6px;
     padding: 4px 8px;
+}
+
+.layer-tools {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px 6px;
+    flex-wrap: wrap;
+}
+
+.layer-tools .tool-btn.small {
+    min-width: 28px;
+}
+
+.layer-tools .tool-btn.small.active {
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 1px rgba(64, 153, 255, 0.35);
 }
 
 .layer-select {

@@ -260,11 +260,19 @@ const Storage = {
         dxf += '70\n' + CAD.layers.length + '\n';
 
         CAD.layers.forEach(layer => {
+            const flags = (layer.frozen ? 1 : 0) + (layer.locked ? 4 : 0);
+            const colorIndex = this.getAciColor(layer.color);
+            const layerColor = layer.visible === false ? -Math.abs(colorIndex) : colorIndex;
+            const lineTypeName = (layer.lineType || 'Continuous').toString().toUpperCase();
+            const lineWeight = this.getLayerLineWeight(layer.lineWeight);
             dxf += '0\nLAYER\n';
             dxf += '2\n' + layer.name + '\n';
-            dxf += '70\n0\n';
-            dxf += '62\n' + this.getAciColor(layer.color) + '\n';
-            dxf += '6\nCONTINUOUS\n';
+            dxf += '70\n' + flags + '\n';
+            dxf += '62\n' + layerColor + '\n';
+            dxf += '6\n' + lineTypeName + '\n';
+            if (lineWeight !== null) {
+                dxf += '370\n' + lineWeight + '\n';
+            }
         });
 
         dxf += '0\nENDTAB\n';
@@ -1115,6 +1123,15 @@ const Storage = {
         return 7; // Default white
     },
 
+    getLayerLineWeight(lineWeight) {
+        if (!lineWeight) return null;
+        const normalized = lineWeight.toString().trim().toLowerCase();
+        if (!normalized || normalized === 'default' || normalized === 'bylayer') return null;
+        const parsed = parseFloat(normalized);
+        if (Number.isNaN(parsed)) return null;
+        return Math.round(parsed * 100);
+    },
+
     // ==========================================
     // FILE EXPORT - SVG
     // ==========================================
@@ -1364,13 +1381,18 @@ const Storage = {
                 const layerName = layerData[2] || '0';
                 const colorIndex = parseInt(layerData[62]) || 7;
                 const color = this.aciToHex(colorIndex);
+                const flags = parseInt(layerData[70]) || 0;
+                const lineType = layerData[6];
+                const lineWeight = this.getDXFLineWeight(layerData);
 
                 layers.push({
                     name: layerName,
                     color: color,
                     visible: colorIndex >= 0, // Negative color = layer off
-                    locked: (parseInt(layerData[70]) & 4) !== 0,
-                    lineWeight: 'Default'
+                    frozen: (flags & 1) !== 0,
+                    locked: (flags & 4) !== 0,
+                    lineType: lineType ? lineType.toString() : 'Continuous',
+                    lineWeight: lineWeight !== null ? (lineWeight / 100).toFixed(2) : 'Default'
                 });
 
                 continue;
