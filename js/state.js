@@ -67,8 +67,8 @@ class StateManager {
         this.polarAngle = 45;
 
         // Drawing settings
-        this.lineWeight = 1;
-        this.lineType = 'continuous';
+        this.lineWeight = 'ByLayer';
+        this.lineType = 'ByLayer';
         this.lineTypeScale = 1;
         this.hatchPattern = 'solid';
 
@@ -205,11 +205,15 @@ class StateManager {
         return entity;
     }
 
+    isLayerVisible(name) {
+        const layer = this.getLayer(name);
+        return layer && layer.visible !== false && !layer.frozen;
+    }
+
     getVisibleEntities() {
         return this.entities.filter(e => {
             if (e._hidden) return false;
-            const layer = this.getLayer(e.layer);
-            return layer && layer.visible;
+            return this.isLayerVisible(e.layer);
         });
     }
 
@@ -217,7 +221,7 @@ class StateManager {
         return this.entities.filter(e => {
             if (e._hidden) return false;
             const layer = this.getLayer(e.layer);
-            return layer && layer.visible && !layer.locked;
+            return layer && layer.visible && !layer.frozen && !layer.locked;
         });
     }
 
