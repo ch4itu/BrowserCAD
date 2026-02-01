@@ -995,6 +995,32 @@ const MobileUI = {
         }
     },
 
+    cycleSelectedLayerLineType() {
+        const target = this._selectedLayer || CAD.currentLayer;
+        const layer = CAD.getLayer(target);
+        if (!layer) return;
+        const types = ['Continuous', 'Dashed', 'Dotted', 'DashDot', 'Center', 'Phantom', 'Hidden'];
+        const currentIdx = types.indexOf(layer.lineType || 'Continuous');
+        const nextIdx = (currentIdx + 1) % types.length;
+        layer.lineType = types[nextIdx];
+        Renderer.draw();
+        this._refreshLayerPanel();
+        UI.log(`Layer "${layer.name}" linetype: ${layer.lineType}.`);
+    },
+
+    cycleSelectedLayerLineWeight() {
+        const target = this._selectedLayer || CAD.currentLayer;
+        const layer = CAD.getLayer(target);
+        if (!layer) return;
+        const weights = ['Default', '0.05', '0.09', '0.13', '0.15', '0.18', '0.20', '0.25', '0.30', '0.35', '0.40', '0.50', '0.60', '0.70', '0.80', '0.90', '1.00', '1.20', '1.40', '2.00'];
+        const currentIdx = weights.indexOf(layer.lineWeight || 'Default');
+        const nextIdx = (currentIdx + 1) % weights.length;
+        layer.lineWeight = weights[nextIdx];
+        Renderer.draw();
+        this._refreshLayerPanel();
+        UI.log(`Layer "${layer.name}" lineweight: ${layer.lineWeight}.`);
+    },
+
     // ==========================================
     // PAN MODE
     // ==========================================

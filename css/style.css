@@ -1965,6 +1965,9 @@ body {
     min-height: 32px;
     -webkit-tap-highlight-color: transparent;
 }
+.layer-mgr-tool.layer-mgr-mobile-only {
+    display: none;
+}
 .layer-mgr-tool:active { background: var(--accent-blue); color: #fff; }
 .layer-mgr-tool-danger:active { background: #c62828; }
 .layer-mgr-current {
@@ -2066,6 +2069,10 @@ body {
     .lm-col-ltype, .lm-col-lw { display: none; }
     .layer-mgr-table td:nth-child(7),
     .layer-mgr-table td:nth-child(8) { display: none; }
+    .layer-mgr-tool.layer-mgr-mobile-only {
+        display: inline-flex;
+        align-items: center;
+    }
 }
 
 .mobile-menu-overlay {
