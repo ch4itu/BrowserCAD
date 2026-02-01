@@ -1,6 +1,6 @@
 # BrowserCAD
 
-BrowserCAD is a browser-based CAD experience inspired by AutoCAD workflows. It supports classic command-line entry, a ribbon interface, and a growing set of drawing, modify, and utility commands — all in pure HTML/CSS/JavaScript with zero dependencies.
+BrowserCAD is a browser-based CAD experience inspired by AutoCAD workflows. It supports classic command-line entry, a ribbon interface, and a growing set of drawing, modify, and utility commands — all in pure HTML/CSS/JavaScript with zero dependencies by default (Google Drive APIs load dynamically when you use Drive features).
 
 ## Quick Start
 
