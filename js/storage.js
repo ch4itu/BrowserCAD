@@ -5,6 +5,55 @@
 const Storage = {
     STORAGE_KEY: 'htmlcad_drawing',
     SETTINGS_KEY: 'htmlcad_settings',
+    _googleApisLoadingPromise: null,
+
+    loadGoogleApis(callback) {
+        if (this._gisInited && this._gapiInited) {
+            callback();
+            return;
+        }
+
+        if (this._googleApisLoadingPromise) {
+            this._googleApisLoadingPromise.then(callback).catch(() => {});
+            return;
+        }
+
+        const loadScript = (src, errorMessage) => new Promise((resolve, reject) => {
+            const existing = document.querySelector(`script[src="${src}"]`);
+            if (existing) {
+                existing.addEventListener('load', resolve, { once: true });
+                existing.addEventListener('error', () => reject(new Error(errorMessage)), { once: true });
+                return;
+            }
+
+            const script = document.createElement('script');
+            script.src = src;
+            script.async = true;
+            script.defer = true;
+            script.onload = resolve;
+            script.onerror = () => reject(new Error(errorMessage));
+            document.head.appendChild(script);
+        });
+
+        const gisReady = (typeof google !== 'undefined' && google.accounts)
+            ? this.initGisClient()
+            : loadScript('https://accounts.google.com/gsi/client', 'Error loading Google Identity Services.')
+                .then(() => this.initGisClient());
+
+        const gapiReady = (typeof gapi !== 'undefined')
+            ? this.initGapiClient()
+            : loadScript('https://apis.google.com/js/api.js', 'Error loading Google API Client.')
+                .then(() => this.initGapiClient());
+
+        this._googleApisLoadingPromise = Promise.all([gisReady, gapiReady]);
+
+        this._googleApisLoadingPromise
+            .then(() => callback())
+            .catch((err) => {
+                this._googleApisLoadingPromise = null;
+                UI.log(err.message, 'error');
+            });
+    },
 
     // ==========================================
     // LOCAL STORAGE OPERATIONS
@@ -1196,50 +1245,7 @@ const Storage = {
             try {
                 const content = e.target.result;
                 UI.log(`File loaded, parsing DXF (${content.length} bytes)...`);
-
-                // Parse layers first
-                const layers = this.parseDXFLayers(content);
-
-                // Parse entities
-                const entities = this.parseDXF(content);
-
-                if (entities.length > 0 || layers.length > 0) {
-                    // Clear existing and set up layers
-                    CAD.entities = [];
-
-                    // Add parsed layers (keep layer 0)
-                    CAD.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false, lineWeight: 'Default' }];
-                    layers.forEach(layer => {
-                        if (layer.name !== '0') {
-                            CAD.layers.push(layer);
-                        } else {
-                            // Update layer 0 color if specified
-                            CAD.layers[0].color = layer.color;
-                        }
-                    });
-
-                    // Add entities
-                    entities.forEach(entity => {
-                        // Ensure layer exists
-                        if (!CAD.getLayer(entity.layer)) {
-                            CAD.layers.push({
-                                name: entity.layer,
-                                color: '#ffffff',
-                                visible: true,
-                                locked: false,
-                                lineWeight: 'Default'
-                            });
-                        }
-                        CAD.addEntity(entity, true);
-                    });
-
-                    UI.updateLayerUI();
-                    Renderer.draw();
-                    Commands.zoomExtents();
-                    UI.log(`DXF imported: ${entities.length} entities, ${CAD.layers.length} layers.`, 'success');
-                } else {
-                    UI.log('No entities found in DXF file.', 'error');
-                }
+                this._loadDXFContent(content, { zoom: true, report: true });
             } catch (err) {
                 UI.log('Error importing DXF: ' + err.message, 'error');
                 console.error('DXF Import Error:', err);
@@ -1249,6 +1255,60 @@ const Storage = {
             UI.log('Error reading file: ' + e.target.error.message, 'error');
         };
         reader.readAsText(file);
+    },
+
+    _ensureLayer(name) {
+        if (!name || CAD.getLayer(name)) return;
+        CAD.layers.push({
+            name,
+            color: '#ffffff',
+            visible: true,
+            locked: false,
+            lineWeight: 'Default'
+        });
+    },
+
+    _loadDXFContent(content, options = {}) {
+        const { zoom = false, report = false } = options;
+        const layers = this.parseDXFLayers(content);
+        const entities = this.parseDXF(content);
+        const blocks = this.parseDXFBlocks(content);
+
+        if (entities.length === 0 && layers.length === 0) {
+            if (report) UI.log('No entities found in DXF file.', 'error');
+            return;
+        }
+
+        CAD.entities = [];
+        CAD.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false, lineWeight: 'Default' }];
+        layers.forEach(layer => {
+            if (layer.name !== '0') {
+                CAD.layers.push(layer);
+            } else {
+                CAD.layers[0].color = layer.color;
+            }
+        });
+
+        CAD.blocks = blocks;
+
+        entities.forEach(entity => {
+            this._ensureLayer(entity.layer);
+            CAD.addEntity(entity, true);
+        });
+
+        Object.values(CAD.blocks).forEach(block => {
+            block.entities.forEach(entity => this._ensureLayer(entity.layer));
+        });
+
+        UI.updateLayerUI();
+        Renderer.draw();
+        if (zoom && entities.length > 0) {
+            Commands.zoomExtents();
+        }
+        if (report) {
+            const blockCount = Object.keys(CAD.blocks).length;
+            UI.log(`DXF imported: ${entities.length} entities, ${blockCount} blocks, ${CAD.layers.length} layers.`, 'success');
+        }
     },
 
     parseDXFLayers(content) {
@@ -1442,7 +1502,7 @@ const Storage = {
                         i = result.nextIndex;
                     }
                 } else if (entityType === 'TEXT' || entityType === 'MTEXT') {
-                    const result = this.parseDXFText(lines, i);
+                    const result = this.parseDXFText(lines, i, entityType);
                     if (result) {
                         entities.push(result.entity);
                         i = result.nextIndex;
@@ -1505,6 +1565,112 @@ const Storage = {
 
         console.log(`DXF: Parsed ${entities.length} entities`);
         return entities;
+    },
+
+    parseDXFBlocks(content) {
+        const blocks = {};
+        const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').map(l => l.trim());
+        let i = 0;
+
+        let inBlocksSection = false;
+        while (i < lines.length - 1) {
+            if (lines[i] === '2' && lines[i + 1].toUpperCase() === 'BLOCKS') {
+                inBlocksSection = true;
+                i += 2;
+                break;
+            }
+            if (lines[i].toUpperCase() === 'BLOCKS') {
+                inBlocksSection = true;
+                i++;
+                break;
+            }
+            i++;
+        }
+
+        if (!inBlocksSection) {
+            return blocks;
+        }
+
+        while (i < lines.length - 1) {
+            if (lines[i] === '0' && lines[i + 1].toUpperCase() === 'ENDSEC') {
+                break;
+            }
+
+            if (lines[i] === '0' && lines[i + 1].toUpperCase() === 'BLOCK') {
+                i += 2;
+                const header = this.readDXFEntity(lines, i);
+                const blockData = header.data;
+                i = header.nextIndex;
+
+                const name = blockData[2] || 'UNNAMED';
+                const basePoint = {
+                    x: parseFloat(blockData[10]) || 0,
+                    y: -(parseFloat(blockData[20]) || 0)
+                };
+
+                const entities = [];
+                while (i < lines.length - 1) {
+                    if (lines[i] === '0' && lines[i + 1].toUpperCase() === 'ENDBLK') {
+                        i += 2;
+                        break;
+                    }
+
+                    if (lines[i] === '0') {
+                        const entityType = lines[i + 1].toUpperCase();
+                        i += 2;
+                        let result = null;
+
+                        if (entityType === 'LINE') {
+                            result = this.parseDXFLine(lines, i);
+                        } else if (entityType === 'CIRCLE') {
+                            result = this.parseDXFCircle(lines, i);
+                        } else if (entityType === 'ARC') {
+                            result = this.parseDXFArc(lines, i);
+                        } else if (entityType === 'LWPOLYLINE' || entityType === 'POLYLINE') {
+                            result = this.parseDXFPolyline(lines, i);
+                        } else if (entityType === 'TEXT' || entityType === 'MTEXT') {
+                            result = this.parseDXFText(lines, i, entityType);
+                        } else if (entityType === 'POINT') {
+                            result = this.parseDXFPoint(lines, i);
+                        } else if (entityType === 'SPLINE') {
+                            result = this.parseDXFSpline(lines, i);
+                        } else if (entityType === 'ELLIPSE') {
+                            result = this.parseDXFEllipse(lines, i);
+                        } else if (entityType === 'LEADER') {
+                            result = this.parseDXFLeader(lines, i);
+                        } else if (entityType === 'INSERT') {
+                            result = this.parseDXFInsert(lines, i);
+                        } else if (entityType === 'SOLID') {
+                            result = this.parseDXFSolid(lines, i);
+                        } else {
+                            const skipped = this.readDXFEntity(lines, i);
+                            i = skipped.nextIndex;
+                        }
+
+                        if (result) {
+                            entities.push(result.entity);
+                            i = result.nextIndex;
+                        }
+                    } else {
+                        i++;
+                    }
+                }
+
+                blocks[name] = {
+                    name,
+                    basePoint,
+                    entities,
+                    description: '',
+                    createdAt: Date.now()
+                };
+
+                continue;
+            }
+
+            i++;
+        }
+
+        return blocks;
     },
 
     // Helper to read DXF group code/value pairs until we hit group code 0
@@ -1615,20 +1781,34 @@ const Storage = {
         return { entity, nextIndex };
     },
 
-    parseDXFText(lines, startIndex) {
+    parseDXFText(lines, startIndex, entityType = 'TEXT') {
         const { data, nextIndex } = this.readDXFEntity(lines, startIndex);
+        const isMtext = entityType === 'MTEXT';
+        const textParts = [];
+
+        if (data[1]) {
+            textParts.push(data[1]);
+        }
+        if (data[3]) {
+            const extra = Array.isArray(data[3]) ? data[3] : [data[3]];
+            textParts.push(...extra);
+        }
 
         const entity = {
-            type: 'text',
+            type: isMtext ? 'mtext' : 'text',
             position: {
                 x: parseFloat(data[10]) || 0,
                 y: -(parseFloat(data[20]) || 0)
             },
-            text: data[1] || '',
+            text: textParts.join('').replace(/\\P/g, '\n'),
             height: parseFloat(data[40]) || 10,
             rotation: parseFloat(data[50]) || 0,
             layer: data[8] || '0'
         };
+
+        if (isMtext && data[41]) {
+            entity.width = parseFloat(data[41]) || 0;
+        }
 
         return { entity, nextIndex };
     },
@@ -2094,24 +2274,26 @@ const Storage = {
     _accessToken: null,
     _tokenClient: null,
     _currentDriveFileId: null,
-    _pickerInited: false,
 
     /**
      * Initialize the Google API client library (gapi).
      * Called once gapi.js has loaded.
      */
     initGapiClient() {
-        gapi.load('client:picker', async () => {
-            try {
-                await gapi.client.init({});
-                await gapi.client.load('https://www.googleapis.com/discovery/v1/apis/drive/v3/rest');
-                this._gapiInited = true;
-                this._pickerInited = true;
-                console.log('Google API client initialized.');
-                this._maybeEnableDriveButtons();
-            } catch (err) {
-                console.error('Error initializing GAPI client:', err);
-            }
+        return new Promise((resolve, reject) => {
+            gapi.load('client:picker', async () => {
+                try {
+                    await gapi.client.init({});
+                    await gapi.client.load('https://www.googleapis.com/discovery/v1/apis/drive/v3/rest');
+                    this._gapiInited = true;
+                    console.log('Google API client initialized.');
+                    this._maybeEnableDriveButtons();
+                    resolve();
+                } catch (err) {
+                    console.error('Error initializing GAPI client:', err);
+                    reject(err);
+                }
+            });
         });
     },
 
@@ -2123,7 +2305,7 @@ const Storage = {
         const config = window.CAD_CONFIG;
         if (!config || !config.clientId) {
             console.warn('CAD_CONFIG.clientId not set. Google Drive disabled.');
-            return;
+            return Promise.reject(new Error('CAD_CONFIG.clientId not set. Google Drive disabled.'));
         }
 
         this._tokenClient = google.accounts.oauth2.initTokenClient({
@@ -2134,6 +2316,7 @@ const Storage = {
         this._gisInited = true;
         console.log('Google Identity Services initialized.');
         this._maybeEnableDriveButtons();
+        return Promise.resolve();
     },
 
     /**
@@ -2151,25 +2334,27 @@ const Storage = {
      * Handle the Sign In / Sign Out button click.
      */
     handleGoogleSignIn() {
-        if (this._accessToken) {
-            // Sign out
-            google.accounts.oauth2.revoke(this._accessToken, () => {
-                this._accessToken = null;
-                this._currentDriveFileId = null;
-                this._updateSignInUI(false);
-                UI.log('Signed out of Google.');
-            });
-            return;
-        }
-
-        // Sign in: request an access token
-        this._getAccessToken().then(token => {
-            if (token) {
-                this._updateSignInUI(true);
-                UI.log('Signed in to Google successfully.');
+        this.loadGoogleApis(() => {
+            if (this._accessToken) {
+                // Sign out
+                google.accounts.oauth2.revoke(this._accessToken, () => {
+                    this._accessToken = null;
+                    this._currentDriveFileId = null;
+                    this._updateSignInUI(false);
+                    UI.log('Signed out of Google.');
+                });
+                return;
             }
-        }).catch(err => {
-            UI.log('Google sign-in failed: ' + err.message, 'error');
+
+            // Sign in: request an access token
+            this._getAccessToken().then(token => {
+                if (token) {
+                    this._updateSignInUI(true);
+                    UI.log('Signed in to Google successfully.');
+                }
+            }).catch(err => {
+                UI.log('Google sign-in failed: ' + err.message, 'error');
+            });
         });
     },
 
@@ -2238,35 +2423,37 @@ const Storage = {
      * Open the Google Drive Picker to select a CAD file.
      * Supports .dxf, .json, and .svg files.
      */
-    async openFromDrive() {
-        try {
-            // Always get a fresh token for the Picker
-            const token = await this._getAccessToken(true);
-            this._updateSignInUI(true);
+    openFromDrive() {
+        this.loadGoogleApis(async () => {
+            try {
+                // Always get a fresh token for the Picker
+                const token = await this._getAccessToken(true);
+                this._updateSignInUI(true);
 
-            // Show all files — DXF has no standard MIME type in Drive
-            const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
-                .setMode(google.picker.DocsViewMode.LIST);
+                // Show all files — DXF has no standard MIME type in Drive
+                const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+                    .setMode(google.picker.DocsViewMode.LIST);
 
-            // NOTE: Do NOT pass setDeveloperKey here. The Picker iframe runs
-            // on Google's domain, so HTTP-referrer-restricted API keys get
-            // blocked and cause a perpetual "Sign in" screen. The OAuth token
-            // alone is sufficient for authenticated Picker access.
-            const picker = new google.picker.PickerBuilder()
-                .setOAuthToken(token)
-                .setAppId(window.CAD_CONFIG.appId)
-                .addView(view)
-                .addView(new google.picker.DocsUploadView())
-                .setTitle('Open Drawing from Google Drive (.dxf, .json, .svg)')
-                .setCallback((data) => this._pickerOpenCallback(data))
-                .setOrigin(window.location.protocol + '//' + window.location.host)
-                .build();
+                // NOTE: Do NOT pass setDeveloperKey here. The Picker iframe runs
+                // on Google's domain, so HTTP-referrer-restricted API keys get
+                // blocked and cause a perpetual "Sign in" screen. The OAuth token
+                // alone is sufficient for authenticated Picker access.
+                const picker = new google.picker.PickerBuilder()
+                    .setOAuthToken(token)
+                    .setAppId(window.CAD_CONFIG.appId)
+                    .addView(view)
+                    .addView(new google.picker.DocsUploadView())
+                    .setTitle('Open Drawing from Google Drive (.dxf, .json, .svg)')
+                    .setCallback((data) => this._pickerOpenCallback(data))
+                    .setOrigin(window.location.protocol + '//' + window.location.host)
+                    .build();
 
-            picker.setVisible(true);
-        } catch (err) {
-            UI.log('Could not open Drive picker: ' + err.message, 'error');
-            console.error('Drive Picker error:', err);
-        }
+                picker.setVisible(true);
+            } catch (err) {
+                UI.log('Could not open Drive picker: ' + err.message, 'error');
+                console.error('Drive Picker error:', err);
+            }
+        });
     },
 
     /**
@@ -2340,35 +2527,7 @@ const Storage = {
      * Import DXF from a raw string (used by Drive open).
      */
     _importDXFFromString(content) {
-        const layers = this.parseDXFLayers(content);
-        const entities = this.parseDXF(content);
-
-        CAD.entities = [];
-        CAD.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false, lineWeight: 'Default' }];
-        layers.forEach(layer => {
-            if (layer.name !== '0') {
-                CAD.layers.push(layer);
-            } else {
-                CAD.layers[0].color = layer.color;
-            }
-        });
-
-        entities.forEach(entity => {
-            if (!CAD.getLayer(entity.layer)) {
-                CAD.layers.push({
-                    name: entity.layer,
-                    color: '#ffffff',
-                    visible: true,
-                    locked: false,
-                    lineWeight: 'Default'
-                });
-            }
-            CAD.addEntity(entity, true);
-        });
-
-        if (entities.length > 0) {
-            Commands.zoomExtents();
-        }
+        this._loadDXFContent(content, { zoom: true });
     },
 
     /**
@@ -2388,33 +2547,35 @@ const Storage = {
      * Defaults to .dxf format.
      */
     saveToDrivePrompt() {
-        const defaultName = (CAD.drawingName || 'drawing') + '.dxf';
-        const filename = prompt('Save to Google Drive as:', defaultName);
-        if (!filename) return;
+        this.loadGoogleApis(() => {
+            const defaultName = (CAD.drawingName || 'drawing') + '.dxf';
+            const filename = prompt('Save to Google Drive as:', defaultName);
+            if (!filename) return;
 
-        const ext = filename.split('.').pop().toLowerCase();
-        let content, mimeType;
+            const ext = filename.split('.').pop().toLowerCase();
+            let content, mimeType;
 
-        if (ext === 'json' || ext === 'htmlcad') {
-            content = JSON.stringify(CAD.toJSON(), null, 2);
-            mimeType = 'application/json';
-        } else if (ext === 'svg') {
-            content = this.generateSVG();
-            mimeType = 'image/svg+xml';
-        } else {
-            // Default to DXF — use text/plain so Google Drive stores it as
-            // readable text. 'application/dxf' is non-standard and some
-            // Drive/browser combos drop or mangle the content.
-            content = this.generateDXF();
-            mimeType = 'text/plain';
-        }
+            if (ext === 'json' || ext === 'htmlcad') {
+                content = JSON.stringify(CAD.toJSON(), null, 2);
+                mimeType = 'application/json';
+            } else if (ext === 'svg') {
+                content = this.generateSVG();
+                mimeType = 'image/svg+xml';
+            } else {
+                // Default to DXF — use text/plain so Google Drive stores it as
+                // readable text. 'application/dxf' is non-standard and some
+                // Drive/browser combos drop or mangle the content.
+                content = this.generateDXF();
+                mimeType = 'text/plain';
+            }
 
-        if (!content || content.length === 0) {
-            UI.log('Error: No content to save. Draw something first.', 'error');
-            return;
-        }
+            if (!content || content.length === 0) {
+                UI.log('Error: No content to save. Draw something first.', 'error');
+                return;
+            }
 
-        this.saveToDrive(content, filename, mimeType);
+            this.saveToDrive(content, filename, mimeType);
+        });
     },
 
     /**
@@ -2513,45 +2674,6 @@ const Storage = {
         }
     }
 };
-
-// ==========================================
-// Google API Initialization Callbacks
-// ==========================================
-
-// Called by gapi.js when it finishes loading
-function gapiLoaded() {
-    Storage.initGapiClient();
-}
-
-// Called by GIS library when it finishes loading
-function gisLoaded() {
-    Storage.initGisClient();
-}
-
-// Auto-detect when libraries are available (for async/defer loading)
-(function initGoogleDrive() {
-    // Poll for gapi
-    const gapiCheck = setInterval(() => {
-        if (typeof gapi !== 'undefined') {
-            clearInterval(gapiCheck);
-            Storage.initGapiClient();
-        }
-    }, 200);
-
-    // Poll for google.accounts
-    const gisCheck = setInterval(() => {
-        if (typeof google !== 'undefined' && google.accounts) {
-            clearInterval(gisCheck);
-            Storage.initGisClient();
-        }
-    }, 200);
-
-    // Stop polling after 15 seconds
-    setTimeout(() => {
-        clearInterval(gapiCheck);
-        clearInterval(gisCheck);
-    }, 15000);
-})();
 
 // Export for module usage
 if (typeof module !== 'undefined' && module.exports) {
