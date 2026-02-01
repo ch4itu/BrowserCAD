@@ -63,6 +63,7 @@ Dimensioning and basic text tools are present; advanced styling is limited.
 - [x] Single Line Text (TEXT)
 - [x] Multiline Text (MTEXT)
 - [x] Text Properties (SCALETEXT, JUSTIFYTEXT)
+- [x] Dimension Variables (DIMTXT, DIMASZ, DIMSCALE, DIMDEC)
 - [x] Linear Dimension (DIMLINEAR)
 - [x] Aligned Dimension (DIMALIGNED)
 - [x] Angular Dimension (DIMANGULAR)
@@ -90,6 +91,7 @@ Layer management is robust; advanced layer states are missing.
 - [x] Layer Merge (LAYMERGE)
 - [x] Match Properties (MATCHPROP)
 - [x] Change Properties (CHPROP)
+- [x] Entity Color Overrides (ByLayer default)
 - [ ] Layer States Manager (LAYERSTATE)
 - [ ] ByBlock / ByLayer object property logic
 
