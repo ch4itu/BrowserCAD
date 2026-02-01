@@ -18,79 +18,37 @@ const Storage = {
             return;
         }
 
-        this._googleApisLoadingPromise = new Promise((resolve, reject) => {
-            const readyTimeoutMs = 15000;
-            let gsiLoaded = false;
-            let gapiLoaded = false;
-            let readyTimer;
-            let timeoutTimer;
-
-            const checkReady = () => {
-                if (!gsiLoaded || !gapiLoaded) {
-                    return;
-                }
-                if (readyTimer) return;
-                readyTimer = setInterval(() => {
-                    if (this._gisInited && this._gapiInited) {
-                        clearInterval(readyTimer);
-                        clearTimeout(timeoutTimer);
-                        resolve();
-                    }
-                }, 100);
-
-                timeoutTimer = setTimeout(() => {
-                    clearInterval(readyTimer);
-                    reject(new Error('Google APIs initialization timed out.'));
-                }, readyTimeoutMs);
-            };
-
-            const loadGapi = () => {
-                if (typeof gapi !== 'undefined') {
-                    this.initGapiClient();
-                    gapiLoaded = true;
-                    checkReady();
-                    return;
-                }
-
-                const apiScript = document.createElement('script');
-                apiScript.src = 'https://apis.google.com/js/api.js';
-                apiScript.async = true;
-                apiScript.defer = true;
-                apiScript.onload = () => {
-                    this.initGapiClient();
-                    gapiLoaded = true;
-                    checkReady();
-                };
-                apiScript.onerror = () => {
-                    reject(new Error('Error loading Google API Client.'));
-                };
-                document.head.appendChild(apiScript);
-            };
-
-            if (typeof google !== 'undefined' && google.accounts) {
-                this.initGisClient();
-                gsiLoaded = true;
-                loadGapi();
+        const loadScript = (src, errorMessage) => new Promise((resolve, reject) => {
+            const existing = document.querySelector(`script[src="${src}"]`);
+            if (existing) {
+                existing.addEventListener('load', resolve, { once: true });
+                existing.addEventListener('error', () => reject(new Error(errorMessage)), { once: true });
                 return;
             }
 
-            const gsiScript = document.createElement('script');
-            gsiScript.src = 'https://accounts.google.com/gsi/client';
-            gsiScript.async = true;
-            gsiScript.defer = true;
-            gsiScript.onload = () => {
-                this.initGisClient();
-                gsiLoaded = true;
-                loadGapi();
-            };
-            gsiScript.onerror = () => {
-                reject(new Error('Error loading Google Identity Services.'));
-            };
-            document.head.appendChild(gsiScript);
+            const script = document.createElement('script');
+            script.src = src;
+            script.async = true;
+            script.defer = true;
+            script.onload = resolve;
+            script.onerror = () => reject(new Error(errorMessage));
+            document.head.appendChild(script);
         });
 
+        const gisReady = (typeof google !== 'undefined' && google.accounts)
+            ? this.initGisClient()
+            : loadScript('https://accounts.google.com/gsi/client', 'Error loading Google Identity Services.')
+                .then(() => this.initGisClient());
+
+        const gapiReady = (typeof gapi !== 'undefined')
+            ? this.initGapiClient()
+            : loadScript('https://apis.google.com/js/api.js', 'Error loading Google API Client.')
+                .then(() => this.initGapiClient());
+
+        this._googleApisLoadingPromise = Promise.all([gisReady, gapiReady]);
+
         this._googleApisLoadingPromise
-            .then(callback)
+            .then(() => callback())
             .catch((err) => {
                 this._googleApisLoadingPromise = null;
                 UI.log(err.message, 'error');
@@ -2185,24 +2143,26 @@ const Storage = {
     _accessToken: null,
     _tokenClient: null,
     _currentDriveFileId: null,
-    _pickerInited: false,
 
     /**
      * Initialize the Google API client library (gapi).
      * Called once gapi.js has loaded.
      */
     initGapiClient() {
-        gapi.load('client:picker', async () => {
-            try {
-                await gapi.client.init({});
-                await gapi.client.load('https://www.googleapis.com/discovery/v1/apis/drive/v3/rest');
-                this._gapiInited = true;
-                this._pickerInited = true;
-                console.log('Google API client initialized.');
-                this._maybeEnableDriveButtons();
-            } catch (err) {
-                console.error('Error initializing GAPI client:', err);
-            }
+        return new Promise((resolve, reject) => {
+            gapi.load('client:picker', async () => {
+                try {
+                    await gapi.client.init({});
+                    await gapi.client.load('https://www.googleapis.com/discovery/v1/apis/drive/v3/rest');
+                    this._gapiInited = true;
+                    console.log('Google API client initialized.');
+                    this._maybeEnableDriveButtons();
+                    resolve();
+                } catch (err) {
+                    console.error('Error initializing GAPI client:', err);
+                    reject(err);
+                }
+            });
         });
     },
 
@@ -2214,7 +2174,7 @@ const Storage = {
         const config = window.CAD_CONFIG;
         if (!config || !config.clientId) {
             console.warn('CAD_CONFIG.clientId not set. Google Drive disabled.');
-            return;
+            return Promise.reject(new Error('CAD_CONFIG.clientId not set. Google Drive disabled.'));
         }
 
         this._tokenClient = google.accounts.oauth2.initTokenClient({
@@ -2225,6 +2185,7 @@ const Storage = {
         this._gisInited = true;
         console.log('Google Identity Services initialized.');
         this._maybeEnableDriveButtons();
+        return Promise.resolve();
     },
 
     /**
