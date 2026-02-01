@@ -93,12 +93,23 @@ class StateManager {
         this.dimScale = 1;              // Overall dimension scale (DIMSCALE)
         this.dimPrecision = 4;          // Decimal precision (DIMDEC)
         this.lastLinearDim = null;
+        this.dimStyles = [
+            {
+                name: 'Standard',
+                textHeight: this.dimTextHeight,
+                arrowSize: this.dimArrowSize,
+                scale: this.dimScale,
+                precision: this.dimPrecision
+            }
+        ];
+        this.currentDimStyle = 'Standard';
 
         // Layers
         this.layers = [
             { name: '0', color: '#ffffff', visible: true, locked: false, frozen: false, lineType: 'Continuous', lineWeight: 'Default' }
         ];
         this.currentLayer = '0';
+        this.layerStates = {};
 
         // Entities
         this.entities = [];
@@ -123,6 +134,19 @@ class StateManager {
         // Named views { name: { pan: {x,y}, zoom: number } }
         this.namedViews = {};
 
+        // Layouts (Model + Paper Space)
+        this.layouts = [
+            {
+                name: 'Model',
+                type: 'model',
+                pan: { x: 0, y: 0 },
+                zoom: 1,
+                showGrid: true,
+                paper: null
+            }
+        ];
+        this.currentLayout = 'Model';
+
         // Grid display
         this.showGrid = true;
         this.gridSpacing = 100;
@@ -131,6 +155,138 @@ class StateManager {
         // Origin/UCS
         this.origin = { x: 0, y: 0 };
         this.ucsAngle = 0;
+    }
+
+    // ==========================================
+    // LAYOUTS (MODEL/PAPERSPACE)
+    // ==========================================
+
+    getLayout(name) {
+        return this.layouts.find(layout => layout.name === name);
+    }
+
+    addLayout(name, options = {}) {
+        if (!name || this.getLayout(name)) return false;
+        const layout = {
+            name,
+            type: options.type || 'paper',
+            pan: { x: 0, y: 0 },
+            zoom: 1,
+            showGrid: options.showGrid ?? false,
+            paper: options.paper || { width: 420, height: 297, margin: 10 }
+        };
+        this.layouts.push(layout);
+        this.modified = true;
+        return layout;
+    }
+
+    renameLayout(oldName, newName) {
+        const layout = this.getLayout(oldName);
+        if (!layout || this.getLayout(newName)) return false;
+        layout.name = newName;
+        if (this.currentLayout === oldName) {
+            this.currentLayout = newName;
+        }
+        this.modified = true;
+        return true;
+    }
+
+    removeLayout(name) {
+        if (name === 'Model') return false;
+        const index = this.layouts.findIndex(layout => layout.name === name);
+        if (index === -1) return false;
+        this.layouts.splice(index, 1);
+        if (this.currentLayout === name) {
+            this.setCurrentLayout('Model');
+        }
+        this.modified = true;
+        return true;
+    }
+
+    saveCurrentLayoutView() {
+        const layout = this.getLayout(this.currentLayout);
+        if (!layout) return;
+        layout.pan = { ...this.pan };
+        layout.zoom = this.zoom;
+        layout.showGrid = this.showGrid;
+    }
+
+    setCurrentLayout(name) {
+        const layout = this.getLayout(name);
+        if (!layout) return false;
+        this.saveCurrentLayoutView();
+        this.currentLayout = name;
+        this.pan = { ...layout.pan };
+        this.zoom = layout.zoom;
+        this.showGrid = layout.showGrid;
+        return true;
+    }
+
+    // ==========================================
+    // DIMENSION STYLES
+    // ==========================================
+
+    getDimStyle(name) {
+        return this.dimStyles.find(style => style.name === name);
+    }
+
+    saveCurrentDimStyle(name) {
+        if (!name) return false;
+        const existing = this.getDimStyle(name);
+        const styleData = {
+            name,
+            textHeight: this.dimTextHeight,
+            arrowSize: this.dimArrowSize,
+            scale: this.dimScale,
+            precision: this.dimPrecision
+        };
+        if (existing) {
+            Object.assign(existing, styleData);
+            return true;
+        }
+        this.dimStyles.push(styleData);
+        return true;
+    }
+
+    applyDimStyle(name) {
+        const style = this.getDimStyle(name);
+        if (!style) return false;
+        this.currentDimStyle = style.name;
+        this.dimTextHeight = style.textHeight;
+        this.dimArrowSize = style.arrowSize;
+        this.dimScale = style.scale;
+        this.dimPrecision = style.precision;
+        return true;
+    }
+
+    // ==========================================
+    // LAYER STATES
+    // ==========================================
+
+    saveLayerState(name) {
+        if (!name) return false;
+        this.layerStates[name] = {
+            layers: JSON.parse(JSON.stringify(this.layers)),
+            currentLayer: this.currentLayer
+        };
+        this.modified = true;
+        return true;
+    }
+
+    restoreLayerState(name) {
+        const state = this.layerStates[name];
+        if (!state) return false;
+        this.layers = JSON.parse(JSON.stringify(state.layers));
+        this.currentLayer = state.currentLayer || '0';
+        this.modified = true;
+        return true;
+    }
+
+    deleteLayerState(name) {
+        if (!this.layerStates[name]) return false;
+        delete this.layerStates[name];
+        this.modified = true;
+        return true;
     }
 
     // ==========================================
@@ -314,7 +470,9 @@ class StateManager {
 
             // Inherit properties from block reference if not specified
             if (!transformed.layer) transformed.layer = blockRef.layer;
-            if (!transformed.color && blockRef.color) transformed.color = blockRef.color;
+            if ((!transformed.color || transformed.color === 'ByBlock') && blockRef.color && blockRef.color !== 'ByLayer') {
+                transformed.color = blockRef.color;
+            }
 
             return transformed;
         });
@@ -455,7 +613,7 @@ class StateManager {
     }
 
     getEntityColor(entity) {
-        if (entity.color) return entity.color;
+        if (entity.color && entity.color !== 'ByLayer' && entity.color !== 'ByBlock') return entity.color;
         const layer = this.getLayer(entity.layer);
         return layer ? layer.color : '#ffffff';
     }
@@ -907,13 +1065,18 @@ class StateManager {
 
     toJSON() {
         return {
-            version: '1.2',
+            version: '1.3',
             name: this.drawingName,
             layers: this.layers,
             currentLayer: this.currentLayer,
             entities: this.entities,
             blocks: this.blocks,
             namedViews: this.namedViews,
+            layouts: this.layouts,
+            currentLayout: this.currentLayout,
+            dimStyles: this.dimStyles,
+            currentDimStyle: this.currentDimStyle,
+            layerStates: this.layerStates,
             view: {
                 pan: this.pan,
                 zoom: this.zoom
@@ -939,6 +1102,11 @@ class StateManager {
             this.entities = data.entities || [];
             this.blocks = data.blocks || {};
             this.namedViews = data.namedViews || {};
+            this.layouts = data.layouts || this.layouts;
+            this.currentLayout = data.currentLayout || this.currentLayout;
+            this.dimStyles = data.dimStyles || this.dimStyles;
+            this.currentDimStyle = data.currentDimStyle || this.currentDimStyle;
+            this.layerStates = data.layerStates || this.layerStates;
 
             if (data.view) {
                 this.pan = data.view.pan || this.pan;
@@ -955,6 +1123,9 @@ class StateManager {
                 this.lineType = data.settings.lineType || this.lineType;
                 this.lineTypeScale = data.settings.lineTypeScale || this.lineTypeScale;
             }
+
+            this.applyDimStyle(this.currentDimStyle);
+            this.setCurrentLayout(this.currentLayout);
 
             // Reset undo stack on load
             this.undoStack = [];
@@ -979,6 +1150,30 @@ class StateManager {
             { name: '0', color: '#ffffff', visible: true, locked: false, frozen: false, lineType: 'Continuous', lineWeight: 'Default' }
         ];
         this.currentLayer = '0';
+        this.layerStates = {};
+        this.dimStyles = [
+            {
+                name: 'Standard',
+                textHeight: 2.5,
+                arrowSize: 2.5,
+                scale: 1,
+                precision: 4
+            }
+        ];
+        this.currentDimStyle = 'Standard';
+        this.applyDimStyle(this.currentDimStyle);
+        this.layouts = [
+            {
+                name: 'Model',
+                type: 'model',
+                pan: { x: 0, y: 0 },
+                zoom: 1,
+                showGrid: true,
+                paper: null
+            }
+        ];
+        this.currentLayout = 'Model';
+        this.setCurrentLayout(this.currentLayout);
         this.pan = { x: 0, y: 0 };
         this.zoom = 1;
         this.undoStack = [];

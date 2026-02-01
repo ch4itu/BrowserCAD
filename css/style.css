@@ -795,6 +795,17 @@ body {
     gap: 6px;
 }
 
+.viewport-tab-add {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.viewport-tab-add:hover {
+    color: var(--text-bright);
+}
+
 .viewport-tab:hover {
     background: var(--bg-lighter);
 }

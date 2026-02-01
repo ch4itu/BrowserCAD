@@ -30,12 +30,14 @@ const UI = {
             statusGrid: document.getElementById('statusGrid'),
             statusOrtho: document.getElementById('statusOrtho'),
             statusPolar: document.getElementById('statusPolar'),
-            propertiesPanel: document.getElementById('propertiesPanel')
+            propertiesPanel: document.getElementById('propertiesPanel'),
+            viewportTabs: document.getElementById('viewportTabs')
         };
 
         // Setup event listeners
         this.setupEventListeners();
         this.updateLayerUI();
+        this.renderLayoutTabs();
         this.updateStatusBar();
         this.updateCommandPrompt(null);
 
@@ -43,6 +45,47 @@ const UI = {
         this.focusCommandLine();
 
         return this;
+    },
+
+    renderLayoutTabs() {
+        const tabs = this.elements.viewportTabs;
+        if (!tabs) return;
+        tabs.innerHTML = '';
+
+        CAD.layouts.forEach(layout => {
+            const tab = document.createElement('div');
+            tab.className = `viewport-tab${layout.name === CAD.currentLayout ? ' active' : ''}`;
+            tab.textContent = layout.name;
+            tab.addEventListener('click', () => {
+                CAD.setCurrentLayout(layout.name);
+                this.renderLayoutTabs();
+                Renderer.draw();
+            });
+            tabs.appendChild(tab);
+        });
+
+        const addTab = document.createElement('button');
+        addTab.className = 'viewport-tab viewport-tab-add';
+        addTab.textContent = '+';
+        addTab.title = 'Add Layout';
+        addTab.addEventListener('click', () => {
+            this.addLayout();
+        });
+        tabs.appendChild(addTab);
+    },
+
+    addLayout() {
+        let index = 1;
+        let name = `Layout${index}`;
+        while (CAD.getLayout(name)) {
+            index += 1;
+            name = `Layout${index}`;
+        }
+        CAD.addLayout(name);
+        CAD.setCurrentLayout(name);
+        this.renderLayoutTabs();
+        Renderer.draw();
+        UI.log(`LAYOUT: Created ${name}.`, 'success');
     },
 
     // ==========================================
@@ -449,12 +492,15 @@ DIMENSION COMMANDS:
   DIMALIGNED    - Aligned dimension
   DIMRAD        - Radius dimension
   DIMDIA        - Diameter dimension
+  DIMSTYLE      - Manage dimension styles
 
 UTILITY COMMANDS:
   U, UNDO       - Undo last action
   REDO          - Redo last undo
   Z, ZOOM       - Zoom view (E=extents)
   P, PAN        - Pan view
+  LAYOUT        - Manage layouts/paperspace
+  LAYERSTATE    - Save/restore layer states
   DIST, DI      - Measure distance
   AREA, AA      - Measure area
   LIST, LI      - List object properties
