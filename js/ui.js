@@ -763,6 +763,59 @@ AUTOLISP:
                 swatch.style.background = currentLayer.color;
             }
         }
+
+        this.updateLayerRibbonControls();
+    },
+
+    updateLayerRibbonControls() {
+        const layer = CAD.getLayer(CAD.currentLayer);
+        if (!layer) return;
+
+        const visBtn = document.getElementById('layerToggleVisibility');
+        if (visBtn) {
+            visBtn.classList.toggle('active', layer.visible !== false);
+            const icon = visBtn.querySelector('.icon');
+            if (icon) {
+                icon.innerHTML = layer.visible === false ? '&#9711;' : '&#9679;';
+            }
+            visBtn.title = layer.visible === false ? 'Layer Off' : 'Layer On';
+        }
+
+        const freezeBtn = document.getElementById('layerToggleFreeze');
+        if (freezeBtn) {
+            freezeBtn.classList.toggle('active', layer.frozen);
+            freezeBtn.title = layer.frozen ? 'Thaw Layer' : 'Freeze Layer';
+        }
+
+        const lockBtn = document.getElementById('layerToggleLock');
+        if (lockBtn) {
+            lockBtn.classList.toggle('active', layer.locked);
+            const icon = lockBtn.querySelector('.icon');
+            if (icon) {
+                icon.innerHTML = layer.locked ? '&#128274;' : '&#128275;';
+            }
+            lockBtn.title = layer.locked ? 'Unlock Layer' : 'Lock Layer';
+        }
+
+        const ltypeBtn = document.getElementById('layerCycleLineType');
+        if (ltypeBtn) {
+            const label = ltypeBtn.querySelector('.label');
+            const lineType = layer.lineType || 'Continuous';
+            if (label) {
+                label.textContent = lineType;
+            }
+            ltypeBtn.title = `Cycle Layer Linetype (Current: ${lineType})`;
+        }
+
+        const weightBtn = document.getElementById('layerCycleLineWeight');
+        if (weightBtn) {
+            const label = weightBtn.querySelector('.label');
+            const lineWeight = layer.lineWeight || 'Default';
+            if (label) {
+                label.textContent = lineWeight;
+            }
+            weightBtn.title = `Cycle Layer Lineweight (Current: ${lineWeight})`;
+        }
     },
 
     onLayerChange() {
@@ -793,6 +846,55 @@ AUTOLISP:
                 this.log(`Layer "${name}" already exists.`, 'error');
             }
         }
+    },
+
+    toggleCurrentLayerVisibility() {
+        const layer = CAD.getLayer(CAD.currentLayer);
+        if (!layer) return;
+        layer.visible = layer.visible === false ? true : false;
+        this.updateLayerUI();
+        Renderer.draw();
+        this.log(`Layer "${layer.name}" ${layer.visible ? 'On' : 'Off'}.`);
+    },
+
+    toggleCurrentLayerFrozen() {
+        const layer = CAD.getLayer(CAD.currentLayer);
+        if (!layer) return;
+        layer.frozen = !layer.frozen;
+        this.updateLayerUI();
+        Renderer.draw();
+        this.log(`Layer "${layer.name}" ${layer.frozen ? 'Frozen' : 'Thawed'}.`);
+    },
+
+    toggleCurrentLayerLock() {
+        const layer = CAD.getLayer(CAD.currentLayer);
+        if (!layer) return;
+        layer.locked = !layer.locked;
+        this.updateLayerUI();
+        this.log(`Layer "${layer.name}" ${layer.locked ? 'Locked' : 'Unlocked'}.`);
+    },
+
+    cycleCurrentLayerLineType() {
+        const layer = CAD.getLayer(CAD.currentLayer);
+        if (!layer) return;
+        const types = ['Continuous', 'Dashed', 'Dotted', 'DashDot', 'Center', 'Phantom', 'Hidden'];
+        const currentIdx = types.indexOf(layer.lineType || 'Continuous');
+        const nextIdx = (currentIdx + 1) % types.length;
+        layer.lineType = types[nextIdx];
+        this.updateLayerUI();
+        Renderer.draw();
+        this.log(`Layer "${layer.name}" linetype: ${layer.lineType}.`);
+    },
+
+    cycleCurrentLayerLineWeight() {
+        const layer = CAD.getLayer(CAD.currentLayer);
+        if (!layer) return;
+        const weights = ['Default', '0.05', '0.09', '0.13', '0.15', '0.18', '0.20', '0.25', '0.30', '0.35', '0.40', '0.50', '0.60', '0.70', '0.80', '0.90', '1.00', '1.20', '1.40', '2.00'];
+        const currentIdx = weights.indexOf(layer.lineWeight || 'Default');
+        const nextIdx = (currentIdx + 1) % weights.length;
+        layer.lineWeight = weights[nextIdx];
+        this.updateLayerUI();
+        this.log(`Layer "${layer.name}" lineweight: ${layer.lineWeight}.`);
     },
 
     // ==========================================

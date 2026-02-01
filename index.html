@@ -151,6 +151,28 @@
                             </button>
                             <input type="hidden" id="layerColor" value="#ffffff">
                         </div>
+                        <div class="layer-tools">
+                            <button class="tool-btn small" id="layerToggleVisibility" onclick="UI.toggleCurrentLayerVisibility()" title="Layer On/Off">
+                                <i class="icon">&#9679;</i>
+                                <span class="label">On/Off</span>
+                            </button>
+                            <button class="tool-btn small" id="layerToggleFreeze" onclick="UI.toggleCurrentLayerFrozen()" title="Freeze/Thaw Layer">
+                                <i class="icon">&#10052;</i>
+                                <span class="label">Freeze</span>
+                            </button>
+                            <button class="tool-btn small" id="layerToggleLock" onclick="UI.toggleCurrentLayerLock()" title="Lock/Unlock Layer">
+                                <i class="icon">&#128274;</i>
+                                <span class="label">Lock</span>
+                            </button>
+                            <button class="tool-btn small show-label" id="layerCycleLineType" onclick="UI.cycleCurrentLayerLineType()" title="Cycle Layer Linetype">
+                                <i class="icon">&#9472;</i>
+                                <span class="label">Linetype</span>
+                            </button>
+                            <button class="tool-btn small show-label" id="layerCycleLineWeight" onclick="UI.cycleCurrentLayerLineWeight()" title="Cycle Layer Lineweight">
+                                <i class="icon">&#9482;</i>
+                                <span class="label">Lineweight</span>
+                            </button>
+                        </div>
                     </div>
                     <div class="ribbon-panel-title">Layers</div>
                 </div>
