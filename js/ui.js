@@ -30,12 +30,14 @@ const UI = {
             statusGrid: document.getElementById('statusGrid'),
             statusOrtho: document.getElementById('statusOrtho'),
             statusPolar: document.getElementById('statusPolar'),
-            propertiesPanel: document.getElementById('propertiesPanel')
+            propertiesPanel: document.getElementById('propertiesPanel'),
+            viewportTabs: document.getElementById('viewportTabs')
         };
 
         // Setup event listeners
         this.setupEventListeners();
         this.updateLayerUI();
+        this.renderLayoutTabs();
         this.updateStatusBar();
         this.updateCommandPrompt(null);
 
@@ -43,6 +45,47 @@ const UI = {
         this.focusCommandLine();
 
         return this;
+    },
+
+    renderLayoutTabs() {
+        const tabs = this.elements.viewportTabs;
+        if (!tabs) return;
+        tabs.innerHTML = '';
+
+        CAD.layouts.forEach(layout => {
+            const tab = document.createElement('div');
+            tab.className = `viewport-tab${layout.name === CAD.currentLayout ? ' active' : ''}`;
+            tab.textContent = layout.name;
+            tab.addEventListener('click', () => {
+                CAD.setCurrentLayout(layout.name);
+                this.renderLayoutTabs();
+                Renderer.draw();
+            });
+            tabs.appendChild(tab);
+        });
+
+        const addTab = document.createElement('button');
+        addTab.className = 'viewport-tab viewport-tab-add';
+        addTab.textContent = '+';
+        addTab.title = 'Add Layout';
+        addTab.addEventListener('click', () => {
+            this.addLayout();
+        });
+        tabs.appendChild(addTab);
+    },
+
+    addLayout() {
+        let index = 1;
+        let name = `Layout${index}`;
+        while (CAD.getLayout(name)) {
+            index += 1;
+            name = `Layout${index}`;
+        }
+        CAD.addLayout(name);
+        CAD.setCurrentLayout(name);
+        this.renderLayoutTabs();
+        Renderer.draw();
+        UI.log(`LAYOUT: Created ${name}.`, 'success');
     },
 
     // ==========================================
@@ -449,12 +492,15 @@ DIMENSION COMMANDS:
   DIMALIGNED    - Aligned dimension
   DIMRAD        - Radius dimension
   DIMDIA        - Diameter dimension
+  DIMSTYLE      - Manage dimension styles
 
 UTILITY COMMANDS:
   U, UNDO       - Undo last action
   REDO          - Redo last undo
   Z, ZOOM       - Zoom view (E=extents)
   P, PAN        - Pan view
+  LAYOUT        - Manage layouts/paperspace
+  LAYERSTATE    - Save/restore layer states
   DIST, DI      - Measure distance
   AREA, AA      - Measure area
   LIST, LI      - List object properties
@@ -1015,6 +1061,7 @@ AUTOLISP:
         if (selected.length === 1) {
             const entity = selected[0];
             panel.innerHTML = this.getEntityProperties(entity);
+            this.bindEntityColorControls(entity);
         } else {
             panel.innerHTML = `
                 <div class="property-group">
@@ -1029,6 +1076,9 @@ AUTOLISP:
     },
 
     getEntityProperties(entity) {
+        const resolvedColor = CAD.getEntityColor(entity);
+        const colorLabel = entity.color ? entity.color.toLowerCase() : 'ByLayer';
+        const byLayerDisabled = entity.color ? '' : ' disabled';
         let html = `
             <div class="property-group">
                 <div class="property-group-title">General</div>
@@ -1039,6 +1089,16 @@ AUTOLISP:
                 <div class="property-row">
                     <span class="property-label">Layer</span>
                     <span class="property-value">${entity.layer}</span>
+                </div>
+                <div class="property-row">
+                    <span class="property-label">Color</span>
+                    <div class="property-value property-value--actions">
+                        <button class="property-color-btn" data-action="entity-color" title="Set entity color">
+                            <span class="property-color-swatch" style="background: ${resolvedColor};"></span>
+                            <span class="property-color-label">${colorLabel}</span>
+                        </button>
+                        <button class="property-color-bylayer" data-action="entity-color-bylayer"${byLayerDisabled}>ByLayer</button>
+                    </div>
                 </div>
             </div>
         `;
@@ -1228,6 +1288,33 @@ AUTOLISP:
         }
 
         return html;
+    },
+
+    bindEntityColorControls(entity) {
+        const panel = this.elements.propertiesPanel;
+        if (!panel || !entity) return;
+
+        const colorButton = panel.querySelector('[data-action="entity-color"]');
+        if (colorButton) {
+            colorButton.addEventListener('click', () => {
+                const currentColor = entity.color || CAD.getEntityColor(entity);
+                this.showColorPicker(currentColor, (color) => {
+                    CAD.updateEntity(entity.id, { color });
+                    this.updatePropertiesPanel();
+                    Renderer.draw();
+                });
+            });
+        }
+
+        const byLayerButton = panel.querySelector('[data-action="entity-color-bylayer"]');
+        if (byLayerButton) {
+            byLayerButton.addEventListener('click', () => {
+                if (!entity.color) return;
+                CAD.updateEntity(entity.id, { color: null });
+                this.updatePropertiesPanel();
+                Renderer.draw();
+            });
+        }
     },
 
     // ==========================================

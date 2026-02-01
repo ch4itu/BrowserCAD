@@ -63,6 +63,7 @@ Dimensioning and basic text tools are present; advanced styling is limited.
 - [x] Single Line Text (TEXT)
 - [x] Multiline Text (MTEXT)
 - [x] Text Properties (SCALETEXT, JUSTIFYTEXT)
+- [x] Dimension Variables (DIMTXT, DIMASZ, DIMSCALE, DIMDEC)
 - [x] Linear Dimension (DIMLINEAR)
 - [x] Aligned Dimension (DIMALIGNED)
 - [x] Angular Dimension (DIMANGULAR)
@@ -75,7 +76,7 @@ Dimensioning and basic text tools are present; advanced styling is limited.
 - [x] Dimension Space (DIMSPACE)
 - [x] Leaders (LEADER)
 - [x] Tables (TABLE)
-- [ ] Dimension Styles Manager (DIMSTYLE)
+- [x] Dimension Styles Manager (DIMSTYLE)
 - [ ] Multi-Leaders (MLEADER)
 - [ ] Fields (FIELD)
 - [ ] Geometric Tolerances (TOLERANCE)
@@ -90,8 +91,9 @@ Layer management is robust; advanced layer states are missing.
 - [x] Layer Merge (LAYMERGE)
 - [x] Match Properties (MATCHPROP)
 - [x] Change Properties (CHPROP)
-- [ ] Layer States Manager (LAYERSTATE)
-- [ ] ByBlock / ByLayer object property logic
+- [x] Entity Color Overrides (ByLayer default)
+- [x] Layer States Manager (LAYERSTATE)
+- [x] ByBlock / ByLayer object property logic
 
 ## 5) Blocks & References
 Basic internal block handling is present; external reference features are missing.
@@ -145,7 +147,8 @@ AutoLISP support exists; advanced IDE/integration does not.
 
 ## 9) Paper Space & Layouts (Missing)
 Currently Model Space only.
-- [ ] Layout Tabs
+Currently supports basic layout tabs with paper space backgrounds; viewports and plotting are still missing.
+- [x] Layout Tabs
 - [ ] Viewports (MVIEW)
 - [ ] Page Setup
 - [ ] Title Blocks

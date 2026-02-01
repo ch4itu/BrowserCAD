@@ -271,6 +271,16 @@ When multiple objects overlap at the click point, clicking again in the same spo
 
 Export also supports SVG and JSON formats via the title bar menu.
 
+## Properties & Styles
+
+The Properties panel reflects per-entity attributes, including color overrides (defaulting to ByLayer), and dimension variables can be adjusted via DIMTXT, DIMASZ, DIMSCALE, and DIMDEC commands.
+
+## Layouts & Layer States
+
+BrowserCAD includes basic layout tabs (Model + Paper Space) and a lightweight layer state manager. Use `LAYOUT` to create/switch/delete layouts, and `LAYERSTATE` to save/restore named layer configurations.
+
+Dimension styles can be managed via `DIMSTYLE`, which lets you save and switch between dimension variable presets.
+
 ## AutoLISP Guide
 
 BrowserCAD includes a lightweight AutoLISP interpreter for scripting and automation. Enter expressions in the command line using parentheses:

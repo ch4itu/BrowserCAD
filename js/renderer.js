@@ -84,6 +84,9 @@ const Renderer = {
             this.drawGrid();
         }
 
+        // Draw paperspace background if active
+        this.drawPaperLayout();
+
         // Draw entities
         this.drawEntities();
 
@@ -110,6 +113,35 @@ const Renderer = {
 
         // Draw UCS icon
         this.drawUCSIcon();
+    },
+
+    drawPaperLayout() {
+        const state = CAD;
+        const layout = state.getLayout(state.currentLayout);
+        if (!layout || layout.type !== 'paper' || !layout.paper) return;
+
+        const ctx = this.ctx;
+        const { width, height, margin } = layout.paper;
+
+        ctx.save();
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#666666';
+        ctx.lineWidth = 1 / state.zoom;
+        ctx.beginPath();
+        ctx.rect(0, 0, width, height);
+        ctx.fill();
+        ctx.stroke();
+
+        if (margin) {
+            ctx.strokeStyle = '#999999';
+            ctx.setLineDash([5 / state.zoom, 5 / state.zoom]);
+            ctx.beginPath();
+            ctx.rect(margin, margin, width - margin * 2, height - margin * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        ctx.restore();
     },
 
     // ==========================================
