@@ -111,6 +111,8 @@ const Commands = {
         'dimbase': 'dimbaseline',
         'dimcontinue': 'dimcontinue',
         'dimcont': 'dimcontinue',
+        'dimstyle': 'dimstyle',
+        'dstyle': 'dimstyle',
 
         // Utility commands
         'u': 'undo',
@@ -134,6 +136,9 @@ const Commands = {
         'laythw': 'laythw',
         'layon': 'layon',
         'layoff': 'layoff',
+        'layout': 'layout',
+        'laystate': 'layerstate',
+        'layerstate': 'layerstate',
         'id': 'id',
         'dist': 'distance',
         'di': 'distance',
@@ -553,6 +558,18 @@ const Commands = {
                 CAD.cmdOptions.dimBasePoint = { ...CAD.lastLinearDim.p2 };
                 UI.log('DIMCONTINUE: Specify next extension line origin:', 'prompt');
                 break;
+            case 'dimstyle':
+                CAD.cmdOptions.dimStyleStep = 'prompt';
+                UI.log(`DIMSTYLE: Current "${CAD.currentDimStyle}". [List/Set/Save] <Set>:`, 'prompt');
+                break;
+            case 'layout':
+                CAD.cmdOptions.layoutStep = 'prompt';
+                UI.log(`LAYOUT: [New/Set/List/Delete] <Set>:`, 'prompt');
+                break;
+            case 'layerstate':
+                CAD.cmdOptions.layerStateStep = 'prompt';
+                UI.log('LAYERSTATE: [Save/Restore/List/Delete] <Restore>:', 'prompt');
+                break;
 
             // Modify commands
             case 'erase':
@@ -895,6 +912,7 @@ const Commands = {
                     UI.log('New drawing started.');
                     Renderer.draw();
                     UI.updateLayerUI();
+                    UI.renderLayoutTabs();
                 }
                 this.finishCommand();
                 break;
@@ -1445,6 +1463,8 @@ const Commands = {
         UI.log('  FIND            Search and replace text');
         UI.log('  PURGE (PU)      Remove unused items');
         UI.log('  APPLOAD         Load AutoLISP scripts');
+        UI.log('  LAYOUT          Manage layouts/paperspace');
+        UI.log('  LAYERSTATE      Manage layer states');
         UI.log('');
 
         UI.log('--- Settings ---', 'info');
@@ -1455,6 +1475,7 @@ const Commands = {
         UI.log('  POLAR           Polar tracking');
         UI.log('  LINETYPE (LT)   Set linetype');
         UI.log('  LTSCALE         Linetype scale');
+        UI.log('  DIMSTYLE        Dimension style manager');
         UI.log('');
 
         UI.log('--- File Commands ---', 'info');
@@ -1522,8 +1543,11 @@ const Commands = {
             'dimdiameter': 'DIMDIAMETER (DDI): Dimension diameter. Select arc/circle, then place dimension.',
             'dimordinate': 'DIMORDINATE (DOR): Ordinate dimension. Click feature point, then leader endpoint. Type X/Y to force axis.',
             'qdim': 'QDIM: Quick dimension. Select objects, then click to place. Auto-generates dimensions.',
+            'dimstyle': 'DIMSTYLE: Manage dimension styles. Options: List/Set/Save.',
             'osnap': 'OSNAP: Object snap settings. Options: On/Off/End/Mid/Cen/Int/Per/Tan/Nea/All/None/List.',
             'layer': 'LAYER (LA): Layer management. Options: New (create), Set (current), On/Off (visibility), List.',
+            'layout': 'LAYOUT: Manage Model/Layout tabs. Options: New/Set/List/Delete.',
+            'layerstate': 'LAYERSTATE: Save/restore layer states. Options: Save/Restore/List/Delete.',
             'zoom': 'ZOOM (Z): Zoom view. Options: All/Extents/Window/Center. Scroll wheel also zooms.',
             'find': 'FIND: Search and replace text in all text/mtext entities.',
             'filter': 'FILTER (FI): Select entities by Type, Layer, or Color filter.',
@@ -6103,6 +6127,163 @@ const Commands = {
             return false;
         }
 
+        if (state.activeCmd === 'dimstyle') {
+            const step = state.cmdOptions.dimStyleStep || 'prompt';
+            if (step === 'prompt') {
+                const option = input.toLowerCase();
+                if (!option || option === 'set' || option === 's') {
+                    state.cmdOptions.dimStyleStep = 'set';
+                    UI.log('DIMSTYLE: Enter style name to set:', 'prompt');
+                } else if (option === 'list' || option === 'l') {
+                    const styles = CAD.dimStyles.map(style => style.name).join(', ') || 'None';
+                    UI.log(`DIMSTYLE: Available styles: ${styles}`);
+                    this.finishCommand(true);
+                } else if (option === 'save' || option === 'sa') {
+                    state.cmdOptions.dimStyleStep = 'save';
+                    UI.log('DIMSTYLE: Enter new style name to save current settings:', 'prompt');
+                } else {
+                    UI.log('DIMSTYLE: Invalid option. Use List/Set/Save.', 'error');
+                }
+                return true;
+            }
+            if (step === 'set') {
+                if (!CAD.applyDimStyle(input)) {
+                    UI.log(`DIMSTYLE: Style "${input}" not found.`, 'error');
+                } else {
+                    UI.log(`DIMSTYLE: Current style set to "${CAD.currentDimStyle}".`, 'success');
+                }
+                this.finishCommand(true);
+                return true;
+            }
+            if (step === 'save') {
+                if (!input) {
+                    UI.log('DIMSTYLE: Enter a style name.', 'error');
+                    return true;
+                }
+                CAD.saveCurrentDimStyle(input);
+                CAD.applyDimStyle(input);
+                UI.log(`DIMSTYLE: Style "${input}" saved.`, 'success');
+                this.finishCommand(true);
+                return true;
+            }
+        }
+
+        if (state.activeCmd === 'layout') {
+            const step = state.cmdOptions.layoutStep || 'prompt';
+            if (step === 'prompt') {
+                const option = input.toLowerCase();
+                if (!option || option === 'set' || option === 's') {
+                    state.cmdOptions.layoutStep = 'set';
+                    UI.log('LAYOUT: Enter layout name to set current:', 'prompt');
+                } else if (option === 'new' || option === 'n') {
+                    state.cmdOptions.layoutStep = 'new';
+                    UI.log('LAYOUT: Enter new layout name:', 'prompt');
+                } else if (option === 'list' || option === 'l') {
+                    const layouts = CAD.layouts.map(layout => layout.name).join(', ');
+                    UI.log(`LAYOUT: Available layouts: ${layouts}`);
+                    this.finishCommand(true);
+                } else if (option === 'delete' || option === 'd') {
+                    state.cmdOptions.layoutStep = 'delete';
+                    UI.log('LAYOUT: Enter layout name to delete:', 'prompt');
+                } else {
+                    UI.log('LAYOUT: Invalid option. Use New/Set/List/Delete.', 'error');
+                }
+                return true;
+            }
+            if (step === 'new') {
+                if (!input) {
+                    UI.log('LAYOUT: Enter a layout name.', 'error');
+                    return true;
+                }
+                if (!CAD.addLayout(input)) {
+                    UI.log(`LAYOUT: Layout "${input}" already exists.`, 'error');
+                } else {
+                    CAD.setCurrentLayout(input);
+                    UI.renderLayoutTabs();
+                    Renderer.draw();
+                    UI.log(`LAYOUT: Created "${input}".`, 'success');
+                }
+                this.finishCommand(true);
+                return true;
+            }
+            if (step === 'set') {
+                if (!CAD.setCurrentLayout(input)) {
+                    UI.log(`LAYOUT: Layout "${input}" not found.`, 'error');
+                } else {
+                    UI.renderLayoutTabs();
+                    Renderer.draw();
+                    UI.log(`LAYOUT: Current layout set to "${input}".`, 'success');
+                }
+                this.finishCommand(true);
+                return true;
+            }
+            if (step === 'delete') {
+                if (!CAD.removeLayout(input)) {
+                    UI.log(`LAYOUT: Unable to delete layout "${input}".`, 'error');
+                } else {
+                    UI.renderLayoutTabs();
+                    Renderer.draw();
+                    UI.log(`LAYOUT: Deleted "${input}".`, 'success');
+                }
+                this.finishCommand(true);
+                return true;
+            }
+        }
+
+        if (state.activeCmd === 'layerstate') {
+            const step = state.cmdOptions.layerStateStep || 'prompt';
+            if (step === 'prompt') {
+                const option = input.toLowerCase();
+                if (!option || option === 'restore' || option === 'r') {
+                    state.cmdOptions.layerStateStep = 'restore';
+                    UI.log('LAYERSTATE: Enter layer state name to restore:', 'prompt');
+                } else if (option === 'save' || option === 's') {
+                    state.cmdOptions.layerStateStep = 'save';
+                    UI.log('LAYERSTATE: Enter name to save current layer state:', 'prompt');
+                } else if (option === 'list' || option === 'l') {
+                    const names = Object.keys(CAD.layerStates);
+                    UI.log(`LAYERSTATE: Available states: ${names.length ? names.join(', ') : 'None'}`);
+                    this.finishCommand(true);
+                } else if (option === 'delete' || option === 'd') {
+                    state.cmdOptions.layerStateStep = 'delete';
+                    UI.log('LAYERSTATE: Enter layer state name to delete:', 'prompt');
+                } else {
+                    UI.log('LAYERSTATE: Invalid option. Use Save/Restore/List/Delete.', 'error');
+                }
+                return true;
+            }
+            if (step === 'save') {
+                if (!input) {
+                    UI.log('LAYERSTATE: Enter a name.', 'error');
+                    return true;
+                }
+                CAD.saveLayerState(input);
+                UI.log(`LAYERSTATE: Saved "${input}".`, 'success');
+                this.finishCommand(true);
+                return true;
+            }
+            if (step === 'restore') {
+                if (!CAD.restoreLayerState(input)) {
+                    UI.log(`LAYERSTATE: State "${input}" not found.`, 'error');
+                } else {
+                    UI.updateLayerUI();
+                    Renderer.draw();
+                    UI.log(`LAYERSTATE: Restored "${input}".`, 'success');
+                }
+                this.finishCommand(true);
+                return true;
+            }
+            if (step === 'delete') {
+                if (!CAD.deleteLayerState(input)) {
+                    UI.log(`LAYERSTATE: State "${input}" not found.`, 'error');
+                } else {
+                    UI.log(`LAYERSTATE: Deleted "${input}".`, 'success');
+                }
+                this.finishCommand(true);
+                return true;
+            }
+        }
+
         if (state.activeCmd === 'leader' && state.step === 2) {
             this.completeLeaderCommand(input);
             return true;
@@ -6554,6 +6735,7 @@ const Commands = {
             // DIMTXT setting (dimension text height)
             if (state.activeCmd === 'dimtxt') {
                 CAD.dimTextHeight = Math.abs(num) || 2.5;
+                CAD.saveCurrentDimStyle(CAD.currentDimStyle);
                 UI.log(`DIMTXT set to ${CAD.dimTextHeight}`);
                 Renderer.draw();
                 this.finishCommand();
@@ -6563,6 +6745,7 @@ const Commands = {
             // DIMASZ setting (dimension arrow size)
             if (state.activeCmd === 'dimasz') {
                 CAD.dimArrowSize = Math.abs(num) || 2.5;
+                CAD.saveCurrentDimStyle(CAD.currentDimStyle);
                 UI.log(`DIMASZ set to ${CAD.dimArrowSize}`);
                 Renderer.draw();
                 this.finishCommand();
@@ -6572,6 +6755,7 @@ const Commands = {
             // DIMSCALE setting (overall dimension scale)
             if (state.activeCmd === 'dimscale') {
                 CAD.dimScale = Math.abs(num) || 1;
+                CAD.saveCurrentDimStyle(CAD.currentDimStyle);
                 UI.log(`DIMSCALE set to ${CAD.dimScale}`);
                 Renderer.draw();
                 this.finishCommand();
@@ -6580,6 +6764,7 @@ const Commands = {
 
             if (state.activeCmd === 'dimdec') {
                 CAD.dimPrecision = Math.max(0, Math.round(num));
+                CAD.saveCurrentDimStyle(CAD.currentDimStyle);
                 UI.log(`DIMDEC set to ${CAD.dimPrecision}`);
                 Renderer.draw();
                 this.finishCommand();

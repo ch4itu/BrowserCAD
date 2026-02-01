@@ -727,6 +727,7 @@ const MobileUI = {
                     UI.log('New drawing started.');
                     Renderer.draw();
                     UI.updateLayerUI();
+                    UI.renderLayoutTabs();
                 }
                 break;
             case 'open':        Storage.openFile(); break;
@@ -744,8 +745,11 @@ const MobileUI = {
             case 'purge':       App.executeCommand('purge'); break;
             case 'find':        App.executeCommand('find'); break;
             case 'settings':
-                UI.log('Settings: Use command line for GRID, SNAP, ORTHO, OSNAP, POLAR, LTSCALE, DIMSCALE');
+                UI.log('Settings: Use command line for GRID, SNAP, ORTHO, OSNAP, POLAR, LTSCALE, DIMSCALE, DIMSTYLE, LAYOUT, LAYERSTATE');
                 break;
+            case 'layout':     App.executeCommand('layout'); break;
+            case 'dimstyle':   App.executeCommand('dimstyle'); break;
+            case 'layerstate': App.executeCommand('layerstate'); break;
             case 'help':        App.executeCommand('help'); break;
             case 'driveopen':   Storage.openFromDrive(); break;
             case 'drivesave':   Storage.saveToDrivePrompt(); break;

@@ -196,6 +196,25 @@
                     <div class="ribbon-panel-title">Utilities</div>
                 </div>
 
+                <!-- Styles & Layouts Panel -->
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" data-cmd="dimstyle" onclick="App.executeCommand('dimstyle')" title="Dimension Styles (DIMSTYLE)">
+                            <i class="icon">&#128396;</i>
+                            <span class="label">Dim Style</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="layout" onclick="App.executeCommand('layout')" title="Layouts (LAYOUT)">
+                            <i class="icon">&#128196;</i>
+                            <span class="label">Layout</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="layerstate" onclick="App.executeCommand('layerstate')" title="Layer States (LAYERSTATE)">
+                            <i class="icon">&#9776;</i>
+                            <span class="label">Layer State</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Layouts</div>
+                </div>
+
                 <!-- Blocks Panel -->
                 <div class="ribbon-panel">
                     <div class="ribbon-panel-content">
@@ -605,11 +624,7 @@
             <!-- Viewport Container -->
             <div class="viewport-container">
                 <!-- Viewport Tabs -->
-                <div class="viewport-tabs">
-                    <div class="viewport-tab active">
-                        Model
-                    </div>
-                </div>
+                <div class="viewport-tabs" id="viewportTabs"></div>
 
                 <!-- Canvas Viewport -->
                 <div class="viewport" id="viewport">
@@ -797,6 +812,9 @@
                 <button class="mobile-tool-btn" onclick="App.executeCommand('area')"><i class="m-icon">&#9633;</i><span class="m-label">Area</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('list')"><i class="m-icon">&#9776;</i><span class="m-label">List</span></button>
                 <button class="mobile-tool-btn" onclick="MobileUI.showLayerPanel()"><i class="m-icon">&#9783;</i><span class="m-label">Layer</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('layout')"><i class="m-icon">&#128196;</i><span class="m-label">Layout</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('dimstyle')"><i class="m-icon">&#128396;</i><span class="m-label">DimStyle</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('layerstate')"><i class="m-icon">&#9776;</i><span class="m-label">LayerState</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('help')"><i class="m-icon">?</i><span class="m-label">Help</span></button>
             </div>
             <!-- Snap controls -->
@@ -993,6 +1011,9 @@
             <div class="mobile-menu-section">
                 <div class="mobile-menu-section-title">Settings</div>
                 <div class="mobile-menu-item" onclick="MobileUI.menuAction('settings')"><i class="m-icon">&#9881;</i> Drawing Settings</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('layout')"><i class="m-icon">&#128196;</i> Layouts</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('dimstyle')"><i class="m-icon">&#128396;</i> Dim Styles</div>
+                <div class="mobile-menu-item" onclick="MobileUI.menuAction('layerstate')"><i class="m-icon">&#9776;</i> Layer States</div>
                 <div class="mobile-menu-item" onclick="MobileUI.menuAction('help')"><i class="m-icon">?</i> Help</div>
             </div>
         </div>

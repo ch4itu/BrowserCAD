@@ -83,6 +83,7 @@ const Storage = {
             const data = JSON.parse(saved);
             CAD.fromJSON(data);
             UI.updateLayerUI();
+            UI.renderLayoutTabs();
             Renderer.draw();
             UI.log('Drawing loaded from local storage.');
             return true;
@@ -1246,6 +1247,7 @@ const Storage = {
                 const data = JSON.parse(e.target.result);
                 CAD.fromJSON(data);
                 UI.updateLayerUI();
+                UI.renderLayoutTabs();
                 Renderer.draw();
                 UI.log('Drawing imported from JSON.');
             } catch (err) {
@@ -1318,6 +1320,7 @@ const Storage = {
                     });
 
                     UI.updateLayerUI();
+                    UI.renderLayoutTabs();
                     Renderer.draw();
                     Commands.zoomExtents();
                     const blockCount = Object.keys(CAD.blocks).length;
@@ -2772,6 +2775,7 @@ const Storage = {
             }
 
             UI.updateLayerUI();
+            UI.renderLayoutTabs();
             Renderer.draw();
 
             // Remember the file ID so we can update it later
