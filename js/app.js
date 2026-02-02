@@ -693,6 +693,7 @@ const MobileUI = {
 
         if (this._els.input) {
             this._els.input.readOnly = false;
+            this._els.input.inputMode = 'text';
             this._els.input.focus();
         }
 
@@ -729,14 +730,16 @@ const MobileUI = {
             };
             this._els.input?.addEventListener('input', syncMobileInput);
 
-            const syncInput = () => {
-                this._numpadValue = this._els.cmdInput.value;
-                if (this._els.input) {
-                    this._els.input.value = this._numpadValue;
+            const submitOnEnter = (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    this.submitInput();
+                    if (this._els.input) {
+                        this._els.input.blur();
+                    }
                 }
             };
-
-            this._els.cmdInput.addEventListener('input', syncInput);
+            this._els.input?.addEventListener('keydown', submitOnEnter);
 
             // Close on Enter or blur
             const closeKeyboard = () => {
@@ -752,6 +755,7 @@ const MobileUI = {
                 this._els.cmdInput.removeEventListener('blur', closeKeyboard);
                 this._els.cmdInput.removeEventListener('input', syncInput);
                 this._els.input?.removeEventListener('input', syncMobileInput);
+                this._els.input?.removeEventListener('keydown', submitOnEnter);
                 if (this._els.input) {
                     this._els.input.readOnly = true;
                 }
