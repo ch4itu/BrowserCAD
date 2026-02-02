@@ -47,6 +47,7 @@ const Renderer = {
         this.viewport = document.getElementById(viewportId);
 
         this.resize();
+        requestAnimationFrame(() => this.resize());
         window.addEventListener('resize', () => this.resize());
 
         return this;
