@@ -72,7 +72,7 @@ body {
     display: flex;
     flex-direction: column;
     height: 100vh;      /* Fallback */
-    height: 100svh;     /* Standard fix for mobile landscape */
+    height: 100svh;     /* Required for mobile browsers */
     width: 100vw;
     overflow: hidden;
 }
@@ -2360,25 +2360,61 @@ body {
 }
 
 /* Landscape phones */
-@media (max-width: 768px) and (max-height: 450px) {
-    .title-bar { height: 32px; }
+/* ============================================
+   ENHANCED LANDSCAPE MOBILE SUPPORT
+   ============================================ */
+
+/* Target any device that is short (like a phone in landscape) 
+   regardless of how wide it is. */
+@media (max-height: 600px) and (orientation: landscape) {
     
-    /* FIX: We removed the line that hid the .mobile-toolbar-tabs here */
+    /* 1. FORCE HIDE DESKTOP ELEMENTS 
+       (Prevents ribbon from showing on high-res phones) */
+    .title-bar .menu-bar, 
+    .title-bar .file-name,
+    .ribbon, 
+    .panel-left, 
+    .viewport-tabs, 
+    .status-bar,
+    .command-panel { 
+        display: none !important; 
+    }
+
+    /* 2. FORCE SHOW MOBILE ELEMENTS */
+    .mobile-draw-bar { display: flex !important; }
+    .mobile-menu-btn { display: flex !important; }
+    .mobile-quick-actions { display: flex !important; }
+    .mobile-coords-overlay { display: block !important; }
     
-    .mobile-toolbar-tabs { display: flex; } /* Ensure tabs are visible */
+    /* Show Bottom Toolbar (unless numpad is open) */
+    .mobile-toolbar { 
+        display: flex !important; 
+        flex-direction: column;
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+    /* Respect numpad hiding logic */
+    .mobile-toolbar.numpad-open { display: none !important; }
+
+    /* 3. FIX LAYOUT & VISIBILITY */
+    .title-bar { height: 32px; padding: 0 10px; }
     
-    /* FIX: Only force flex on the ACTIVE row, otherwise all rows stack up */
+    /* CRITICAL FIX: Ensure Tabs are VISIBLE */
+    .mobile-toolbar-tabs { display: flex !important; } 
+
+    /* Layout: Active tools in one row, hide others */
     .mobile-tool-row.active { display: flex !important; flex-wrap: nowrap; }
     .mobile-tool-row:not(.active) { display: none !important; }
-    
-    .mobile-quick-actions { top: 4px; right: 4px; gap: 4px; }
-    .mobile-quick-btn { width: 34px; height: 34px; font-size: 16px; }
 
+    /* 4. COMPACT SIZING FOR SHORT SCREENS */
     .mdb-prompt-row { padding: 4px 10px 2px; }
     .mdb-actions { padding: 2px 8px 4px; }
     .mdb-btn { padding: 4px 10px; min-height: 30px; font-size: 11px; }
     .nk { padding: 8px 4px; font-size: 18px; min-height: 38px; }
     .numpad-grid { gap: 4px; }
+    
+    /* Adjust floating buttons */
+    .mobile-quick-actions { top: 4px; right: 4px; gap: 4px; }
+    .mobile-quick-btn { width: 34px; height: 34px; font-size: 16px; }
 }
 
 /* Safe area for notched phones */
