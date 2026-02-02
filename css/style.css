@@ -1,8 +1,8 @@
 /* ============================================
-   HTMLCAD - AutoCAD-like CSS Theme
+   HTMLCAD - CAD-like CSS Theme
    ============================================ */
 
-/* CSS Variables - AutoCAD Color Scheme */
+/* CSS Variables - CAD Color Scheme */
 :root {
     /* Main colors */
     --bg-dark: #1e1e1e;
@@ -1678,6 +1678,18 @@ body {
 
 .mdb-actions::-webkit-scrollbar { display: none; }
 
+.mdb-subactions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.mdb-subaction {
+    background: var(--bg-lighter);
+    color: var(--text-primary);
+}
+
 .mdb-btn {
     display: flex;
     align-items: center;
@@ -1959,7 +1971,7 @@ body {
 }
 
 /* Menu overlay & drawer */
-/* Layer Manager Panel (AutoCAD-style) */
+/* Layer Manager Panel (CAD-style) */
 .layer-mgr-overlay {
     display: none;
     position: fixed;

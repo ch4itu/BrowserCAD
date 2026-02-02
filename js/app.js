@@ -431,6 +431,7 @@ const MobileUI = {
             inputRow:     document.getElementById('mdbInputRow'),
             input:        document.getElementById('mdbInput'),
             actions:      document.getElementById('mdbActions'),
+            subActions:   document.getElementById('mdbSubActions'),
             doneBtn:      document.getElementById('mdbDone'),
             closeBtn:     document.getElementById('mdbClose'),
             numpadBtn:    document.getElementById('mdbNumpadBtn'),
@@ -484,6 +485,8 @@ const MobileUI = {
         if (this._els.closeBtn) {
             this._els.closeBtn.classList.toggle('visible', closable && hasPoints);
         }
+
+        this.updateSubActions();
     },
 
     /**
@@ -511,6 +514,42 @@ const MobileUI = {
                 this.hideNumpad();
             }
         }
+
+        this.updateSubActions();
+    },
+
+    updateSubActions() {
+        if (!this._els || !this._els.subActions) return;
+
+        const actions = [];
+        const cmd = CAD.activeCmd || '';
+
+        if (cmd === 'polyline') {
+            actions.push({ label: 'Arc', value: 'A' });
+            actions.push({ label: 'Line', value: 'L' });
+            actions.push({ label: 'Close', value: 'C' });
+            actions.push({ label: 'Undo', value: 'U' });
+        } else if (cmd === 'spline') {
+            actions.push({ label: 'Close', value: 'C' });
+            actions.push({ label: 'Undo', value: 'U' });
+        } else if (cmd === 'hatch') {
+            actions.push({ label: 'Solid', value: 'solid' });
+            actions.push({ label: 'Angle', value: 'angle' });
+            actions.push({ label: 'Cross', value: 'cross' });
+            actions.push({ label: 'Dots', value: 'dots' });
+            actions.push({ label: 'List', value: 'list' });
+        }
+
+        this._els.subActions.innerHTML = '';
+        if (!actions.length) return;
+
+        actions.forEach(action => {
+            const btn = document.createElement('button');
+            btn.className = 'mdb-btn mdb-subaction';
+            btn.textContent = action.label;
+            btn.addEventListener('click', () => this.submitValue(action.value));
+            this._els.subActions.appendChild(btn);
+        });
     },
 
     // ==========================================
@@ -593,7 +632,7 @@ const MobileUI = {
     submitInput() {
         if (!this._els) return;
 
-        const value = this._numpadValue || '';
+        const value = this._numpadValue || this._els.cmdInput?.value || this._els.input?.value || '';
 
         // Route through the main command input system
         if (this._els.cmdInput) {
@@ -663,6 +702,15 @@ const MobileUI = {
             this._els.cmdInput.style.fontSize = '16px';
             this._els.cmdInput.focus();
 
+            const syncInput = () => {
+                this._numpadValue = this._els.cmdInput.value;
+                if (this._els.input) {
+                    this._els.input.value = this._numpadValue;
+                }
+            };
+
+            this._els.cmdInput.addEventListener('input', syncInput);
+
             // Close on Enter or blur
             const closeKeyboard = () => {
                 panel.style.display = '';
@@ -675,6 +723,7 @@ const MobileUI = {
                 panel.style.borderTop = '';
                 if (history) history.style.display = '';
                 this._els.cmdInput.removeEventListener('blur', closeKeyboard);
+                this._els.cmdInput.removeEventListener('input', syncInput);
             };
 
             this._els.cmdInput.addEventListener('blur', closeKeyboard, { once: true });
@@ -784,7 +833,7 @@ const MobileUI = {
     },
 
     // ==========================================
-    // LAYER PROPERTIES MANAGER (AutoCAD-style)
+    // LAYER PROPERTIES MANAGER (CAD-style)
     // ==========================================
 
     _selectedLayer: null,

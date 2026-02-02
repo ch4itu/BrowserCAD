@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="description" content="BrowserCAD - Professional CAD application in pure HTML/CSS/JavaScript with AutoCAD-like interface">
+    <meta name="description" content="BrowserCAD - Professional CAD application in pure HTML/CSS/JavaScript with CAD-like interface">
     <title>BrowserCAD - Web-Based CAD Application</title>
     <link rel="stylesheet" href="css/style.css">
 
@@ -706,6 +706,7 @@
                 <button class="mdb-input-clear" id="mdbInputClear" onclick="MobileUI.numpadClear()">&#10005;</button>
             </div>
             <div class="mdb-actions" id="mdbActions">
+                <div class="mdb-subactions" id="mdbSubActions"></div>
                 <button class="mdb-btn mdb-done" id="mdbDone" onclick="MobileUI.submitInput()">
                     &#10003; Done
                 </button>
@@ -846,7 +847,7 @@
         </div>
     </div>
 
-    <!-- AutoCAD-style Color Picker Dialog -->
+    <!-- CAD-style Color Picker Dialog -->
     <div class="color-picker-dialog" id="colorPickerDialog" style="display: none;">
         <div class="color-picker-content">
             <div class="color-picker-header">
@@ -935,7 +936,7 @@
         </div>
     </div>
 
-    <!-- Layer Manager Panel (AutoCAD-style) -->
+    <!-- Layer Manager Panel (CAD-style) -->
     <div class="layer-mgr-overlay" id="layerMgrOverlay" onclick="MobileUI.closeLayerPanel(event)">
         <div class="layer-mgr-panel" id="layerMgrPanel">
             <div class="layer-mgr-header">
@@ -1025,8 +1026,9 @@
     <script src="js/geometry.js"></script>
     <script src="js/renderer.js"></script>
     <script src="js/commands.js"></script>
-    <script src="js/autolisp.js"></script>
+    <script src="js/lisp.js"></script>
     <script src="js/ui.js"></script>
+    <script src="js/dxf.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/app.js"></script>
 </body>
