@@ -632,7 +632,7 @@ const MobileUI = {
     submitInput() {
         if (!this._els) return;
 
-        const value = this._numpadValue || '';
+        const value = this._numpadValue || this._els.cmdInput?.value || this._els.input?.value || '';
 
         // Route through the main command input system
         if (this._els.cmdInput) {
@@ -702,6 +702,15 @@ const MobileUI = {
             this._els.cmdInput.style.fontSize = '16px';
             this._els.cmdInput.focus();
 
+            const syncInput = () => {
+                this._numpadValue = this._els.cmdInput.value;
+                if (this._els.input) {
+                    this._els.input.value = this._numpadValue;
+                }
+            };
+
+            this._els.cmdInput.addEventListener('input', syncInput);
+
             // Close on Enter or blur
             const closeKeyboard = () => {
                 panel.style.display = '';
@@ -714,6 +723,7 @@ const MobileUI = {
                 panel.style.borderTop = '';
                 if (history) history.style.display = '';
                 this._els.cmdInput.removeEventListener('blur', closeKeyboard);
+                this._els.cmdInput.removeEventListener('input', syncInput);
             };
 
             this._els.cmdInput.addEventListener('blur', closeKeyboard, { once: true });
