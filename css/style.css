@@ -1,8 +1,8 @@
 /* ============================================
-   HTMLCAD - AutoCAD-like CSS Theme
+   HTMLCAD - CAD-like CSS Theme
    ============================================ */
 
-/* CSS Variables - AutoCAD Color Scheme */
+/* CSS Variables - CAD Color Scheme */
 :root {
     /* Main colors */
     --bg-dark: #1e1e1e;
@@ -1959,7 +1959,7 @@ body {
 }
 
 /* Menu overlay & drawer */
-/* Layer Manager Panel (AutoCAD-style) */
+/* Layer Manager Panel (CAD-style) */
 .layer-mgr-overlay {
     display: none;
     position: fixed;
