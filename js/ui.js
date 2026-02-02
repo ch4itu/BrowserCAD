@@ -673,6 +673,9 @@ LISP:
         document.querySelectorAll('.tool-btn').forEach(btn => {
             btn.classList.remove('active');
         });
+        document.querySelectorAll('.mobile-tool-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
 
         this.activeButton = cmdName;
 
@@ -687,6 +690,16 @@ LISP:
             if (btn) {
                 btn.classList.add('active');
             }
+            const mobileButtons = document.querySelectorAll('.mobile-tool-btn');
+            mobileButtons.forEach(mobileBtn => {
+                const explicitCmd = mobileBtn.dataset.cmd;
+                const onclick = mobileBtn.getAttribute('onclick') || '';
+                const match = onclick.match(/executeCommand\\('([^']+)'\\)/);
+                const mobileCmd = explicitCmd || (match ? match[1] : null);
+                if (mobileCmd === cmdName) {
+                    mobileBtn.classList.add('active');
+                }
+            });
         }
     },
 
