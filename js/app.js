@@ -729,6 +729,15 @@ const MobileUI = {
             };
             this._els.input?.addEventListener('input', syncMobileInput);
 
+            const syncInput = () => {
+                this._numpadValue = this._els.cmdInput.value;
+                if (this._els.input) {
+                    this._els.input.value = this._numpadValue;
+                }
+            };
+
+            this._els.cmdInput.addEventListener('input', syncInput);
+
             // Close on Enter or blur
             const closeKeyboard = () => {
                 panel.style.display = '';
