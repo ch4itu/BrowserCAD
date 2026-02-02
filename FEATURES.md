@@ -1,6 +1,6 @@
-# AutoCAD vs. BrowserCAD Feature Coverage
+# CAD vs. BrowserCAD Feature Coverage
 
-This checklist compares commonly expected AutoCAD features against what is **present in this repository**. Items are checked when a matching command/UI exists in the codebase; unchecked items were not found during a repo scan.
+This checklist compares commonly expected CAD features against what is **present in this repository**. Items are checked when a matching command/UI exists in the codebase; unchecked items were not found during a repo scan.
 
 Legend: **[x] implemented**, **[ ] missing (not found in repo)**
 
@@ -138,8 +138,8 @@ A strong set of utilities and drafting aids is implemented.
 - [ ] Design Center (ADCENTER)
 
 ## 8) Programming & Scripting
-AutoLISP support exists; advanced IDE/integration does not.
-- [x] AutoLISP Interpreter
+Lisp support exists; advanced IDE/integration does not.
+- [x] Lisp Interpreter
 - [x] Load Script (APPLOAD)
 - [ ] Visual LISP Editor (VLIDE)
 - [ ] VBA / .NET Support
