@@ -180,9 +180,13 @@ const Storage = {
     },
 
     generateDXF() {
-        let dxf = '';
+        if (typeof DXF !== 'undefined' && DXF.export) {
+            return DXF.export(CAD);
+        }
+        return this.generateDXFLegacy();
+    },
 
-        // Calculate actual extents for header
+    getDrawingExtents() {
         let minX = 0, minY = 0, maxX = 1000, maxY = 1000;
         CAD.entities.forEach(entity => {
             const ext = CAD.getEntityExtents(entity);
@@ -193,6 +197,21 @@ const Storage = {
                 maxY = Math.max(maxY, ext.maxY);
             }
         });
+        return { minX, minY, maxX, maxY };
+    },
+
+    fromDxfPoint(point) {
+        return {
+            x: point?.x || 0,
+            y: -(point?.y || 0)
+        };
+    },
+
+    generateDXFLegacy() {
+        let dxf = '';
+
+        // Calculate actual extents for header
+        const { minX, minY, maxX, maxY } = this.getDrawingExtents();
 
         // Header section
         dxf += '0\nSECTION\n';
@@ -1108,7 +1127,7 @@ const Storage = {
 
     getAciColor(hexColor) {
         // Simplified mapping - return white (7) for now
-        // A full implementation would map to AutoCAD Color Index
+        // A full implementation would map to CAD Color Index
         const rgb = Utils.hexToRgb(hexColor);
         if (!rgb) return 7;
 
@@ -1265,20 +1284,15 @@ const Storage = {
                 const content = e.target.result;
                 UI.log(`File loaded, parsing DXF (${content.length} bytes)...`);
 
-                // Parse layers first
-                const layers = this.parseDXFLayers(content);
+                const moduleData = this.parseDXFWithModule(content);
 
-                // Parse entities + blocks
-                const entities = this.parseDXF(content);
-                const blocks = this.parseDXFBlocks(content);
-
-                if (entities.length > 0 || layers.length > 0) {
+                if (moduleData.entities.length > 0 || moduleData.layers.length > 0) {
                     // Clear existing and set up layers
                     CAD.entities = [];
 
                     // Add parsed layers (keep layer 0)
                     CAD.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false, lineWeight: 'Default' }];
-                    layers.forEach(layer => {
+                    moduleData.layers.forEach(layer => {
                         if (layer.name !== '0') {
                             CAD.layers.push(layer);
                         } else {
@@ -1287,10 +1301,10 @@ const Storage = {
                         }
                     });
 
-                    CAD.blocks = blocks;
+                    CAD.blocks = moduleData.blocks;
 
                     // Add entities
-                    entities.forEach(entity => {
+                    moduleData.entities.forEach(entity => {
                         // Ensure layer exists
                         if (!CAD.getLayer(entity.layer)) {
                             CAD.layers.push({
@@ -1324,7 +1338,7 @@ const Storage = {
                     Renderer.draw();
                     Commands.zoomExtents();
                     const blockCount = Object.keys(CAD.blocks).length;
-                    UI.log(`DXF imported: ${entities.length} entities, ${blockCount} blocks, ${CAD.layers.length} layers.`, 'success');
+                    UI.log(`DXF imported: ${moduleData.entities.length} entities, ${blockCount} blocks, ${CAD.layers.length} layers.`, 'success');
                 } else {
                     UI.log('No entities found in DXF file.', 'error');
                 }
@@ -1337,6 +1351,283 @@ const Storage = {
             UI.log('Error reading file: ' + e.target.error.message, 'error');
         };
         reader.readAsText(file);
+    },
+
+    parseDXFWithModule(content) {
+        if (typeof DXF === 'undefined' || !DXF.parse) {
+            return { layers: [], blocks: {}, entities: [] };
+        }
+        try {
+            const data = DXF.parse(content);
+            return this.convertDxfDataToCad(data);
+        } catch (err) {
+            console.warn('DXF module parse failed, falling back to legacy parser.', err);
+            return { layers: [], blocks: {}, entities: [] };
+        }
+    },
+
+    convertDxfDataToCad(data) {
+        if (!data) return { layers: [], blocks: {}, entities: [] };
+        const layers = Object.values(data.layers || {}).map(layer => ({
+            name: layer.name,
+            color: this.aciToHex(layer.color ?? 7),
+            visible: layer.visible !== false,
+            frozen: layer.frozen || false,
+            locked: layer.locked || false,
+            lineType: 'Continuous',
+            lineWeight: 'Default'
+        }));
+
+        const blocks = {};
+        Object.entries(data.blocks || {}).forEach(([name, block]) => {
+            blocks[name] = {
+                name,
+                basePoint: this.fromDxfPoint(block.origin || { x: 0, y: 0 }),
+                entities: (block.entities || [])
+                    .map(entity => this.mapDxfEntityToCad(entity, data, blocks))
+                    .filter(Boolean),
+                isXref: block.isXref || false,
+                path: block.path || ''
+            };
+        });
+
+        const entities = (data.entities || [])
+            .map(entity => this.mapDxfEntityToCad(entity, data, blocks))
+            .filter(Boolean);
+
+        return { layers, blocks, entities };
+    },
+
+    mapDxfEntityToCad(entity, data, blocks = {}) {
+        switch (entity.type) {
+            case 'line':
+                return {
+                    type: 'line',
+                    layer: entity.layer || '0',
+                    p1: this.fromDxfPoint(entity.p1),
+                    p2: this.fromDxfPoint(entity.p2)
+                };
+            case 'circle':
+                return {
+                    type: 'circle',
+                    layer: entity.layer || '0',
+                    center: this.fromDxfPoint(entity.center),
+                    r: entity.r || 0,
+                    hatch: entity.hatch || undefined,
+                    noStroke: entity.noStroke
+                };
+            case 'arc':
+                return {
+                    type: 'arc',
+                    layer: entity.layer || '0',
+                    center: this.fromDxfPoint(entity.center),
+                    r: entity.r || 0,
+                    start: -Utils.degToRad(entity.start || 0),
+                    end: -Utils.degToRad(entity.end || 0)
+                };
+            case 'lwpolyline': {
+                const points = (entity.points || []).map(point => ({
+                    x: point.x || 0,
+                    y: -(point.y || 0)
+                }));
+                const bulges = (entity.points || []).map(point => point.bulge || 0);
+                const resolvedPoints = this.expandBulgePolyline(points, bulges, entity.closed);
+                return {
+                    type: 'polyline',
+                    layer: entity.layer || '0',
+                    points: resolvedPoints,
+                    closed: entity.closed || false
+                };
+            }
+            case 'spline': {
+                const points = (entity.points || []).map(point => ({
+                    x: point.x || 0,
+                    y: -(point.y || 0)
+                }));
+                return {
+                    type: 'polyline',
+                    layer: entity.layer || '0',
+                    points,
+                    isSpline: true,
+                    closed: false
+                };
+            }
+            case 'ellipse':
+                return {
+                    type: 'ellipse',
+                    layer: entity.layer || '0',
+                    center: this.fromDxfPoint(entity.center),
+                    rx: entity.rx || 0,
+                    ry: entity.ry || 0,
+                    rotation: entity.rotation || 0
+                };
+            case 'text':
+                return {
+                    type: 'text',
+                    layer: entity.layer || '0',
+                    position: this.fromDxfPoint(entity.point),
+                    text: entity.text || '',
+                    height: entity.height || 10,
+                    rotation: entity.rotation || 0
+                };
+            case 'mtext':
+                return {
+                    type: 'mtext',
+                    layer: entity.layer || '0',
+                    position: this.fromDxfPoint(entity.point),
+                    text: entity.text || '',
+                    height: entity.height || 10,
+                    width: entity.width || 0,
+                    rotation: entity.rotation || 0
+                };
+            case 'point':
+                return {
+                    type: 'point',
+                    layer: entity.layer || '0',
+                    position: this.fromDxfPoint(entity.point)
+                };
+            case 'insert': {
+                return {
+                    type: 'block',
+                    layer: entity.layer || '0',
+                    blockName: entity.blockName || 'UNNAMED',
+                    insertPoint: this.fromDxfPoint(entity.p),
+                    scale: {
+                        x: entity.scale?.x ?? 1,
+                        y: entity.scale?.y ?? 1
+                    },
+                    rotation: -Utils.degToRad(entity.rotation || 0)
+                };
+            }
+            case 'hatch': {
+                const points = (entity.points || []).map(point => ({
+                    x: point.x || 0,
+                    y: -(point.y || 0)
+                }));
+                return {
+                    type: 'polyline',
+                    layer: entity.layer || '0',
+                    points,
+                    closed: true,
+                    hatch: { pattern: entity.pattern || 'solid' },
+                    noStroke: true
+                };
+            }
+            case 'solid': {
+                const points = (entity.points || []).map(point => ({
+                    x: point.x || 0,
+                    y: -(point.y || 0)
+                }));
+                return {
+                    type: 'polyline',
+                    layer: entity.layer || '0',
+                    points,
+                    closed: true,
+                    hatch: { pattern: 'solid' },
+                    noStroke: true
+                };
+            }
+            case 'leader': {
+                const points = (entity.points || []).map(point => ({
+                    x: point.x || 0,
+                    y: -(point.y || 0)
+                }));
+                const leader = {
+                    type: 'leader',
+                    layer: entity.layer || '0',
+                    points
+                };
+                if (entity.text) {
+                    leader.text = entity.text;
+                }
+                if (entity.height) {
+                    leader.height = entity.height;
+                }
+                return leader;
+            }
+            case 'xref': {
+                const blockName = this.getXrefBlockName(entity);
+                if (!blocks[blockName]) {
+                    blocks[blockName] = {
+                        name: blockName,
+                        basePoint: { x: 0, y: 0 },
+                        entities: [],
+                        isXref: true,
+                        path: entity.path || ''
+                    };
+                }
+                return {
+                    type: 'block',
+                    layer: entity.layer || '0',
+                    blockName,
+                    insertPoint: this.fromDxfPoint(entity.p),
+                    scale: {
+                        x: entity.scale?.x ?? 1,
+                        y: entity.scale?.y ?? 1
+                    },
+                    rotation: -Utils.degToRad(entity.rotation || 0)
+                };
+            }
+            case 'image': {
+                const src = DXF.utils.getImgPath(entity.defHandle, data);
+                const p1 = this.fromDxfPoint(entity.p);
+                const width = entity.size?.w || 0;
+                const height = entity.size?.h || 0;
+                const rotation = Math.atan2(entity.u?.y || 0, entity.u?.x || 1);
+                return {
+                    type: 'image',
+                    layer: entity.layer || '0',
+                    p1,
+                    p2: { x: p1.x + width, y: p1.y + height },
+                    width,
+                    height,
+                    rotation: -Utils.radToDeg(rotation),
+                    src: src || '',
+                    opacity: 0.6,
+                    scale: 1
+                };
+            }
+            default:
+                return null;
+        }
+    },
+
+    getXrefBlockName(entity) {
+        if (entity.blockName) return entity.blockName;
+        if (entity.path) {
+            const base = entity.path.split(/[\\/]/).pop() || 'XREF';
+            return base.replace(/\.[^/.]+$/, '') || 'XREF';
+        }
+        return 'XREF';
+    },
+
+    mergeDXFLayers(primaryLayers, moduleLayers) {
+        const byName = new Map();
+        primaryLayers.forEach(layer => byName.set(layer.name, layer));
+        moduleLayers.forEach(layer => {
+            if (!byName.has(layer.name)) {
+                byName.set(layer.name, layer);
+            }
+        });
+        return Array.from(byName.values());
+    },
+
+    mergeDXFBlocks(primaryBlocks, moduleBlocks) {
+        const merged = { ...primaryBlocks };
+        Object.entries(moduleBlocks).forEach(([name, block]) => {
+            if (!merged[name]) {
+                merged[name] = block;
+            } else {
+                merged[name].isXref = merged[name].isXref || block.isXref;
+                merged[name].path = merged[name].path || block.path;
+            }
+        });
+        return merged;
+    },
+
+    mergeDXFEntities(primaryEntities, moduleEntities) {
+        const extras = moduleEntities.filter(entity => entity.type === 'image');
+        return primaryEntities.concat(extras);
     },
 
     parseDXFLayers(content) {
@@ -1414,7 +1705,7 @@ const Storage = {
     },
 
     aciToHex(colorIndex) {
-        // AutoCAD Color Index to Hex color mapping
+        // CAD Color Index to Hex color mapping
         const aciColors = {
             1: '#ff0000',   // Red
             2: '#ffff00',   // Yellow
@@ -2796,14 +3087,12 @@ const Storage = {
      * Import DXF from a raw string (used by Drive open).
      */
     _importDXFFromString(content) {
-        const layers = this.parseDXFLayers(content);
-        const entities = this.parseDXF(content);
-        const blocks = this.parseDXFBlocks(content);
+        const moduleData = this.parseDXFWithModule(content);
 
         CAD.entities = [];
-        CAD.blocks = blocks;
+        CAD.blocks = moduleData.blocks;
         CAD.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false, lineWeight: 'Default' }];
-        layers.forEach(layer => {
+        moduleData.layers.forEach(layer => {
             if (layer.name !== '0') {
                 CAD.layers.push(layer);
             } else {
@@ -2811,7 +3100,7 @@ const Storage = {
             }
         });
 
-        entities.forEach(entity => {
+        moduleData.entities.forEach(entity => {
             if (!CAD.getLayer(entity.layer)) {
                 CAD.layers.push({
                     name: entity.layer,
@@ -2838,7 +3127,7 @@ const Storage = {
             });
         });
 
-        if (entities.length > 0) {
+        if (moduleData.entities.length > 0) {
             Commands.zoomExtents();
         }
     },
