@@ -1456,7 +1456,7 @@ const Renderer = {
 
         const screen = Utils.worldToScreen(state.cursor.x, state.cursor.y, state.pan, state.zoom);
 
-        // Check if full-screen crosshair is enabled (AutoCAD-like)
+        // Check if full-screen crosshair is enabled (CAD-like)
         const fullCrosshair = state.fullCrosshair || false;
 
         ctx.strokeStyle = this.colors.cursor;
@@ -1465,7 +1465,7 @@ const Renderer = {
         ctx.beginPath();
 
         if (fullCrosshair) {
-            // Full-screen crosshair (like AutoCAD with CURSORSIZE = 100)
+            // Full-screen crosshair (like CAD with CURSORSIZE = 100)
             ctx.moveTo(0, screen.y);
             ctx.lineTo(this.canvas.width, screen.y);
             ctx.moveTo(screen.x, 0);
