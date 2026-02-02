@@ -295,8 +295,8 @@ const DXF = {
                     layer,
                     center: { x: parseFloat(tags[10] ?? 0) || 0, y: parseFloat(tags[20] ?? 0) || 0 },
                     r: parseFloat(tags[40] ?? 0) || 0,
-                    start: parseFloat(tags[50] ?? 0) || 0,
-                    end: parseFloat(tags[51] ?? 0) || 0
+                    start: parseFloat(tags[51] ?? 0) || 0,
+                    end: parseFloat(tags[50] ?? 0) || 0
                 };
             }
 
@@ -754,7 +754,7 @@ const DXF = {
                     { x: entity.p1.x, y: -entity.p2.y }
                 ];
             } else if (entity.type === 'polyline') {
-                if (!entity.points || !DXF.utils.isPolygonClosed(entity.points)) {
+                if (!entity.points || (!entity.closed && !DXF.utils.isPolygonClosed(entity.points))) {
                     return '';
                 }
                 pts = entity.points.map(p => ({ x: p.x, y: -p.y }));
