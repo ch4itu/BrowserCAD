@@ -181,176 +181,9 @@ const Storage = {
 
     generateDXF() {
         if (typeof DXF !== 'undefined' && DXF.export) {
-            return this.generateDXFWithModule();
+            return DXF.export(CAD);
         }
         return this.generateDXFLegacy();
-    },
-
-    generateDXFWithModule() {
-        const exportState = this.buildDxfExportState();
-        const dxf = DXF.export(exportState);
-        const extraEntities = exportState.extraEntities || [];
-        if (!extraEntities.length) {
-            return dxf;
-        }
-        return this.insertDxfEntities(dxf, extraEntities);
-    },
-
-    buildDxfExportState() {
-        const extents = this.getDrawingExtents();
-        const layers = CAD.layers.map(layer => ({
-            name: layer.name,
-            hex: layer.color,
-            visible: layer.visible !== false,
-            frozen: layer.frozen || false,
-            locked: layer.locked || false
-        }));
-
-        const blocks = {};
-        Object.entries(CAD.blocks || {}).forEach(([name, block]) => {
-            blocks[name] = {
-                origin: this.toDxfPoint(block.basePoint || { x: 0, y: 0 }),
-                entities: (block.entities || [])
-                    .map(entity => this.mapCadEntityToDxf(entity))
-                    .filter(Boolean),
-                isXref: block.isXref || false,
-                path: block.path || ''
-            };
-        });
-
-        const supportedTypes = new Set(['line', 'circle', 'polyline', 'text', 'block', 'image']);
-        const entities = [];
-        const extraEntities = [];
-        CAD.entities.forEach(entity => {
-            if (supportedTypes.has(entity.type)) {
-                const mapped = this.mapCadEntityToDxf(entity, blocks);
-                if (mapped) {
-                    entities.push(mapped);
-                }
-            } else {
-                extraEntities.push(entity);
-            }
-        });
-
-        return {
-            layers,
-            blocks,
-            entities,
-            extMin: this.toDxfPoint({ x: extents.minX, y: extents.minY }),
-            extMax: this.toDxfPoint({ x: extents.maxX, y: extents.maxY }),
-            extraEntities
-        };
-    },
-
-    mapCadEntityToDxf(entity, blocks = {}) {
-        switch (entity.type) {
-            case 'line':
-                return {
-                    type: 'line',
-                    layer: entity.layer || '0',
-                    p1: this.toDxfPoint(entity.p1),
-                    p2: this.toDxfPoint(entity.p2)
-                };
-            case 'circle':
-                return {
-                    type: 'circle',
-                    layer: entity.layer || '0',
-                    center: this.toDxfPoint(entity.center),
-                    r: entity.r || 0
-                };
-            case 'polyline':
-                return {
-                    type: 'lwpolyline',
-                    layer: entity.layer || '0',
-                    closed: entity.closed || Utils.isPolygonClosed(entity.points || []),
-                    points: (entity.points || []).map(point => ({
-                        x: point.x,
-                        y: -point.y,
-                        bulge: 0
-                    }))
-                };
-            case 'text':
-                return {
-                    type: 'text',
-                    layer: entity.layer || '0',
-                    text: entity.text || '',
-                    point: this.toDxfPoint(entity.position),
-                    height: entity.height || 10,
-                    rotation: entity.rotation || 0
-                };
-            case 'block': {
-                const blockName = entity.blockName || 'UNNAMED';
-                const block = blocks[blockName];
-                const rotationDeg = -Utils.radToDeg(entity.rotation || 0);
-                const mapped = {
-                    type: block && block.isXref ? 'xref' : 'insert',
-                    layer: entity.layer || '0',
-                    blockName,
-                    p: this.toDxfPoint(entity.insertPoint),
-                    scale: {
-                        x: entity.scale?.x ?? 1,
-                        y: entity.scale?.y ?? 1
-                    },
-                    rotation: rotationDeg
-                };
-                if (block && block.isXref) {
-                    mapped.path = block.path || '';
-                }
-                return mapped;
-            }
-            case 'image': {
-                const p1 = this.toDxfPoint(entity.p1);
-                const width = entity.width || 0;
-                const height = entity.height || 0;
-                const rotation = Utils.degToRad(entity.rotation || 0);
-                const cos = Math.cos(rotation);
-                const sin = Math.sin(rotation);
-                return {
-                    type: 'image',
-                    layer: entity.layer || '0',
-                    p: p1,
-                    u: { x: width * cos, y: width * sin },
-                    v: { x: -height * sin, y: height * cos },
-                    size: { w: width, h: height },
-                    path: entity.src || ''
-                };
-            }
-            default:
-                return null;
-        }
-    },
-
-    insertDxfEntities(dxfText, entities) {
-        if (!entities.length) return dxfText;
-        const lines = dxfText.split('\n');
-        let entitiesStart = -1;
-        let entitiesEnd = -1;
-        for (let i = 0; i < lines.length - 1; i += 1) {
-            if (lines[i] === '2' && lines[i + 1] === 'ENTITIES') {
-                entitiesStart = i + 2;
-                break;
-            }
-        }
-        if (entitiesStart !== -1) {
-            for (let i = entitiesStart; i < lines.length - 1; i += 1) {
-                if (lines[i] === '0' && lines[i + 1] === 'ENDSEC') {
-                    entitiesEnd = i;
-                    break;
-                }
-            }
-        }
-        if (entitiesStart === -1 || entitiesEnd === -1) return dxfText;
-
-        const extraLines = entities
-            .map(entity => this.entityToDXF(entity).trim())
-            .filter(Boolean)
-            .join('\n')
-            .split('\n')
-            .filter(Boolean);
-
-        if (!extraLines.length) return dxfText;
-        lines.splice(entitiesEnd, 0, ...extraLines);
-        return lines.join('\n');
     },
 
     getDrawingExtents() {
@@ -365,13 +198,6 @@ const Storage = {
             }
         });
         return { minX, minY, maxX, maxY };
-    },
-
-    toDxfPoint(point) {
-        return {
-            x: point?.x || 0,
-            y: -(point?.y || 0)
-        };
     },
 
     fromDxfPoint(point) {
@@ -1460,23 +1286,13 @@ const Storage = {
 
                 const moduleData = this.parseDXFWithModule(content);
 
-                // Parse layers first
-                const layers = this.parseDXFLayers(content);
-
-                // Parse entities + blocks
-                const entities = this.parseDXF(content);
-                const blocks = this.parseDXFBlocks(content);
-                const mergedLayers = this.mergeDXFLayers(layers, moduleData.layers);
-                const mergedBlocks = this.mergeDXFBlocks(blocks, moduleData.blocks);
-                const mergedEntities = this.mergeDXFEntities(entities, moduleData.entities);
-
-                if (mergedEntities.length > 0 || mergedLayers.length > 0) {
+                if (moduleData.entities.length > 0 || moduleData.layers.length > 0) {
                     // Clear existing and set up layers
                     CAD.entities = [];
 
                     // Add parsed layers (keep layer 0)
                     CAD.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false, lineWeight: 'Default' }];
-                    mergedLayers.forEach(layer => {
+                    moduleData.layers.forEach(layer => {
                         if (layer.name !== '0') {
                             CAD.layers.push(layer);
                         } else {
@@ -1485,10 +1301,10 @@ const Storage = {
                         }
                     });
 
-                    CAD.blocks = mergedBlocks;
+                    CAD.blocks = moduleData.blocks;
 
                     // Add entities
-                    mergedEntities.forEach(entity => {
+                    moduleData.entities.forEach(entity => {
                         // Ensure layer exists
                         if (!CAD.getLayer(entity.layer)) {
                             CAD.layers.push({
@@ -1522,7 +1338,7 @@ const Storage = {
                     Renderer.draw();
                     Commands.zoomExtents();
                     const blockCount = Object.keys(CAD.blocks).length;
-                    UI.log(`DXF imported: ${mergedEntities.length} entities, ${blockCount} blocks, ${CAD.layers.length} layers.`, 'success');
+                    UI.log(`DXF imported: ${moduleData.entities.length} entities, ${blockCount} blocks, ${CAD.layers.length} layers.`, 'success');
                 } else {
                     UI.log('No entities found in DXF file.', 'error');
                 }
@@ -1596,7 +1412,18 @@ const Storage = {
                     type: 'circle',
                     layer: entity.layer || '0',
                     center: this.fromDxfPoint(entity.center),
-                    r: entity.r || 0
+                    r: entity.r || 0,
+                    hatch: entity.hatch || undefined,
+                    noStroke: entity.noStroke
+                };
+            case 'arc':
+                return {
+                    type: 'arc',
+                    layer: entity.layer || '0',
+                    center: this.fromDxfPoint(entity.center),
+                    r: entity.r || 0,
+                    start: -Utils.degToRad(entity.start || 0),
+                    end: -Utils.degToRad(entity.end || 0)
                 };
             case 'lwpolyline': {
                 const points = (entity.points || []).map(point => ({
@@ -1625,6 +1452,15 @@ const Storage = {
                     closed: false
                 };
             }
+            case 'ellipse':
+                return {
+                    type: 'ellipse',
+                    layer: entity.layer || '0',
+                    center: this.fromDxfPoint(entity.center),
+                    rx: entity.rx || 0,
+                    ry: entity.ry || 0,
+                    rotation: entity.rotation || 0
+                };
             case 'text':
                 return {
                     type: 'text',
@@ -1633,6 +1469,22 @@ const Storage = {
                     text: entity.text || '',
                     height: entity.height || 10,
                     rotation: entity.rotation || 0
+                };
+            case 'mtext':
+                return {
+                    type: 'mtext',
+                    layer: entity.layer || '0',
+                    position: this.fromDxfPoint(entity.point),
+                    text: entity.text || '',
+                    height: entity.height || 10,
+                    width: entity.width || 0,
+                    rotation: entity.rotation || 0
+                };
+            case 'point':
+                return {
+                    type: 'point',
+                    layer: entity.layer || '0',
+                    position: this.fromDxfPoint(entity.point)
                 };
             case 'insert': {
                 return {
@@ -1646,6 +1498,52 @@ const Storage = {
                     },
                     rotation: -Utils.degToRad(entity.rotation || 0)
                 };
+            }
+            case 'hatch': {
+                const points = (entity.points || []).map(point => ({
+                    x: point.x || 0,
+                    y: -(point.y || 0)
+                }));
+                return {
+                    type: 'polyline',
+                    layer: entity.layer || '0',
+                    points,
+                    closed: true,
+                    hatch: { pattern: entity.pattern || 'solid' },
+                    noStroke: true
+                };
+            }
+            case 'solid': {
+                const points = (entity.points || []).map(point => ({
+                    x: point.x || 0,
+                    y: -(point.y || 0)
+                }));
+                return {
+                    type: 'polyline',
+                    layer: entity.layer || '0',
+                    points,
+                    closed: true,
+                    hatch: { pattern: 'solid' },
+                    noStroke: true
+                };
+            }
+            case 'leader': {
+                const points = (entity.points || []).map(point => ({
+                    x: point.x || 0,
+                    y: -(point.y || 0)
+                }));
+                const leader = {
+                    type: 'leader',
+                    layer: entity.layer || '0',
+                    points
+                };
+                if (entity.text) {
+                    leader.text = entity.text;
+                }
+                if (entity.height) {
+                    leader.height = entity.height;
+                }
+                return leader;
             }
             case 'xref': {
                 const blockName = this.getXrefBlockName(entity);
@@ -3189,14 +3087,12 @@ const Storage = {
      * Import DXF from a raw string (used by Drive open).
      */
     _importDXFFromString(content) {
-        const layers = this.parseDXFLayers(content);
-        const entities = this.parseDXF(content);
-        const blocks = this.parseDXFBlocks(content);
+        const moduleData = this.parseDXFWithModule(content);
 
         CAD.entities = [];
-        CAD.blocks = blocks;
+        CAD.blocks = moduleData.blocks;
         CAD.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false, lineWeight: 'Default' }];
-        layers.forEach(layer => {
+        moduleData.layers.forEach(layer => {
             if (layer.name !== '0') {
                 CAD.layers.push(layer);
             } else {
@@ -3204,7 +3100,7 @@ const Storage = {
             }
         });
 
-        entities.forEach(entity => {
+        moduleData.entities.forEach(entity => {
             if (!CAD.getLayer(entity.layer)) {
                 CAD.layers.push({
                     name: entity.layer,
@@ -3231,7 +3127,7 @@ const Storage = {
             });
         });
 
-        if (entities.length > 0) {
+        if (moduleData.entities.length > 0) {
             Commands.zoomExtents();
         }
     },
