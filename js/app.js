@@ -784,7 +784,7 @@ const MobileUI = {
     },
 
     // ==========================================
-    // LAYER PROPERTIES MANAGER (AutoCAD-style)
+    // LAYER PROPERTIES MANAGER (CAD-style)
     // ==========================================
 
     _selectedLayer: null,

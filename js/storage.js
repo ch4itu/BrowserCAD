@@ -1108,7 +1108,7 @@ const Storage = {
 
     getAciColor(hexColor) {
         // Simplified mapping - return white (7) for now
-        // A full implementation would map to AutoCAD Color Index
+        // A full implementation would map to CAD Color Index
         const rgb = Utils.hexToRgb(hexColor);
         if (!rgb) return 7;
 
@@ -1414,7 +1414,7 @@ const Storage = {
     },
 
     aciToHex(colorIndex) {
-        // AutoCAD Color Index to Hex color mapping
+        // CAD Color Index to Hex color mapping
         const aciColors = {
             1: '#ff0000',   // Red
             2: '#ffff00',   // Yellow
