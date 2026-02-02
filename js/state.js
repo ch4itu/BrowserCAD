@@ -53,9 +53,9 @@ class StateManager {
         this.snapType = null;
         this.gridSize = 10;
 
-        // Cursor settings (AutoCAD-like)
+        // Cursor settings (CAD-like)
         this.crosshairSize = 15;        // Crosshair size in pixels
-        this.fullCrosshair = false;     // Full-screen crosshair (CURSORSIZE = 100 in AutoCAD)
+        this.fullCrosshair = false;     // Full-screen crosshair (CURSORSIZE = 100 in CAD)
         this.pickboxSize = 3;           // Selection aperture size
         this.cursorWorld = null;        // Cursor position in world coordinates
 
@@ -127,7 +127,7 @@ class StateManager {
         // Clipboard for copy/paste
         this.clipboard = [];
 
-        // Block definitions (AutoCAD-like blocks)
+        // Block definitions (CAD-like blocks)
         // { blockName: { name, basePoint, entities: [...], description } }
         this.blocks = {};
 
