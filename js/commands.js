@@ -466,6 +466,9 @@ const Commands = {
                 break;
 
             case 'polyline':
+                CAD.cmdOptions.polylineMode = 'line';
+                CAD.cmdOptions.polylineArcStep = 0;
+                CAD.cmdOptions.polylineArcEnd = null;
                 UI.log('PLINE: Specify start point:', 'prompt');
                 break;
 
@@ -1954,14 +1957,36 @@ const Commands = {
 
     handlePolylineClick(point) {
         const state = CAD;
+        const mode = state.cmdOptions.polylineMode || 'line';
+
+        if (mode === 'arc' && state.points.length >= 1) {
+            if (!state.cmdOptions.polylineArcStep) {
+                state.cmdOptions.polylineArcEnd = point;
+                state.cmdOptions.polylineArcStep = 1;
+                UI.log('PLINE: Specify point on arc:', 'prompt');
+                return;
+            }
+
+            const startPoint = state.points[state.points.length - 1];
+            const arcEnd = state.cmdOptions.polylineArcEnd;
+            const arcPoints = this.getArcPointsFromThreePoints(startPoint, point, arcEnd);
+
+            if (arcPoints && arcPoints.length) {
+                state.points.push(...arcPoints);
+            } else {
+                state.points.push({ ...arcEnd });
+                UI.log('PLINE: Arc points invalid, used straight segment.', 'error');
+            }
+
+            state.cmdOptions.polylineArcStep = 0;
+            state.cmdOptions.polylineArcEnd = null;
+            UI.log('PLINE: Specify next point or [Arc/Line/Close/Undo]:', 'prompt');
+            return;
+        }
+
         state.points.push(point);
         state.step++;
-
-        if (state.points.length === 1) {
-            UI.log('PLINE: Specify next point or [Arc/Close/Undo]:', 'prompt');
-        } else {
-            UI.log('PLINE: Specify next point or [Arc/Close/Undo]:', 'prompt');
-        }
+        UI.log('PLINE: Specify next point or [Arc/Line/Close/Undo]:', 'prompt');
     },
 
     handleCircleClick(point) {
@@ -3525,6 +3550,75 @@ const Commands = {
         state.points.push(point);
 
         UI.log(`SPLINE: Specify point ${state.points.length + 1} or [Close/Enter to finish]:`, 'prompt');
+    },
+
+    getArcPointsFromThreePoints(start, mid, end) {
+        const ax = start.x;
+        const ay = start.y;
+        const bx = mid.x;
+        const by = mid.y;
+        const cx = end.x;
+        const cy = end.y;
+
+        const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+        if (Math.abs(d) < 1e-8) return null;
+
+        const ax2ay2 = ax * ax + ay * ay;
+        const bx2by2 = bx * bx + by * by;
+        const cx2cy2 = cx * cx + cy * cy;
+
+        const ux = (ax2ay2 * (by - cy) + bx2by2 * (cy - ay) + cx2cy2 * (ay - by)) / d;
+        const uy = (ax2ay2 * (cx - bx) + bx2by2 * (ax - cx) + cx2cy2 * (bx - ax)) / d;
+        const center = { x: ux, y: uy };
+        const radius = Utils.dist(center, start);
+        if (!radius || Number.isNaN(radius)) return null;
+
+        const startAngle = Utils.angle(center, start);
+        const midAngle = Utils.angle(center, mid);
+        const endAngle = Utils.angle(center, end);
+        const ccw = this.isAngleBetweenCCW(startAngle, endAngle, midAngle);
+
+        const twoPi = Math.PI * 2;
+        let startAdj = startAngle;
+        let endAdj = endAngle;
+        let delta = 0;
+
+        if (ccw) {
+            if (endAdj < startAdj) endAdj += twoPi;
+            delta = endAdj - startAdj;
+        } else {
+            if (startAdj < endAdj) startAdj += twoPi;
+            delta = startAdj - endAdj;
+        }
+
+        const segments = Math.max(6, Math.ceil(Math.abs(delta) / (Math.PI / 12)));
+        const step = delta / segments;
+        const points = [];
+
+        for (let i = 1; i <= segments; i += 1) {
+            const angle = ccw ? startAdj + step * i : startAdj - step * i;
+            points.push({
+                x: center.x + radius * Math.cos(angle),
+                y: center.y + radius * Math.sin(angle)
+            });
+        }
+
+        return points;
+    },
+
+    isAngleBetweenCCW(start, end, test) {
+        const twoPi = Math.PI * 2;
+        const norm = (angle) => {
+            let val = angle % twoPi;
+            if (val < 0) val += twoPi;
+            return val;
+        };
+        let s = norm(start);
+        let e = norm(end);
+        let t = norm(test);
+        if (e < s) e += twoPi;
+        if (t < s) t += twoPi;
+        return t <= e;
     },
 
     handleDonutClick(point) {
@@ -5814,6 +5908,7 @@ const Commands = {
     handleInput(input) {
         const state = CAD;
         input = input.trim();
+        const inputLower = input.toLowerCase();
 
         if (typeof Lisp !== 'undefined' && Lisp.pendingInput) {
             const lispType = CAD.lispInputType;
@@ -5852,6 +5947,51 @@ const Commands = {
             if (lispType === 'entsel' || lispType === 'ssget') {
                 UI.log('Select object(s) on the canvas.', 'prompt');
                 return true;
+            }
+        }
+
+        if (state.activeCmd && inputLower) {
+            const active = state.activeCmd;
+            const allowed = {
+                line: ['c', 'close', 'u', 'undo'],
+                polyline: ['a', 'arc', 'l', 'line', 'c', 'close', 'u', 'undo'],
+                spline: ['c', 'close', 'u', 'undo'],
+                revcloud: ['c', 'close'],
+                hatch: ['list']
+            };
+
+            if (active === 'polyline') {
+                if (inputLower === 'a' || inputLower === 'arc') {
+                    state.cmdOptions.polylineMode = 'arc';
+                    state.cmdOptions.polylineArcStep = 0;
+                    state.cmdOptions.polylineArcEnd = null;
+                    UI.log('PLINE: Arc mode. Specify arc endpoint:', 'prompt');
+                    return true;
+                }
+                if (inputLower === 'l' || inputLower === 'line') {
+                    state.cmdOptions.polylineMode = 'line';
+                    state.cmdOptions.polylineArcStep = 0;
+                    state.cmdOptions.polylineArcEnd = null;
+                    UI.log('PLINE: Line mode. Specify next point:', 'prompt');
+                    return true;
+                }
+                if (inputLower === 'c' || inputLower === 'close') {
+                    this.closeShape();
+                    return true;
+                }
+            }
+
+            if (active === 'spline' && (inputLower === 'c' || inputLower === 'close')) {
+                this.closeShape();
+                return true;
+            }
+
+            if (this.aliases[inputLower] && this.aliases[inputLower] !== active) {
+                const allowedOptions = allowed[active] || [];
+                if (!allowedOptions.includes(inputLower)) {
+                    UI.log(`${active.toUpperCase()}: Command in progress. Finish or cancel to start another.`, 'error');
+                    return true;
+                }
             }
         }
 
@@ -7056,7 +7196,7 @@ const Commands = {
         }
 
         // Undo last point during LINE or POLYLINE drawing
-        if ((input.toLowerCase() === 'u' || input.toLowerCase() === 'undo') &&
+        if ((inputLower === 'u' || inputLower === 'undo') &&
             (state.activeCmd === 'line' || state.activeCmd === 'polyline' || state.activeCmd === 'spline')) {
             if (state.points.length > 1) {
                 // Remove the last point
@@ -7089,7 +7229,7 @@ const Commands = {
 
         // SCALE options: Copy, Reference, Points
         if (state.activeCmd === 'scale') {
-            const option = input.toLowerCase();
+            const option = inputLower;
 
             if ((option === 'c' || option === 'copy') && state.step === 1) {
                 state.cmdOptions.scaleCopy = true;
@@ -7110,7 +7250,7 @@ const Commands = {
             }
         }
 
-        if (state.activeCmd === 'fillet' && input.toLowerCase() === 'r') {
+        if (state.activeCmd === 'fillet' && inputLower === 'r') {
             const radius = prompt('Enter fillet radius:', CAD.filletRadius || '0');
             if (radius !== null) {
                 CAD.filletRadius = Math.abs(parseFloat(radius)) || 0;
@@ -7119,7 +7259,7 @@ const Commands = {
             return true;
         }
 
-        if (state.activeCmd === 'chamfer' && input.toLowerCase() === 'd') {
+        if (state.activeCmd === 'chamfer' && inputLower === 'd') {
             const d1 = prompt('Enter first chamfer distance:', CAD.chamferDist1 || '0');
             if (d1 !== null) {
                 CAD.chamferDist1 = Math.abs(parseFloat(d1)) || 0;

@@ -1235,6 +1235,27 @@ const Renderer = {
                 ctx.lineTo(endPoint.x, endPoint.y);
                 break;
 
+            case 'spline': {
+                if (state.points.length === 1) {
+                    ctx.moveTo(lastPoint.x, lastPoint.y);
+                    ctx.lineTo(endPoint.x, endPoint.y);
+                    break;
+                }
+
+                // Draw confirmed spline solid
+                ctx.setLineDash([]);
+                ctx.beginPath();
+                this.drawSplineCurve(state.points, ctx);
+                ctx.stroke();
+
+                // Draw preview spline dashed with current cursor point
+                ctx.beginPath();
+                ctx.setLineDash([4 / state.zoom, 4 / state.zoom]);
+                const previewPoints = [...state.points, endPoint];
+                this.drawSplineCurve(previewPoints, ctx);
+                break;
+            }
+
             case 'circle':
                 const radius = Utils.dist(state.points[0], endPoint);
                 ctx.arc(state.points[0].x, state.points[0].y, radius, 0, Math.PI * 2);

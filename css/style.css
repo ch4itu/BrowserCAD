@@ -1678,6 +1678,18 @@ body {
 
 .mdb-actions::-webkit-scrollbar { display: none; }
 
+.mdb-subactions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.mdb-subaction {
+    background: var(--bg-lighter);
+    color: var(--text-primary);
+}
+
 .mdb-btn {
     display: flex;
     align-items: center;
