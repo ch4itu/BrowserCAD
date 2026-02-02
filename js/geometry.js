@@ -334,7 +334,7 @@ const Geometry = {
                     return [line1.p2, line2.p1];
 
                 default: // 0 = Extend (sharp corners)
-                    // Find intersection and extend to it (original AutoCAD behavior)
+                    // Find intersection and extend to it (original CAD behavior)
                     if (inter) {
                         const onLine1 = this.pointOnLineExtended(inter, line1.p1, line1.p2);
                         const onLine2 = this.pointOnLineExtended(inter, line2.p1, line2.p2);

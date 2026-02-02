@@ -1,12 +1,12 @@
 # BrowserCAD
 
-BrowserCAD is a browser-based CAD experience inspired by AutoCAD workflows. It supports classic command-line entry, a ribbon interface, and a growing set of drawing, modify, and utility commands — all in pure HTML/CSS/JavaScript with zero dependencies by default (Google Drive APIs load dynamically when you use Drive features).
+BrowserCAD is a browser-based CAD experience inspired by industry-standard CAD workflows. It supports classic command-line entry, a ribbon interface, and a growing set of drawing, modify, and utility commands — all in pure HTML/CSS/JavaScript with zero dependencies by default (Google Drive APIs load dynamically when you use Drive features).
 
 ## Quick Start
 
 1. Open `index.html` in a browser (or serve with a local HTTP server).
 2. Click in the command line and type commands like `LINE`, `OFFSET`, or `IMAGEATTACH`.
-3. Use **Space** or **Enter** to accept default values (just like AutoCAD).
+3. Use **Space** or **Enter** to accept default values (as in many CAD tools).
 
 ## Command Line Basics
 
@@ -220,7 +220,7 @@ When multiple objects overlap at the click point, clicking again in the same spo
 | REGEN | `RE` | Regenerate display. |
 | UNDO | `U` | Undo last action. |
 | REDO | `Y` | Redo last action. |
-| APPLOAD | `LOAD` | Load AutoLISP scripts from file. |
+| APPLOAD | `LOAD` | Load Lisp scripts from file. |
 | VIEW | `VIEW` | Named views — Save, Restore, Delete, or List saved views. |
 | FIND | `FIND` | Search and replace text in all text/mtext entities. |
 | PURGE | `PU` | Remove unused layers and unreferenced block definitions. |
@@ -281,9 +281,9 @@ BrowserCAD includes basic layout tabs (Model + Paper Space) and a lightweight la
 
 Dimension styles can be managed via `DIMSTYLE`, which lets you save and switch between dimension variable presets.
 
-## AutoLISP Guide
+## Lisp Guide
 
-BrowserCAD includes a lightweight AutoLISP interpreter for scripting and automation. Enter expressions in the command line using parentheses:
+BrowserCAD includes a lightweight Lisp interpreter compatible with standard CAD scripts for scripting and automation. Enter expressions in the command line using parentheses:
 
 ```
 (+ 1 2 3)
@@ -291,11 +291,11 @@ BrowserCAD includes a lightweight AutoLISP interpreter for scripting and automat
 (command "circle" '(0 0) 50)
 ```
 
-### Loading LISP scripts
+### Loading Lisp scripts
 
 Use `APPLOAD` (or `LOAD`) to upload a `.lsp` file from your machine. The script is loaded into the session and can define new functions/commands.
 
-### Common AutoLISP helpers
+### Common Lisp helpers
 
 - `(command "line" '(0 0) '(100 0))` - run a built-in command with arguments.
 - `(getpoint "Pick a point:")` - prompt for a point.
@@ -308,8 +308,8 @@ Use `APPLOAD` (or `LOAD`) to upload a `.lsp` file from your machine. The script 
 
 ### Tips
 
-- Use **Space** or **Enter** to submit LISP expressions.
-- Use `(help)` inside AutoLISP for available functions.
+- Use **Space** or **Enter** to submit Lisp expressions.
+- Use `(help)` inside Lisp for available functions.
 
 ## Keyboard Shortcuts
 
@@ -340,7 +340,7 @@ js/
   renderer.js       Canvas 2D rendering engine
   storage.js        File I/O — DXF/SVG/JSON export, local storage
   state.js          Global state management (entities, layers, undo/redo)
-  autolisp.js       AutoLISP interpreter (tokenizer, parser, evaluator)
+  lisp.js           Lisp interpreter (tokenizer, parser, evaluator)
   ui.js             User interface, command input, ribbon, properties panel
   utils.js          Utility functions (vector math, distance, transforms)
 ```
@@ -348,3 +348,6 @@ js/
 ---
 
 Try it live: https://ch4itu.github.io/BrowserCAD/
+
+## Legal Disclaimer
+This project is an independent open-source work. 'AutoCAD', 'AutoLISP', and 'DWG' are registered trademarks of Autodesk, Inc. This application is not affiliated with, endorsed by, or sponsored by Autodesk, Inc. Uses of these terms are for descriptive purposes only.

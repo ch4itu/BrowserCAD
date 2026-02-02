@@ -132,7 +132,7 @@ const UI = {
             }
         }
 
-        // Handle Enter and Space keys (Space acts like Enter in AutoCAD)
+        // Handle Enter and Space keys (Space acts like Enter in CAD)
         if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             const value = currentValue.trim();
@@ -155,9 +155,9 @@ const UI = {
             if (value.startsWith('(')) {
                 this.log(`LISP: ${value}`, 'input');
                 this.addToHistory(value);
-                AutoLISP.execute(value).then(result => {
+                Lisp.execute(value).then(result => {
                     if (result !== null && result !== undefined) {
-                        this.log(AutoLISP.toString(result), 'success');
+                        this.log(Lisp.toString(result), 'success');
                     }
                 });
                 input.value = '';
@@ -518,8 +518,8 @@ KEYBOARD SHORTCUTS:
   F8            - Toggle ortho mode
   Arrow Up/Down - Command history
 
-AUTOLISP:
-  Type (expression) to execute AutoLISP code
+LISP:
+  Type (expression) to execute Lisp code
   APPLOAD - Load .lsp scripts from a local file
   Example: (+ 1 2 3) => 6
   Example: (command "circle" '(0 0) 50)
@@ -542,7 +542,7 @@ AUTOLISP:
         this.elements.cmdHistory.appendChild(line);
         this.elements.cmdHistory.scrollTop = this.elements.cmdHistory.scrollHeight;
 
-        // If it's a prompt, also show in input placeholder (AutoCAD-like)
+        // If it's a prompt, also show in input placeholder (CAD-like)
         if (type === 'prompt') {
             this.setPrompt(message);
             // Feed mobile draw bar with prompt text
@@ -552,7 +552,7 @@ AUTOLISP:
         }
     },
 
-    // Set prompt text in the command input placeholder (AutoCAD-like behavior)
+    // Set prompt text in the command input placeholder (CAD-like behavior)
     setPrompt(text) {
         if (this.elements.cmdInput) {
             this.elements.cmdInput.placeholder = text || this.defaultPlaceholder;
@@ -1558,7 +1558,7 @@ AUTOLISP:
     // AUTOCAD-STYLE COLOR PICKER
     // ==========================================
 
-    // AutoCAD Color Index palette
+    // CAD Color Index palette
     aciColors: [
         // Standard 9 colors (1-9)
         { index: 1, hex: '#ff0000', name: 'Red' },
