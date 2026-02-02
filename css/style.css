@@ -1454,7 +1454,7 @@ body {
    MOBILE LAYOUT (< 768px)
    ============================================ */
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
     /* Hide desktop-only elements */
     .title-bar .menu-bar { display: none; }
     .title-bar .file-name { display: none; }
