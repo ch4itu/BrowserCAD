@@ -47,6 +47,7 @@ const Renderer = {
         this.viewport = document.getElementById(viewportId);
 
         this.resize();
+        requestAnimationFrame(() => this.resize());
         window.addEventListener('resize', () => this.resize());
 
         return this;
@@ -1235,6 +1236,27 @@ const Renderer = {
                 ctx.lineTo(endPoint.x, endPoint.y);
                 break;
 
+            case 'spline': {
+                if (state.points.length === 1) {
+                    ctx.moveTo(lastPoint.x, lastPoint.y);
+                    ctx.lineTo(endPoint.x, endPoint.y);
+                    break;
+                }
+
+                // Draw confirmed spline solid
+                ctx.setLineDash([]);
+                ctx.beginPath();
+                this.drawSplineCurve(state.points, ctx);
+                ctx.stroke();
+
+                // Draw preview spline dashed with current cursor point
+                ctx.beginPath();
+                ctx.setLineDash([4 / state.zoom, 4 / state.zoom]);
+                const previewPoints = [...state.points, endPoint];
+                this.drawSplineCurve(previewPoints, ctx);
+                break;
+            }
+
             case 'circle':
                 const radius = Utils.dist(state.points[0], endPoint);
                 ctx.arc(state.points[0].x, state.points[0].y, radius, 0, Math.PI * 2);
@@ -1456,7 +1478,7 @@ const Renderer = {
 
         const screen = Utils.worldToScreen(state.cursor.x, state.cursor.y, state.pan, state.zoom);
 
-        // Check if full-screen crosshair is enabled (AutoCAD-like)
+        // Check if full-screen crosshair is enabled (CAD-like)
         const fullCrosshair = state.fullCrosshair || false;
 
         ctx.strokeStyle = this.colors.cursor;
@@ -1465,7 +1487,7 @@ const Renderer = {
         ctx.beginPath();
 
         if (fullCrosshair) {
-            // Full-screen crosshair (like AutoCAD with CURSORSIZE = 100)
+            // Full-screen crosshair (like CAD with CURSORSIZE = 100)
             ctx.moveTo(0, screen.y);
             ctx.lineTo(this.canvas.width, screen.y);
             ctx.moveTo(screen.x, 0);
