@@ -729,20 +729,17 @@ const MobileUI = {
                 this._els.cmdInput.value = this._els.input.value;
             };
             this._els.input?.addEventListener('input', syncMobileInput);
-
+            let closeKeyboard;
             const submitOnEnter = (event) => {
                 if (event.key === 'Enter') {
                     event.preventDefault();
                     this.submitInput();
-                    if (this._els.input) {
-                        this._els.input.blur();
-                    }
+                    closeKeyboard();
                 }
             };
-            this._els.input?.addEventListener('keydown', submitOnEnter);
 
             // Close on Enter or blur
-            const closeKeyboard = () => {
+            closeKeyboard = () => {
                 panel.style.display = '';
                 panel.style.position = '';
                 panel.style.bottom = '';
@@ -755,6 +752,7 @@ const MobileUI = {
                 this._els.cmdInput.removeEventListener('blur', closeKeyboard);
                 this._els.cmdInput.removeEventListener('input', syncInput);
                 this._els.input?.removeEventListener('input', syncMobileInput);
+                this._els.input?.removeEventListener('blur', closeKeyboard);
                 this._els.input?.removeEventListener('keydown', submitOnEnter);
                 if (this._els.input) {
                     this._els.input.readOnly = true;
@@ -762,6 +760,8 @@ const MobileUI = {
             };
 
             this._els.cmdInput.addEventListener('blur', closeKeyboard, { once: true });
+            this._els.input?.addEventListener('blur', closeKeyboard, { once: true });
+            this._els.input?.addEventListener('keydown', submitOnEnter);
 
             // Also close on Enter key (after command processes)
             const onEnter = (e) => {
