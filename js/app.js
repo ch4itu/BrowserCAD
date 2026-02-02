@@ -114,7 +114,7 @@ const App = {
 
         // Update snap point (separate OSNAP and Grid Snap)
         if (CAD.osnapEnabled || CAD.gridSnapEnabled) {
-            const entities = CAD.getVisibleEntities();
+            const entities = this.getSnapEntities(world);
             const snapTolerance = 15 / CAD.zoom;
 
             // Build effective snap modes based on current settings
@@ -144,6 +144,106 @@ const App = {
         }
 
         Renderer.draw();
+    },
+
+    getSnapEntities(cursorPoint) {
+        const entities = CAD.getVisibleEntities();
+        if (!CAD.activeCmd) return entities;
+
+        const points = CAD.points || [];
+        if (!points.length) return entities;
+
+        const endPoint = CAD.tempEnd || cursorPoint;
+        let previewEntity = null;
+
+        switch (CAD.activeCmd) {
+            case 'line': {
+                previewEntity = {
+                    type: 'line',
+                    p1: { ...points[points.length - 1] },
+                    p2: { ...endPoint }
+                };
+                break;
+            }
+            case 'polyline': {
+                previewEntity = {
+                    type: 'polyline',
+                    points: [...points.map(p => ({ ...p })), { ...endPoint }]
+                };
+                break;
+            }
+            case 'rect': {
+                previewEntity = {
+                    type: 'rect',
+                    p1: { ...points[0] },
+                    p2: { ...endPoint }
+                };
+                break;
+            }
+            case 'circle': {
+                previewEntity = {
+                    type: 'circle',
+                    center: { ...points[0] },
+                    r: Utils.dist(points[0], endPoint)
+                };
+                break;
+            }
+            case 'arc': {
+                if (points.length >= 2) {
+                    const center = points[0];
+                    previewEntity = {
+                        type: 'arc',
+                        center: { ...center },
+                        r: Utils.dist(center, points[1]),
+                        start: Utils.angle(center, points[1]),
+                        end: Utils.angle(center, endPoint)
+                    };
+                }
+                break;
+            }
+            case 'ellipse': {
+                if (points.length >= 2) {
+                    const center = Utils.midpoint(points[0], points[1]);
+                    previewEntity = {
+                        type: 'ellipse',
+                        center: { ...center },
+                        rx: Utils.dist(points[0], points[1]) / 2,
+                        ry: Utils.dist(center, endPoint),
+                        rotation: Utils.angle(points[0], points[1])
+                    };
+                }
+                break;
+            }
+            case 'polygon': {
+                const center = points[0];
+                const radius = Utils.dist(center, endPoint);
+                const startAngle = Utils.angle(center, endPoint);
+                const sides = CAD.cmdOptions.sides || 4;
+                const polyPoints = [];
+                for (let i = 0; i < sides; i++) {
+                    const angle = startAngle + (i * 2 * Math.PI / sides);
+                    polyPoints.push({
+                        x: center.x + radius * Math.cos(angle),
+                        y: center.y + radius * Math.sin(angle)
+                    });
+                }
+                polyPoints.push({ ...polyPoints[0] });
+                previewEntity = {
+                    type: 'polyline',
+                    points: polyPoints,
+                    closed: true
+                };
+                break;
+            }
+            default:
+                break;
+        }
+
+        if (previewEntity) {
+            entities.push(previewEntity);
+        }
+
+        return entities;
     },
 
     onMouseUp(e) {

@@ -1733,6 +1733,11 @@ body {
     color: var(--text-primary);
 }
 
+.mdb-redo {
+    background: var(--bg-lighter);
+    color: var(--text-primary);
+}
+
 .mdb-cancel {
     background: #dc2626;
     color: #fff;
