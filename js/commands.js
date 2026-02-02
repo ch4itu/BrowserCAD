@@ -3,13 +3,13 @@
    ============================================ */
 
 const Commands = {
-    // Commands that should repeat automatically (like AutoCAD)
+    // Commands that should repeat automatically (like CAD)
     repeatableCommands: ['line', 'polyline', 'circle', 'arc', 'rect', 'ellipse', 'text', 'point', 'polygon', 'donut', 'ray', 'xline', 'spline'],
 
     // Last executed drawing command (for repeat)
     lastDrawingCmd: null,
 
-    // Command aliases (AutoCAD-like shortcuts)
+    // Command aliases (CAD-like shortcuts)
     aliases: {
         // Drawing commands
         'l': 'line',
@@ -189,7 +189,7 @@ const Commands = {
         'lt': 'linetype',
         'ltscale': 'ltscale',
 
-        // AutoLISP
+        // Lisp
         'lisp': 'lisp',
         'vlisp': 'lisp',
         'appload': 'appload',
@@ -336,7 +336,7 @@ const Commands = {
     execute(input) {
         const trimmedInput = input.trim();
 
-        // Check for AutoLISP expression (starts with parenthesis)
+        // Check for Lisp expression (starts with parenthesis)
         if (trimmedInput.startsWith('(')) {
             this.executeLisp(trimmedInput);
             return;
@@ -361,9 +361,9 @@ const Commands = {
 
         const command = this.aliases[cmdName];
         if (!command) {
-            if (typeof AutoLISP !== 'undefined') {
+            if (typeof Lisp !== 'undefined') {
                 const lispCmdName = 'C:' + cmdName.toUpperCase();
-                if (AutoLISP.userFunctions && AutoLISP.userFunctions[lispCmdName]) {
+                if (Lisp.userFunctions && Lisp.userFunctions[lispCmdName]) {
                     this.executeLisp(`(${lispCmdName})`);
                     return;
                 }
@@ -401,15 +401,15 @@ const Commands = {
         this.startCommand(command, args);
     },
 
-    // Execute AutoLISP code
+    // Execute Lisp code
     async executeLisp(code) {
-        if (typeof AutoLISP === 'undefined') {
-            UI.log('AutoLISP interpreter not loaded.', 'error');
+        if (typeof Lisp === 'undefined') {
+            UI.log('Lisp interpreter not loaded.', 'error');
             return;
         }
 
         try {
-            const result = await AutoLISP.execute(code);
+            const result = await Lisp.execute(code);
             if (result !== undefined && result !== null) {
                 // Format the result for display
                 const formatted = this.formatLispResult(result);
@@ -933,7 +933,7 @@ const Commands = {
                 break;
 
             case 'lisp':
-                UI.log('AutoLISP Mode. Type (expression) to execute LISP code.');
+                UI.log('Lisp Mode. Type (expression) to execute LISP code.');
                 UI.log('Examples: (+ 1 2 3), (setq x 10), (command "circle" \'(0 0) 50)');
                 UI.log('Type (help) for available functions.');
                 this.finishCommand();
@@ -946,7 +946,7 @@ const Commands = {
                         this.finishCommand(true);
                         return;
                     }
-                    await AutoLISP.load(lispFile.code);
+                    await Lisp.load(lispFile.code);
                     UI.log(`APPLOAD: Loaded ${lispFile.name}.`);
                     this.finishCommand(true);
                 });
@@ -1462,7 +1462,7 @@ const Commands = {
         UI.log('  VIEW            Named views');
         UI.log('  FIND            Search and replace text');
         UI.log('  PURGE (PU)      Remove unused items');
-        UI.log('  APPLOAD         Load AutoLISP scripts');
+        UI.log('  APPLOAD         Load Lisp scripts');
         UI.log('  LAYOUT          Manage layouts/paperspace');
         UI.log('  LAYERSTATE      Manage layer states');
         UI.log('');
@@ -1598,17 +1598,17 @@ const Commands = {
             point = Utils.applyOrtho(state.points[state.points.length - 1], point);
         }
 
-        if (typeof AutoLISP !== 'undefined' && AutoLISP.pendingInput) {
+        if (typeof Lisp !== 'undefined' && Lisp.pendingInput) {
             const lispType = CAD.lispInputType;
             if (lispType === 'point' || lispType === 'corner') {
-                AutoLISP.handleUserInput(point);
+                Lisp.handleUserInput(point);
                 Renderer.draw();
                 return;
             }
             if (lispType === 'entsel') {
                 const hit = this.hitTest(point);
                 if (hit) {
-                    AutoLISP.handleUserInput({ entity: hit, point });
+                    Lisp.handleUserInput({ entity: hit, point });
                 } else {
                     UI.log('No object found for selection.', 'error');
                 }
@@ -1618,9 +1618,9 @@ const Commands = {
             if (lispType === 'ssget') {
                 const hits = this.hitTestAll(point);
                 if (hits.length > 0) {
-                    AutoLISP.handleUserInput({ ids: hits.map(hit => hit.id) });
+                    Lisp.handleUserInput({ ids: hits.map(hit => hit.id) });
                 } else if (CAD.selectedIds.length > 0) {
-                    AutoLISP.handleUserInput({ ids: [...CAD.selectedIds] });
+                    Lisp.handleUserInput({ ids: [...CAD.selectedIds] });
                 } else {
                     UI.log('No objects selected.', 'error');
                 }
@@ -1646,7 +1646,7 @@ const Commands = {
         if (state.cmdOptions.needSelection) {
             const hit = this.hitTest(point);
             if (hit) {
-                // Toggle selection on click (like AutoCAD)
+                // Toggle selection on click (like CAD)
                 if (state.isSelected(hit.id)) {
                     state.deselect(hit.id);
                     UI.log(`1 removed, ${state.selectedIds.length} total`);
@@ -2163,7 +2163,7 @@ const Commands = {
             position: { ...point }
         });
         UI.log(`Point: X=${point.x.toFixed(4)}, Y=${point.y.toFixed(4)}. Specify next point:`);
-        // Don't finish - allow multiple points (like AutoCAD)
+        // Don't finish - allow multiple points (like CAD)
     },
 
     // ==========================================
@@ -2525,7 +2525,7 @@ const Commands = {
         const state = CAD;
 
         if (state.cmdOptions.selectingEdges) {
-            // Use all entities as cutting edges (AutoCAD behavior when Enter is pressed without selection)
+            // Use all entities as cutting edges (CAD behavior when Enter is pressed without selection)
             return;
         }
 
@@ -2551,7 +2551,7 @@ const Commands = {
         const state = CAD;
 
         if (state.cmdOptions.selectingEdges) {
-            // Use all entities as boundary edges (AutoCAD behavior when Enter is pressed without selection)
+            // Use all entities as boundary edges (CAD behavior when Enter is pressed without selection)
             return;
         }
 
@@ -3393,7 +3393,7 @@ const Commands = {
         UI.resetPrompt();
         Renderer.draw();
 
-        // Auto-restart repeatable commands (like AutoCAD)
+        // Auto-restart repeatable commands (like CAD)
         if (!preventRestart && lastCmd && this.repeatableCommands.includes(lastCmd)) {
             // Small delay to allow UI to update
             setTimeout(() => {
@@ -3585,7 +3585,7 @@ const Commands = {
         // Create the block definition
         const block = CAD.addBlock(name, basePoint, selectedEntities);
         if (block) {
-            // Remove the original entities (like AutoCAD)
+            // Remove the original entities (like CAD)
             CAD.removeEntities(state.selectedIds, true);
 
             // Insert a block reference at the base point
@@ -3627,7 +3627,7 @@ const Commands = {
 
             UI.log(`INSERT: Block "${blockName}" inserted.`);
 
-            // Ask for next insertion point (like AutoCAD)
+            // Ask for next insertion point (like CAD)
             UI.log('INSERT: Specify insertion point or [Enter] to finish:', 'prompt');
         }
     },
@@ -4919,7 +4919,7 @@ const Commands = {
         }
         CAD.saveUndoState('Solid');
         const pts = [...state.points];
-        // AutoCAD SOLID uses triangle (3 pts) or quad (4 pts)
+        // CAD SOLID uses triangle (3 pts) or quad (4 pts)
         if (pts.length === 3) {
             pts.push({ ...pts[2] }); // Degenerate quad
         }
@@ -5815,13 +5815,13 @@ const Commands = {
         const state = CAD;
         input = input.trim();
 
-        if (typeof AutoLISP !== 'undefined' && AutoLISP.pendingInput) {
+        if (typeof Lisp !== 'undefined' && Lisp.pendingInput) {
             const lispType = CAD.lispInputType;
             if (lispType === 'point' || lispType === 'corner') {
-                const basePoint = AutoLISP.inputBasePoint || null;
+                const basePoint = Lisp.inputBasePoint || null;
                 const coord = Utils.parseCoordInput(input, basePoint);
                 if (coord) {
-                    AutoLISP.handleUserInput(coord);
+                    Lisp.handleUserInput(coord);
                 } else {
                     UI.log('Invalid point. Use x,y format.', 'error');
                 }
@@ -5832,7 +5832,7 @@ const Commands = {
                 if (Number.isNaN(value)) {
                     UI.log('Invalid number.', 'error');
                 } else {
-                    AutoLISP.handleUserInput(value);
+                    Lisp.handleUserInput(value);
                 }
                 return true;
             }
@@ -5841,12 +5841,12 @@ const Commands = {
                 if (Number.isNaN(value)) {
                     UI.log('Invalid integer.', 'error');
                 } else {
-                    AutoLISP.handleUserInput(value);
+                    Lisp.handleUserInput(value);
                 }
                 return true;
             }
             if (lispType === 'string' || lispType === 'keyword') {
-                AutoLISP.handleUserInput(input);
+                Lisp.handleUserInput(input);
                 return true;
             }
             if (lispType === 'entsel' || lispType === 'ssget') {
