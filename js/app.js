@@ -683,6 +683,19 @@ const MobileUI = {
     showKeyboard() {
         if (!this._els || !this._els.cmdInput) return;
 
+        if (this._numpadOpen) {
+            this.hideNumpad();
+        }
+
+        if (this._els.inputRow) {
+            this._els.inputRow.classList.add('visible');
+        }
+
+        if (this._els.input) {
+            this._els.input.readOnly = false;
+            this._els.input.focus();
+        }
+
         // Temporarily show the command panel as a floating input
         const panel = document.querySelector('.command-panel');
         if (panel) {
@@ -700,7 +713,21 @@ const MobileUI = {
             if (history) history.style.display = 'none';
 
             this._els.cmdInput.style.fontSize = '16px';
-            this._els.cmdInput.focus();
+
+            const syncInput = () => {
+                this._numpadValue = this._els.cmdInput.value;
+                if (this._els.input) {
+                    this._els.input.value = this._numpadValue;
+                }
+            };
+
+            this._els.cmdInput.addEventListener('input', syncInput);
+            const syncMobileInput = () => {
+                if (!this._els) return;
+                this._numpadValue = this._els.input.value;
+                this._els.cmdInput.value = this._els.input.value;
+            };
+            this._els.input?.addEventListener('input', syncMobileInput);
 
             const syncInput = () => {
                 this._numpadValue = this._els.cmdInput.value;
@@ -724,6 +751,10 @@ const MobileUI = {
                 if (history) history.style.display = '';
                 this._els.cmdInput.removeEventListener('blur', closeKeyboard);
                 this._els.cmdInput.removeEventListener('input', syncInput);
+                this._els.input?.removeEventListener('input', syncMobileInput);
+                if (this._els.input) {
+                    this._els.input.readOnly = true;
+                }
             };
 
             this._els.cmdInput.addEventListener('blur', closeKeyboard, { once: true });
