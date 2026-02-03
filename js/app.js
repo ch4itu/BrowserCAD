@@ -150,7 +150,10 @@ const App = {
                 grid: CAD.gridSnapEnabled  // Grid snap is separate
             };
 
-            const snap = Geometry.findSnapPoints(world, entities, effectiveSnapModes, snapTolerance, CAD.gridSize);
+            const fromPoint = (CAD.points && CAD.points.length > 0)
+                ? CAD.points[CAD.points.length - 1]
+                : (CAD.lineChainStart || null);
+            const snap = Geometry.findSnapPoints(world, entities, effectiveSnapModes, snapTolerance, CAD.gridSize, fromPoint);
 
             if (snap) {
                 CAD.snapPoint = snap.point;

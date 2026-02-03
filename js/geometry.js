@@ -685,8 +685,11 @@ const Geometry = {
     // SNAP POINT DETECTION
     // ==========================================
 
-    findSnapPoints(point, entities, snapModes, tolerance, gridSize) {
+    findSnapPoints(point, entities, snapModes, tolerance, gridSize, fromPoint = null) {
         const snaps = [];
+        const snapFromPoint = fromPoint || (CAD.points && CAD.points.length > 0
+            ? CAD.points[CAD.points.length - 1]
+            : null);
 
         // Grid snap
         if (snapModes.grid) {
@@ -744,15 +747,14 @@ const Geometry = {
             }
 
             // Perpendicular snap - requires a "from point" in the current drawing operation
-            if (snapModes.perpendicular && CAD.points && CAD.points.length > 0) {
-                const fromPoint = CAD.points[CAD.points.length - 1];
+            if (snapModes.perpendicular && snapFromPoint) {
                 // Check if cursor is near the entity first (like nearest snap)
                 const nearestPt = this.getNearestPoint(point, entity);
                 if (nearestPt) {
                     const distToEntity = Utils.dist(point, nearestPt);
                     if (distToEntity < tolerance) {
                         // Cursor is near entity — calculate perpendicular foot from fromPoint
-                        const perpPoint = this.getPerpendicularPoint(fromPoint, entity);
+                        const perpPoint = this.getPerpendicularPoint(snapFromPoint, entity);
                         if (perpPoint) {
                             const distToPerp = Utils.dist(point, perpPoint);
                             if (distToPerp < tolerance * 2) {
@@ -764,13 +766,12 @@ const Geometry = {
             }
 
             // Tangent snap - requires a "from point"
-            if (snapModes.tangent && CAD.points && CAD.points.length > 0) {
-                const fromPoint = CAD.points[CAD.points.length - 1];
+            if (snapModes.tangent && snapFromPoint) {
                 const nearestPt = this.getNearestPoint(point, entity);
                 if (nearestPt) {
                     const distToEntity = Utils.dist(point, nearestPt);
                     if (distToEntity < tolerance) {
-                        const tangentPt = this.getTangentPoint(fromPoint, entity);
+                        const tangentPt = this.getTangentPoint(snapFromPoint, entity);
                         if (tangentPt) {
                             const distToTangent = Utils.dist(point, tangentPt);
                             if (distToTangent < tolerance * 2) {
