@@ -334,7 +334,7 @@ const Geometry = {
                     return [line1.p2, line2.p1];
 
                 default: // 0 = Extend (sharp corners)
-                    // Find intersection and extend to it (original AutoCAD behavior)
+                    // Find intersection and extend to it (original CAD behavior)
                     if (inter) {
                         const onLine1 = this.pointOnLineExtended(inter, line1.p1, line1.p2);
                         const onLine2 = this.pointOnLineExtended(inter, line2.p1, line2.p2);
@@ -685,8 +685,11 @@ const Geometry = {
     // SNAP POINT DETECTION
     // ==========================================
 
-    findSnapPoints(point, entities, snapModes, tolerance, gridSize) {
+    findSnapPoints(point, entities, snapModes, tolerance, gridSize, fromPoint = null) {
         const snaps = [];
+        const snapFromPoint = fromPoint || (CAD.points && CAD.points.length > 0
+            ? CAD.points[CAD.points.length - 1]
+            : null);
 
         // Grid snap
         if (snapModes.grid) {
@@ -744,15 +747,14 @@ const Geometry = {
             }
 
             // Perpendicular snap - requires a "from point" in the current drawing operation
-            if (snapModes.perpendicular && CAD.points && CAD.points.length > 0) {
-                const fromPoint = CAD.points[CAD.points.length - 1];
+            if (snapModes.perpendicular && snapFromPoint) {
                 // Check if cursor is near the entity first (like nearest snap)
                 const nearestPt = this.getNearestPoint(point, entity);
                 if (nearestPt) {
                     const distToEntity = Utils.dist(point, nearestPt);
                     if (distToEntity < tolerance) {
                         // Cursor is near entity — calculate perpendicular foot from fromPoint
-                        const perpPoint = this.getPerpendicularPoint(fromPoint, entity);
+                        const perpPoint = this.getPerpendicularPoint(snapFromPoint, entity);
                         if (perpPoint) {
                             const distToPerp = Utils.dist(point, perpPoint);
                             if (distToPerp < tolerance * 2) {
@@ -764,13 +766,12 @@ const Geometry = {
             }
 
             // Tangent snap - requires a "from point"
-            if (snapModes.tangent && CAD.points && CAD.points.length > 0) {
-                const fromPoint = CAD.points[CAD.points.length - 1];
+            if (snapModes.tangent && snapFromPoint) {
                 const nearestPt = this.getNearestPoint(point, entity);
                 if (nearestPt) {
                     const distToEntity = Utils.dist(point, nearestPt);
                     if (distToEntity < tolerance) {
-                        const tangentPt = this.getTangentPoint(fromPoint, entity);
+                        const tangentPt = this.getTangentPoint(snapFromPoint, entity);
                         if (tangentPt) {
                             const distToTangent = Utils.dist(point, tangentPt);
                             if (distToTangent < tolerance * 2) {
@@ -1738,6 +1739,164 @@ const Geometry = {
         return result;
     }
 };
+
+class Rectangle {
+    constructor(x, y, width, height) {
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+    }
+
+    contains(point) {
+        return (
+            point.x >= this.x &&
+            point.x <= this.x + this.width &&
+            point.y >= this.y &&
+            point.y <= this.y + this.height
+        );
+    }
+
+    intersects(range) {
+        return !(
+            range.x > this.x + this.width ||
+            range.x + range.width < this.x ||
+            range.y > this.y + this.height ||
+            range.y + range.height < this.y
+        );
+    }
+}
+
+class QuadTree {
+    constructor(boundary, capacity = 4) {
+        this.boundary = boundary;
+        this.capacity = capacity;
+        this.entities = [];
+        this.divided = false;
+        this.northwest = null;
+        this.northeast = null;
+        this.southwest = null;
+        this.southeast = null;
+    }
+
+    subdivide() {
+        const { x, y, width, height } = this.boundary;
+        const halfW = width / 2;
+        const halfH = height / 2;
+
+        this.northwest = new QuadTree(new Rectangle(x, y, halfW, halfH), this.capacity);
+        this.northeast = new QuadTree(new Rectangle(x + halfW, y, halfW, halfH), this.capacity);
+        this.southwest = new QuadTree(new Rectangle(x, y + halfH, halfW, halfH), this.capacity);
+        this.southeast = new QuadTree(new Rectangle(x + halfW, y + halfH, halfW, halfH), this.capacity);
+        this.divided = true;
+    }
+
+    insert(entity) {
+        const bbox = entity.getBoundingBox ? entity.getBoundingBox() : entity.boundingBox;
+        if (!bbox || !this._bboxIntersects(bbox, this.boundary)) {
+            return false;
+        }
+
+        if (!this.divided && this.entities.length < this.capacity) {
+            this.entities.push(entity);
+            return true;
+        }
+
+        if (!this.divided) {
+            this.subdivide();
+            const existing = this.entities;
+            this.entities = [];
+            for (const item of existing) {
+                this._insertIntoChildren(item);
+            }
+        }
+
+        return this._insertIntoChildren(entity);
+    }
+
+    _insertIntoChildren(entity) {
+        const bbox = entity.getBoundingBox ? entity.getBoundingBox() : entity.boundingBox;
+        if (!bbox) {
+            return false;
+        }
+
+        let inserted = false;
+        if (this._bboxIntersects(bbox, this.northwest.boundary)) {
+            this.northwest.insert(entity);
+            inserted = true;
+        }
+        if (this._bboxIntersects(bbox, this.northeast.boundary)) {
+            this.northeast.insert(entity);
+            inserted = true;
+        }
+        if (this._bboxIntersects(bbox, this.southwest.boundary)) {
+            this.southwest.insert(entity);
+            inserted = true;
+        }
+        if (this._bboxIntersects(bbox, this.southeast.boundary)) {
+            this.southeast.insert(entity);
+            inserted = true;
+        }
+
+        return inserted;
+    }
+
+    query(range, found = [], foundSet = null) {
+        if (!this.boundary.intersects(range)) {
+            return found;
+        }
+
+        if (!foundSet) {
+            foundSet = new Set(found);
+        }
+
+        for (const entity of this.entities) {
+            const bbox = entity.getBoundingBox ? entity.getBoundingBox() : entity.boundingBox;
+            if (bbox && this._bboxIntersects(bbox, range)) {
+                if (!foundSet.has(entity)) {
+                    found.push(entity);
+                    foundSet.add(entity);
+                }
+            }
+        }
+
+        if (this.divided) {
+            this.northwest.query(range, found, foundSet);
+            this.northeast.query(range, found, foundSet);
+            this.southwest.query(range, found, foundSet);
+            this.southeast.query(range, found, foundSet);
+        }
+
+        return found;
+    }
+
+    clear() {
+        this.entities.length = 0;
+        if (this.divided) {
+            this.northwest.clear();
+            this.northeast.clear();
+            this.southwest.clear();
+            this.southeast.clear();
+        }
+        this.northwest = null;
+        this.northeast = null;
+        this.southwest = null;
+        this.southeast = null;
+        this.divided = false;
+    }
+
+    _bboxIntersects(bbox, rect) {
+        return !(
+            bbox.minX > rect.x + rect.width ||
+            bbox.maxX < rect.x ||
+            bbox.minY > rect.y + rect.height ||
+            bbox.maxY < rect.y
+        );
+    }
+}
+
+Geometry.Rectangle = Rectangle;
+Geometry.QuadTree = QuadTree;
 
 // Export for module usage
 if (typeof module !== 'undefined' && module.exports) {
