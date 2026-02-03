@@ -23,6 +23,7 @@ BrowserCAD has strong support for core 2D primitives.
 - [x] Boundary (BOUNDARY)
 - [x] Region (REGION)
 - [x] Multiline (MLINE)
+- [x] Tables (TABLE)
 - [ ] Multiline Styles (MLSTYLE)
 - [ ] Trace (TRACE)
 - [ ] Helix (HELIX)
@@ -145,10 +146,9 @@ Lisp support exists; advanced IDE/integration does not.
 - [ ] VBA / .NET Support
 - [ ] Action Recorder
 
-## 9) Paper Space & Layouts (Missing)
-Currently Model Space only.
-Currently supports basic layout tabs with paper space backgrounds; viewports and plotting are still missing.
-- [x] Layout Tabs
+## 9) Paper Space & Layouts (Partial)
+Basic layout tabs and paper space backgrounds are present; viewports and plotting are still missing.
+- [x] Layout Tabs (Model + Paper Space backgrounds)
 - [ ] Viewports (MVIEW)
 - [ ] Page Setup
 - [ ] Title Blocks
@@ -165,8 +165,22 @@ The engine is strictly 2D.
 
 ## 11) File I/O
 - [x] Save/Open - LocalStorage
+- [x] Import - DXF
+- [x] Import - SVG
+- [x] Import - JSON
 - [x] Export - DXF
+- [x] Export - SVG
 - [x] Export - JSON
+- [x] Google Drive Open/Save
 - [ ] DWG Support
 - [ ] PDF Import/Export
 - [ ] Plot/Print (PLOT)
+
+## 12) UI & Interaction
+- [x] Ribbon UI (desktop)
+- [x] Command line with history/autocomplete
+- [x] Properties panel + selection ribbon
+- [x] Status bar toggles (OSNAP/GRID/ORTHO/POLAR)
+- [x] Mobile draw bar + tool tabs
+- [x] On-screen numpad + system keyboard toggle
+- [x] Touch gestures (tap to draw, pinch zoom, two-finger pan)
