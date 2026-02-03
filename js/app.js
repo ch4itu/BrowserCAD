@@ -63,7 +63,6 @@ const App = {
     onMouseDown(e) {
         const paperPoint = this.screenToPaper(e.offsetX, e.offsetY);
         const world = this.screenToActiveSpace(paperPoint);
-        if (!world) return;
         const activeViewport = this.getActiveViewport();
         const effectiveZoom = this.isModelSpaceInLayout() && activeViewport
             ? CAD.zoom * activeViewport.viewScale
@@ -90,6 +89,7 @@ const App = {
 
         // Left click - handle command or selection
         if (e.button === 0) {
+            if (!world) return;
             Commands.handleClick(world);
             UI.updatePropertiesPanel();
         }
@@ -98,13 +98,13 @@ const App = {
     onMouseMove(e) {
         const paperPoint = this.screenToPaper(e.offsetX, e.offsetY);
         const world = this.screenToActiveSpace(paperPoint);
-        if (!world) return;
+        const cursorPoint = world || paperPoint;
 
         // Update cursor position
-        CAD.cursor = world;
-        CAD.cursorWorld = world;
-        CAD.tempEnd = world;
-        UI.updateCoordinates(world.x, world.y);
+        CAD.cursor = cursorPoint;
+        CAD.cursorWorld = cursorPoint;
+        CAD.tempEnd = cursorPoint;
+        UI.updateCoordinates(cursorPoint.x, cursorPoint.y);
 
         // Handle panning
         if (CAD.isPanning) {
@@ -126,11 +126,11 @@ const App = {
 
         // Update hover highlighting (detect entity under cursor)
         const tolerance = 10 / effectiveZoom;
-        const hit = Commands.hitTest(world);
+        const hit = world ? Commands.hitTest(world) : null;
         CAD.hoveredId = hit ? hit.id : null;
 
         // Update snap point (separate OSNAP and Grid Snap)
-        if (CAD.osnapEnabled || CAD.gridSnapEnabled) {
+        if ((CAD.osnapEnabled || CAD.gridSnapEnabled) && world) {
             const entities = this.getSnapEntities(world);
             const snapTolerance = 15 / effectiveZoom;
 
