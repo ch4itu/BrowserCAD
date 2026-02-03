@@ -216,25 +216,30 @@ const DXF = {
         const parseHatchFromTags = (tags, layer) => {
             const xCoords = Array.isArray(tags[10]) ? tags[10] : (tags[10] !== undefined ? [tags[10]] : []);
             const yCoords = Array.isArray(tags[20]) ? tags[20] : (tags[20] !== undefined ? [tags[20]] : []);
+            const counts = Array.isArray(tags[93]) ? tags[93] : (tags[93] !== undefined ? [tags[93]] : []);
+            const boundaryCount = parseInt(counts[0] ?? '0', 10) || Math.min(xCoords.length, yCoords.length);
             const points = [];
-            for (let i = 0; i < Math.min(xCoords.length, yCoords.length); i += 1) {
+            for (let i = 0; i < Math.min(boundaryCount, xCoords.length, yCoords.length); i += 1) {
                 const x = parseFloat(xCoords[i]);
                 const y = parseFloat(yCoords[i]);
                 if (!Number.isNaN(x) && !Number.isNaN(y)) {
                     points.push({ x, y });
                 }
             }
-            const pattern = (tags[2] || 'solid').toLowerCase();
+            const rawPattern = tags[2] || 'solid';
+            const pattern = DXF._normalizeDXFPatternName(rawPattern);
             const isSolid = parseInt(tags[70] ?? '0', 10) === 1 || pattern === 'solid';
             if (points.length >= 3) {
                 return {
                     type: 'hatch',
                     layer,
                     points,
-                    pattern: isSolid ? 'solid' : pattern
+                    pattern: isSolid ? 'solid' : pattern,
+                    noStroke: true
                 };
             }
-            const edgeType = parseInt(tags[72] ?? '0', 10);
+            const edgeTypeRaw = Array.isArray(tags[72]) ? tags[72][0] : tags[72];
+            const edgeType = parseInt(edgeTypeRaw ?? '0', 10);
             if (edgeType === 2) {
                 const centerX = parseFloat(tags[10]);
                 const centerY = parseFloat(tags[20]);
@@ -245,7 +250,8 @@ const DXF = {
                         layer,
                         center: { x: centerX, y: centerY },
                         r: radius,
-                        hatch: { pattern: isSolid ? 'solid' : pattern }
+                        hatch: { pattern: isSolid ? 'solid' : pattern },
+                        noStroke: true
                     };
                 }
             }
@@ -667,9 +673,45 @@ const DXF = {
         return Math.round(parsed * 100);
     },
 
+    _normalizeDXFPatternName(pattern) {
+        const raw = (pattern || '').toString().trim().toLowerCase();
+        const map = {
+            solid: 'solid',
+            ansi31: 'ansi31',
+            ansi32: 'ansi32',
+            ansi33: 'ansi33',
+            ansi34: 'ansi34',
+            ansi35: 'ansi35',
+            ansi36: 'ansi36',
+            ansi37: 'ansi37',
+            ansi38: 'ansi38',
+            angle: 'ansi31',
+            diagonal: 'ansi31',
+            cross: 'ansi37',
+            dots: 'dots',
+            brick: 'brick',
+            earth: 'earth',
+            grass: 'grass',
+            honey: 'honey',
+            insul: 'insul',
+            net: 'net',
+            net3: 'net3',
+            dash: 'dash',
+            square: 'square',
+            steel: 'steel',
+            zigzag: 'zigzag',
+            swamp: 'swamp',
+            trans: 'trans'
+        };
+        return map[raw] || raw || 'solid';
+    },
+
     _getDXFPatternName(pattern) {
         const map = {
             solid: 'SOLID',
+            diagonal: 'ANSI31',
+            cross: 'ANSI37',
+            dots: 'DOTS',
             angle: 'ANSI31',
             ansi31: 'ANSI31',
             ansi32: 'ANSI32',
@@ -679,32 +721,82 @@ const DXF = {
             ansi36: 'ANSI36',
             ansi37: 'ANSI37',
             ansi38: 'ANSI38',
-            ansi39: 'ANSI39',
             brick: 'BRICK',
-            grass: 'GRASS',
             earth: 'EARTH',
-            sand: 'SAND',
-            dots: 'DOTS'
+            grass: 'GRASS',
+            honey: 'HONEY',
+            insul: 'INSUL',
+            net: 'NET',
+            net3: 'NET3',
+            dash: 'DASH',
+            square: 'SQUARE',
+            steel: 'STEEL',
+            swamp: 'SWAMP',
+            trans: 'TRANS',
+            zigzag: 'ZIGZAG'
         };
-        return map[pattern] || 'SOLID';
+        return map[pattern] || pattern.toUpperCase();
     },
 
     _getDXFPatternDef(pattern) {
-        const defs = {
-            ansi31: [
-                '53\n45.0\n43\n0.0\n44\n0.0\n45\n0.0\n46\n0.0\n79\n0\n',
-                '49\n0.125\n49\n-0.125\n'
-            ],
-            brick: [
-                '53\n0.0\n43\n0.0\n44\n0.0\n45\n0.25\n46\n0.25\n79\n0\n',
-                '49\n0.25\n49\n-0.25\n'
-            ],
-            dots: [
-                '53\n0.0\n43\n0.0\n44\n0.0\n45\n0.1\n46\n0.1\n79\n0\n',
-                '49\n0.0\n49\n0.1\n'
-            ]
-        };
-        return defs[pattern] || [];
+        let dxf = '';
+        dxf += '75\n0\n';
+        dxf += '76\n1\n';
+
+        switch (pattern) {
+            case 'diagonal':
+            case 'ansi31':
+                dxf += '52\n0.0\n41\n3.175\n';
+                dxf += '78\n1\n';
+                dxf += '53\n45.0\n';
+                dxf += '43\n0.0\n44\n0.0\n45\n-1.0\n46\n1.0\n79\n0\n';
+                break;
+            case 'cross':
+            case 'ansi37':
+                dxf += '52\n0.0\n41\n3.175\n';
+                dxf += '78\n2\n';
+                dxf += '53\n45.0\n43\n0.0\n44\n0.0\n45\n-1.0\n46\n1.0\n79\n0\n';
+                dxf += '53\n135.0\n43\n0.0\n44\n0.0\n45\n-1.0\n46\n1.0\n79\n0\n';
+                break;
+            case 'dots':
+                dxf += '52\n0.0\n41\n3.175\n';
+                dxf += '78\n2\n';
+                dxf += '53\n0.0\n43\n0.0\n44\n0.0\n45\n0.0\n46\n3.175\n79\n2\n';
+                dxf += '49\n0.0\n49\n-3.175\n';
+                dxf += '53\n90.0\n43\n0.0\n44\n0.0\n45\n0.0\n46\n3.175\n79\n2\n';
+                dxf += '49\n0.0\n49\n-3.175\n';
+                break;
+            case 'ansi32':
+                dxf += '52\n0.0\n41\n3.175\n';
+                dxf += '78\n2\n';
+                dxf += '53\n45.0\n43\n0.0\n44\n0.0\n45\n-1.0\n46\n1.0\n79\n0\n';
+                dxf += '53\n45.0\n43\n0.5\n44\n0.5\n45\n-1.0\n46\n1.0\n79\n0\n';
+                break;
+            case 'brick':
+                dxf += '52\n0.0\n41\n6.35\n';
+                dxf += '78\n2\n';
+                dxf += '53\n0.0\n43\n0.0\n44\n0.0\n45\n0.0\n46\n6.35\n79\n0\n';
+                dxf += '53\n90.0\n43\n0.0\n44\n0.0\n45\n0.0\n46\n6.35\n79\n2\n';
+                dxf += '49\n3.175\n49\n-3.175\n';
+                break;
+            case 'honey':
+                dxf += '52\n0.0\n41\n3.175\n';
+                dxf += '78\n3\n';
+                dxf += '53\n0.0\n43\n0.0\n44\n0.0\n45\n5.5\n46\n3.175\n79\n2\n';
+                dxf += '49\n3.175\n49\n-2.325\n';
+                dxf += '53\n120.0\n43\n0.0\n44\n0.0\n45\n5.5\n46\n3.175\n79\n2\n';
+                dxf += '49\n3.175\n49\n-2.325\n';
+                dxf += '53\n60.0\n43\n0.0\n44\n0.0\n45\n5.5\n46\n3.175\n79\n2\n';
+                dxf += '49\n3.175\n49\n-2.325\n';
+                break;
+            default:
+                dxf += '52\n0.0\n41\n3.175\n';
+                dxf += '78\n1\n';
+                dxf += '53\n45.0\n43\n0.0\n44\n0.0\n45\n-1.0\n46\n1.0\n79\n0\n';
+                break;
+        }
+
+        return dxf;
     },
 
     generateHatchDXF(entity, colorInt) {
@@ -769,19 +861,119 @@ const DXF = {
         }
 
         if (!isSolid) {
-            const def = this._getDXFPatternDef(pattern);
-            dxf += '75\n1\n76\n1\n';
-            dxf += '78\n' + def.length + '\n';
-            def.forEach(line => {
-                dxf += line;
-            });
+            dxf += this._getDXFPatternDef(pattern);
         }
 
         return dxf;
     },
 
-    hatchEntityToDXF(entity, colorInt) {
-        return this.generateHatchDXF(entity, colorInt);
+    hatchEntityToDXF(entity, colorInt, state) {
+        const clipIds = entity.clipIds || [];
+        if (clipIds.length === 0) {
+            return this.generateHatchDXF(entity, colorInt);
+        }
+
+        let dxf = '';
+        const hatchData = entity.hatch;
+        const pattern = (typeof hatchData === 'string' ? hatchData : hatchData?.pattern || 'solid').toLowerCase();
+        const isSolid = pattern === 'solid';
+        const dxfPatternName = this._getDXFPatternName(pattern);
+
+        dxf += '0\nHATCH\n';
+        dxf += '8\n' + (entity.layer || '0') + '\n';
+        dxf += '420\n' + colorInt + '\n';
+        dxf += '10\n0.0\n20\n0.0\n30\n0.0\n';
+        dxf += '210\n0.0\n220\n0.0\n230\n1.0\n';
+        dxf += '2\n' + dxfPatternName + '\n';
+        dxf += '70\n' + (isSolid ? 1 : 0) + '\n';
+        dxf += '71\n0\n';
+        dxf += '91\n' + clipIds.length + '\n';
+
+        clipIds.forEach(id => {
+            const clipEntity = state?.getEntity?.(id) || CAD?.getEntity?.(id);
+            if (!clipEntity) return;
+            dxf += this._hatchBoundaryPath(clipEntity);
+        });
+
+        if (!isSolid) {
+            dxf += this._getDXFPatternDef(pattern);
+        }
+
+        return dxf;
+    },
+
+    _hatchBoundaryPath(entity) {
+        let dxf = '';
+
+        if (entity.type === 'circle') {
+            dxf += '92\n1\n';
+            dxf += '93\n1\n';
+            dxf += '72\n2\n';
+            dxf += '10\n' + entity.center.x + '\n';
+            dxf += '20\n' + (-entity.center.y) + '\n';
+            dxf += '40\n' + entity.r + '\n';
+            dxf += '50\n0.0\n51\n360.0\n73\n1\n';
+            dxf += '97\n0\n';
+        } else if (entity.type === 'rect') {
+            const pts = [
+                { x: entity.p1.x, y: -entity.p1.y },
+                { x: entity.p2.x, y: -entity.p1.y },
+                { x: entity.p2.x, y: -entity.p2.y },
+                { x: entity.p1.x, y: -entity.p2.y }
+            ];
+            dxf += '92\n2\n';
+            dxf += '72\n0\n';
+            dxf += '73\n1\n';
+            dxf += '93\n' + pts.length + '\n';
+            pts.forEach(p => {
+                dxf += '10\n' + p.x + '\n20\n' + p.y + '\n';
+            });
+            dxf += '97\n0\n';
+        } else if (entity.type === 'polyline' && entity.points) {
+            const pts = entity.points.map(p => ({ x: p.x, y: -p.y }));
+            dxf += '92\n2\n';
+            dxf += '72\n0\n';
+            dxf += '73\n1\n';
+            dxf += '93\n' + pts.length + '\n';
+            pts.forEach(p => {
+                dxf += '10\n' + p.x + '\n20\n' + p.y + '\n';
+            });
+            dxf += '97\n0\n';
+        } else if (entity.type === 'ellipse') {
+            const numPts = 36;
+            dxf += '92\n2\n';
+            dxf += '72\n0\n';
+            dxf += '73\n1\n';
+            dxf += '93\n' + numPts + '\n';
+            for (let j = 0; j < numPts; j++) {
+                const angle = (j / numPts) * Math.PI * 2;
+                const rot = entity.rotation || 0;
+                const ex = entity.center.x + entity.rx * Math.cos(angle) * Math.cos(rot) - entity.ry * Math.sin(angle) * Math.sin(rot);
+                const ey = entity.center.y + entity.rx * Math.cos(angle) * Math.sin(rot) + entity.ry * Math.sin(angle) * Math.cos(rot);
+                dxf += '10\n' + ex + '\n20\n' + (-ey) + '\n';
+            }
+            dxf += '97\n0\n';
+        } else if (entity.type === 'arc') {
+            dxf += '92\n1\n';
+            dxf += '93\n1\n';
+            dxf += '72\n2\n';
+            dxf += '10\n' + entity.center.x + '\n';
+            dxf += '20\n' + (-entity.center.y) + '\n';
+            dxf += '40\n' + entity.r + '\n';
+            dxf += '50\n' + (-DXF.utils.radToDeg(entity.end)) + '\n';
+            dxf += '51\n' + (-DXF.utils.radToDeg(entity.start)) + '\n';
+            dxf += '73\n1\n';
+            dxf += '97\n0\n';
+        } else if (entity.type === 'line') {
+            dxf += '92\n1\n';
+            dxf += '93\n1\n';
+            dxf += '72\n1\n';
+            dxf += '10\n' + entity.p1.x + '\n20\n' + (-entity.p1.y) + '\n';
+            dxf += '11\n' + entity.p2.x + '\n21\n' + (-entity.p2.y) + '\n';
+            dxf += '97\n0\n';
+        }
+
+        return dxf;
     },
 
     donutHatchToDXF(entity, colorInt) {
@@ -999,7 +1191,7 @@ const DXF = {
                 dxf += '50\n' + (-DXF.utils.radToDeg(entity.rotation || 0)) + '\n';
                 break;
             case 'hatch':
-                dxf += this.hatchEntityToDXF(entity, colorInt);
+                dxf += this.hatchEntityToDXF(entity, colorInt, state);
                 break;
             case 'dimension':
                 dxf += this.dimensionToDXF(entity, colorInt);
