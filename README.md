@@ -1,12 +1,18 @@
 # BrowserCAD
 
-BrowserCAD is a browser-based CAD experience inspired by AutoCAD workflows. It supports classic command-line entry, a ribbon interface, and a growing set of drawing, modify, and utility commands — all in pure HTML/CSS/JavaScript with zero dependencies by default (Google Drive APIs load dynamically when you use Drive features).
+BrowserCAD is a browser-based CAD experience inspired by industry-standard CAD workflows. It supports classic command-line entry, a ribbon interface, and a growing set of drawing, modify, and utility commands — all in pure HTML/CSS/JavaScript with zero dependencies by default (Google Drive APIs load dynamically when you use Drive features).
 
 ## Quick Start
 
 1. Open `index.html` in a browser (or serve with a local HTTP server).
 2. Click in the command line and type commands like `LINE`, `OFFSET`, or `IMAGEATTACH`.
-3. Use **Space** or **Enter** to accept default values (just like AutoCAD).
+3. Use **Space** or **Enter** to accept default values (as in many CAD tools).
+
+## Help & Documentation
+
+- Press **F1** or run `HELP`/`?` to display the in-app quick reference.
+- Run `HELP <command>` (example: `HELP TRIM`) for command-specific guidance.
+- Mobile users can access **Help** from the menu drawer.
 
 ## Command Line Basics
 
@@ -14,6 +20,21 @@ BrowserCAD is a browser-based CAD experience inspired by AutoCAD workflows. It s
 - **Esc**: cancel the active command.
 - **Arrow Up/Down**: command history.
 - **Tab**: autocomplete commands.
+
+## Interface Overview
+
+- **Desktop UI**: Ribbon tabs, command line, status toggles, properties panel, and layout tabs.
+- **Selection ribbon**: Contextual prompts for modify commands and selection workflows.
+- **Layer management**: Layer list, visibility, lock/freeze, and layer state manager.
+- **Layout tabs**: Model and paper space backgrounds (viewports/plotting pending).
+
+## Mobile & Touch Interface
+
+- **Draw bar** replaces the command line, with prompt text and contextual sub-actions.
+- **Actions**: Done, Undo, Redo, Close (for polylines), and Cancel.
+- **Inputs**: Numeric keypad toggle, system keyboard (`Aa`), and tap-to-draw.
+- **Tool tabs**: Draw, Modify, Dims, View, Snap tool rows for touch workflows.
+- **Snap toggles**: OSNAP, Grid, Ortho, Polar, and Pan mode from the Snap tab.
 
 ## Drawing Commands
 
@@ -40,6 +61,8 @@ BrowserCAD is a browser-based CAD experience inspired by AutoCAD workflows. It s
 | SOLID | `SO` | Create filled triangle/quad solid shapes. |
 | REGION | `REG` | Detect closed boundary at click point and create a region entity. |
 | BOUNDARY | `BO` | Detect enclosing boundary at click point and create a polyline. |
+| MLINE | `ML` | Draw multiple parallel lines. |
+| TABLE | `TB` | Create a table grid. |
 
 ### IMAGEATTACH workflow
 
@@ -79,6 +102,7 @@ Defaults for scale/rotation are reused when you press **Enter** or **Space**.
 | FILLET | `F` | Fillet between two lines. |
 | CHAMFER | `CHA` | Chamfer between two lines. |
 | BREAK | `BR` | Break an object. |
+| LENGTHEN | `LEN` | Lengthen/shorten lines and arcs. |
 | STRETCH | `S` | Stretch objects via window selection. |
 | JOIN | `J` | Join line/polyline segments. |
 | PEDIT | `PE` | Edit polylines (Close/Open/Join/Spline/Decurve). |
@@ -86,6 +110,7 @@ Defaults for scale/rotation are reused when you press **Enter** or **Space**.
 | EXPLODE | `X` | Explode objects (rects, polylines, blocks). |
 | ARRAY | `AR` | Rectangular array. |
 | ARRAYPOLAR | `ARPO` | Polar array. |
+| ARRAYPATH |  | Array objects along a path. |
 | MATCHPROP | `MA` | Copy layer, color, and linetype from source to destination objects. |
 | ALIGN | `AL` | Align objects using source/destination point pairs with optional scale. |
 | SCALETEXT | `ST` | Scale selected text objects to a new height. |
@@ -93,6 +118,17 @@ Defaults for scale/rotation are reused when you press **Enter** or **Space**.
 | DIVIDE | `DIV` | Place point markers at equal intervals along an object. |
 | MEASURE | `ME` | Place point markers at a specified distance along an object. |
 | OVERKILL | `OVERKILL` | Remove duplicate/overlapping entities. |
+| CHPROP | `CH` | Change properties (color/layer/linetype/etc.). |
+| DRAWORDER | `DR` | Move objects front/back/above/below. |
+| TEXTTOFRONT |  | Bring text/dims/leaders to the front. |
+| ISOLATEOBJECTS |  | Isolate selected objects; hide others. |
+| HIDEOBJECTS |  | Hide selected objects temporarily. |
+| UNISOLATEOBJECTS |  | Restore hidden objects. |
+| GROUP | `G` | Group objects for selection. |
+| UNGROUP |  | Ungroup objects. |
+| COPYBASE |  | Copy with a base point. |
+| PASTEBLOCK |  | Paste clipboard as a block reference. |
+| REVERSE |  | Reverse line/arc/polyline direction. |
 
 ### MATCHPROP workflow
 
@@ -183,6 +219,7 @@ Block references can be moved, rotated, scaled, mirrored, and copied like any ot
 | QSELECT |  | Select by object type (use `LIST` to see available types). |
 | SELECTSIMILAR |  | Select all objects matching the first selected object's type. |
 | FILTER | `FI` | Select entities by Type, Layer, or Color filter. |
+| SELECTPREVIOUS |  | Re-select the last selection set. |
 
 ### Selection cycling
 
@@ -220,7 +257,7 @@ When multiple objects overlap at the click point, clicking again in the same spo
 | REGEN | `RE` | Regenerate display. |
 | UNDO | `U` | Undo last action. |
 | REDO | `Y` | Redo last action. |
-| APPLOAD | `LOAD` | Load AutoLISP scripts from file. |
+| APPLOAD | `LOAD` | Load Lisp scripts from file. |
 | VIEW | `VIEW` | Named views — Save, Restore, Delete, or List saved views. |
 | FIND | `FIND` | Search and replace text in all text/mtext entities. |
 | PURGE | `PU` | Remove unused layers and unreferenced block definitions. |
@@ -260,6 +297,15 @@ When multiple objects overlap at the click point, clicking again in the same spo
 | LINETYPE | Set current or selected linetype (continuous/dashed/dotted/dashdot). |
 | LTSCALE | Set global linetype scale. |
 
+## Drafting Aids & Snaps
+
+- **OSNAP modes**: endpoint, midpoint, center, intersection, perpendicular, tangent, nearest.
+- **Grid snap**: snap to grid points (F9 on desktop).
+- **Ortho**: constrain input to orthogonal directions (F8).
+- **Polar tracking**: angle-based tracking (F10).
+- **Active geometry snapping**: OSNAP considers the in-progress segment during drawing.
+- **Selection cycling**: click repeatedly to cycle overlapping objects.
+
 ## File Commands
 
 | Command | Alias | Description |
@@ -269,7 +315,16 @@ When multiple objects overlap at the click point, clicking again in the same spo
 | OPEN | `OPEN` | Load from local storage. |
 | EXPORT | `DXFOUT` | Export to DXF. |
 
-Export also supports SVG and JSON formats via the title bar menu.
+### Import/Export Formats
+
+- **DXF**: Import and export (module-based with legacy fallback).
+- **SVG**: Import and export (geometry conversion).
+- **JSON**: Import and export (native scene data).
+
+### Local + Drive Storage
+
+- **Local storage**: Save/Open from the browser.
+- **Google Drive**: Open and Save (Drive APIs load on demand).
 
 ## Properties & Styles
 
@@ -281,9 +336,9 @@ BrowserCAD includes basic layout tabs (Model + Paper Space) and a lightweight la
 
 Dimension styles can be managed via `DIMSTYLE`, which lets you save and switch between dimension variable presets.
 
-## AutoLISP Guide
+## Lisp Guide
 
-BrowserCAD includes a lightweight AutoLISP interpreter for scripting and automation. Enter expressions in the command line using parentheses:
+BrowserCAD includes a lightweight Lisp interpreter compatible with standard CAD scripts for scripting and automation. Enter expressions in the command line using parentheses:
 
 ```
 (+ 1 2 3)
@@ -291,11 +346,11 @@ BrowserCAD includes a lightweight AutoLISP interpreter for scripting and automat
 (command "circle" '(0 0) 50)
 ```
 
-### Loading LISP scripts
+### Loading Lisp scripts
 
 Use `APPLOAD` (or `LOAD`) to upload a `.lsp` file from your machine. The script is loaded into the session and can define new functions/commands.
 
-### Common AutoLISP helpers
+### Common Lisp helpers
 
 - `(command "line" '(0 0) '(100 0))` - run a built-in command with arguments.
 - `(getpoint "Pick a point:")` - prompt for a point.
@@ -308,8 +363,8 @@ Use `APPLOAD` (or `LOAD`) to upload a `.lsp` file from your machine. The script 
 
 ### Tips
 
-- Use **Space** or **Enter** to submit LISP expressions.
-- Use `(help)` inside AutoLISP for available functions.
+- Use **Space** or **Enter** to submit Lisp expressions.
+- Use `(help)` inside Lisp for available functions.
 
 ## Keyboard Shortcuts
 
@@ -338,9 +393,10 @@ js/
   commands.js       All command implementations
   geometry.js       Geometric algorithms (intersections, offsets, snapping)
   renderer.js       Canvas 2D rendering engine
-  storage.js        File I/O — DXF/SVG/JSON export, local storage
+  dxf.js            DXF import/export module
+  storage.js        File I/O — DXF/SVG/JSON import/export, local storage, Drive
   state.js          Global state management (entities, layers, undo/redo)
-  autolisp.js       AutoLISP interpreter (tokenizer, parser, evaluator)
+  lisp.js           Lisp interpreter (tokenizer, parser, evaluator)
   ui.js             User interface, command input, ribbon, properties panel
   utils.js          Utility functions (vector math, distance, transforms)
 ```
@@ -348,3 +404,6 @@ js/
 ---
 
 Try it live: https://ch4itu.github.io/BrowserCAD/
+
+## Legal Disclaimer
+This project is an independent open-source work. 'AutoCAD', 'AutoLISP', and 'DWG' are registered trademarks of Autodesk, Inc. This application is not affiliated with, endorsed by, or sponsored by Autodesk, Inc. Uses of these terms are for descriptive purposes only.

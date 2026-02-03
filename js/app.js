@@ -114,7 +114,7 @@ const App = {
 
         // Update snap point (separate OSNAP and Grid Snap)
         if (CAD.osnapEnabled || CAD.gridSnapEnabled) {
-            const entities = CAD.getVisibleEntities();
+            const entities = this.getSnapEntities(world);
             const snapTolerance = 15 / CAD.zoom;
 
             // Build effective snap modes based on current settings
@@ -144,6 +144,106 @@ const App = {
         }
 
         Renderer.draw();
+    },
+
+    getSnapEntities(cursorPoint) {
+        const entities = CAD.getVisibleEntities();
+        if (!CAD.activeCmd) return entities;
+
+        const points = CAD.points || [];
+        if (!points.length) return entities;
+
+        const endPoint = CAD.tempEnd || cursorPoint;
+        let previewEntity = null;
+
+        switch (CAD.activeCmd) {
+            case 'line': {
+                previewEntity = {
+                    type: 'line',
+                    p1: { ...points[points.length - 1] },
+                    p2: { ...endPoint }
+                };
+                break;
+            }
+            case 'polyline': {
+                previewEntity = {
+                    type: 'polyline',
+                    points: [...points.map(p => ({ ...p })), { ...endPoint }]
+                };
+                break;
+            }
+            case 'rect': {
+                previewEntity = {
+                    type: 'rect',
+                    p1: { ...points[0] },
+                    p2: { ...endPoint }
+                };
+                break;
+            }
+            case 'circle': {
+                previewEntity = {
+                    type: 'circle',
+                    center: { ...points[0] },
+                    r: Utils.dist(points[0], endPoint)
+                };
+                break;
+            }
+            case 'arc': {
+                if (points.length >= 2) {
+                    const center = points[0];
+                    previewEntity = {
+                        type: 'arc',
+                        center: { ...center },
+                        r: Utils.dist(center, points[1]),
+                        start: Utils.angle(center, points[1]),
+                        end: Utils.angle(center, endPoint)
+                    };
+                }
+                break;
+            }
+            case 'ellipse': {
+                if (points.length >= 2) {
+                    const center = Utils.midpoint(points[0], points[1]);
+                    previewEntity = {
+                        type: 'ellipse',
+                        center: { ...center },
+                        rx: Utils.dist(points[0], points[1]) / 2,
+                        ry: Utils.dist(center, endPoint),
+                        rotation: Utils.angle(points[0], points[1])
+                    };
+                }
+                break;
+            }
+            case 'polygon': {
+                const center = points[0];
+                const radius = Utils.dist(center, endPoint);
+                const startAngle = Utils.angle(center, endPoint);
+                const sides = CAD.cmdOptions.sides || 4;
+                const polyPoints = [];
+                for (let i = 0; i < sides; i++) {
+                    const angle = startAngle + (i * 2 * Math.PI / sides);
+                    polyPoints.push({
+                        x: center.x + radius * Math.cos(angle),
+                        y: center.y + radius * Math.sin(angle)
+                    });
+                }
+                polyPoints.push({ ...polyPoints[0] });
+                previewEntity = {
+                    type: 'polyline',
+                    points: polyPoints,
+                    closed: true
+                };
+                break;
+            }
+            default:
+                break;
+        }
+
+        if (previewEntity) {
+            entities.push(previewEntity);
+        }
+
+        return entities;
     },
 
     onMouseUp(e) {
@@ -431,6 +531,7 @@ const MobileUI = {
             inputRow:     document.getElementById('mdbInputRow'),
             input:        document.getElementById('mdbInput'),
             actions:      document.getElementById('mdbActions'),
+            subActions:   document.getElementById('mdbSubActions'),
             doneBtn:      document.getElementById('mdbDone'),
             closeBtn:     document.getElementById('mdbClose'),
             numpadBtn:    document.getElementById('mdbNumpadBtn'),
@@ -484,6 +585,8 @@ const MobileUI = {
         if (this._els.closeBtn) {
             this._els.closeBtn.classList.toggle('visible', closable && hasPoints);
         }
+
+        this.updateSubActions();
     },
 
     /**
@@ -511,6 +614,42 @@ const MobileUI = {
                 this.hideNumpad();
             }
         }
+
+        this.updateSubActions();
+    },
+
+    updateSubActions() {
+        if (!this._els || !this._els.subActions) return;
+
+        const actions = [];
+        const cmd = CAD.activeCmd || '';
+
+        if (cmd === 'polyline') {
+            actions.push({ label: 'Arc', value: 'A' });
+            actions.push({ label: 'Line', value: 'L' });
+            actions.push({ label: 'Close', value: 'C' });
+            actions.push({ label: 'Undo', value: 'U' });
+        } else if (cmd === 'spline') {
+            actions.push({ label: 'Close', value: 'C' });
+            actions.push({ label: 'Undo', value: 'U' });
+        } else if (cmd === 'hatch') {
+            actions.push({ label: 'Solid', value: 'solid' });
+            actions.push({ label: 'Angle', value: 'angle' });
+            actions.push({ label: 'Cross', value: 'cross' });
+            actions.push({ label: 'Dots', value: 'dots' });
+            actions.push({ label: 'List', value: 'list' });
+        }
+
+        this._els.subActions.innerHTML = '';
+        if (!actions.length) return;
+
+        actions.forEach(action => {
+            const btn = document.createElement('button');
+            btn.className = 'mdb-btn mdb-subaction';
+            btn.textContent = action.label;
+            btn.addEventListener('click', () => this.submitValue(action.value));
+            this._els.subActions.appendChild(btn);
+        });
     },
 
     // ==========================================
@@ -593,7 +732,7 @@ const MobileUI = {
     submitInput() {
         if (!this._els) return;
 
-        const value = this._numpadValue || '';
+        const value = this._numpadValue || this._els.cmdInput?.value || this._els.input?.value || '';
 
         // Route through the main command input system
         if (this._els.cmdInput) {
@@ -644,6 +783,20 @@ const MobileUI = {
     showKeyboard() {
         if (!this._els || !this._els.cmdInput) return;
 
+        if (this._numpadOpen) {
+            this.hideNumpad();
+        }
+
+        if (this._els.inputRow) {
+            this._els.inputRow.classList.add('visible');
+        }
+
+        if (this._els.input) {
+            this._els.input.readOnly = false;
+            this._els.input.inputMode = 'text';
+            this._els.input.focus();
+        }
+
         // Temporarily show the command panel as a floating input
         const panel = document.querySelector('.command-panel');
         if (panel) {
@@ -661,10 +814,32 @@ const MobileUI = {
             if (history) history.style.display = 'none';
 
             this._els.cmdInput.style.fontSize = '16px';
-            this._els.cmdInput.focus();
+
+            const syncInput = () => {
+                this._numpadValue = this._els.cmdInput.value;
+                if (this._els.input) {
+                    this._els.input.value = this._numpadValue;
+                }
+            };
+
+            this._els.cmdInput.addEventListener('input', syncInput);
+            const syncMobileInput = () => {
+                if (!this._els) return;
+                this._numpadValue = this._els.input.value;
+                this._els.cmdInput.value = this._els.input.value;
+            };
+            this._els.input?.addEventListener('input', syncMobileInput);
+            let closeKeyboard;
+            const submitOnEnter = (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    this.submitInput();
+                    closeKeyboard();
+                }
+            };
 
             // Close on Enter or blur
-            const closeKeyboard = () => {
+            closeKeyboard = () => {
                 panel.style.display = '';
                 panel.style.position = '';
                 panel.style.bottom = '';
@@ -675,9 +850,18 @@ const MobileUI = {
                 panel.style.borderTop = '';
                 if (history) history.style.display = '';
                 this._els.cmdInput.removeEventListener('blur', closeKeyboard);
+                this._els.cmdInput.removeEventListener('input', syncInput);
+                this._els.input?.removeEventListener('input', syncMobileInput);
+                this._els.input?.removeEventListener('blur', closeKeyboard);
+                this._els.input?.removeEventListener('keydown', submitOnEnter);
+                if (this._els.input) {
+                    this._els.input.readOnly = true;
+                }
             };
 
             this._els.cmdInput.addEventListener('blur', closeKeyboard, { once: true });
+            this._els.input?.addEventListener('blur', closeKeyboard, { once: true });
+            this._els.input?.addEventListener('keydown', submitOnEnter);
 
             // Also close on Enter key (after command processes)
             const onEnter = (e) => {
@@ -784,7 +968,7 @@ const MobileUI = {
     },
 
     // ==========================================
-    // LAYER PROPERTIES MANAGER (AutoCAD-style)
+    // LAYER PROPERTIES MANAGER (CAD-style)
     // ==========================================
 
     _selectedLayer: null,
