@@ -1740,6 +1740,164 @@ const Geometry = {
     }
 };
 
+class Rectangle {
+    constructor(x, y, width, height) {
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+    }
+
+    contains(point) {
+        return (
+            point.x >= this.x &&
+            point.x <= this.x + this.width &&
+            point.y >= this.y &&
+            point.y <= this.y + this.height
+        );
+    }
+
+    intersects(range) {
+        return !(
+            range.x > this.x + this.width ||
+            range.x + range.width < this.x ||
+            range.y > this.y + this.height ||
+            range.y + range.height < this.y
+        );
+    }
+}
+
+class QuadTree {
+    constructor(boundary, capacity = 4) {
+        this.boundary = boundary;
+        this.capacity = capacity;
+        this.entities = [];
+        this.divided = false;
+        this.northwest = null;
+        this.northeast = null;
+        this.southwest = null;
+        this.southeast = null;
+    }
+
+    subdivide() {
+        const { x, y, width, height } = this.boundary;
+        const halfW = width / 2;
+        const halfH = height / 2;
+
+        this.northwest = new QuadTree(new Rectangle(x, y, halfW, halfH), this.capacity);
+        this.northeast = new QuadTree(new Rectangle(x + halfW, y, halfW, halfH), this.capacity);
+        this.southwest = new QuadTree(new Rectangle(x, y + halfH, halfW, halfH), this.capacity);
+        this.southeast = new QuadTree(new Rectangle(x + halfW, y + halfH, halfW, halfH), this.capacity);
+        this.divided = true;
+    }
+
+    insert(entity) {
+        const bbox = entity.getBoundingBox ? entity.getBoundingBox() : entity.boundingBox;
+        if (!bbox || !this._bboxIntersects(bbox, this.boundary)) {
+            return false;
+        }
+
+        if (!this.divided && this.entities.length < this.capacity) {
+            this.entities.push(entity);
+            return true;
+        }
+
+        if (!this.divided) {
+            this.subdivide();
+            const existing = this.entities;
+            this.entities = [];
+            for (const item of existing) {
+                this._insertIntoChildren(item);
+            }
+        }
+
+        return this._insertIntoChildren(entity);
+    }
+
+    _insertIntoChildren(entity) {
+        const bbox = entity.getBoundingBox ? entity.getBoundingBox() : entity.boundingBox;
+        if (!bbox) {
+            return false;
+        }
+
+        let inserted = false;
+        if (this._bboxIntersects(bbox, this.northwest.boundary)) {
+            this.northwest.insert(entity);
+            inserted = true;
+        }
+        if (this._bboxIntersects(bbox, this.northeast.boundary)) {
+            this.northeast.insert(entity);
+            inserted = true;
+        }
+        if (this._bboxIntersects(bbox, this.southwest.boundary)) {
+            this.southwest.insert(entity);
+            inserted = true;
+        }
+        if (this._bboxIntersects(bbox, this.southeast.boundary)) {
+            this.southeast.insert(entity);
+            inserted = true;
+        }
+
+        return inserted;
+    }
+
+    query(range, found = [], foundSet = null) {
+        if (!this.boundary.intersects(range)) {
+            return found;
+        }
+
+        if (!foundSet) {
+            foundSet = new Set(found);
+        }
+
+        for (const entity of this.entities) {
+            const bbox = entity.getBoundingBox ? entity.getBoundingBox() : entity.boundingBox;
+            if (bbox && this._bboxIntersects(bbox, range)) {
+                if (!foundSet.has(entity)) {
+                    found.push(entity);
+                    foundSet.add(entity);
+                }
+            }
+        }
+
+        if (this.divided) {
+            this.northwest.query(range, found, foundSet);
+            this.northeast.query(range, found, foundSet);
+            this.southwest.query(range, found, foundSet);
+            this.southeast.query(range, found, foundSet);
+        }
+
+        return found;
+    }
+
+    clear() {
+        this.entities.length = 0;
+        if (this.divided) {
+            this.northwest.clear();
+            this.northeast.clear();
+            this.southwest.clear();
+            this.southeast.clear();
+        }
+        this.northwest = null;
+        this.northeast = null;
+        this.southwest = null;
+        this.southeast = null;
+        this.divided = false;
+    }
+
+    _bboxIntersects(bbox, rect) {
+        return !(
+            bbox.minX > rect.x + rect.width ||
+            bbox.maxX < rect.x ||
+            bbox.minY > rect.y + rect.height ||
+            bbox.maxY < rect.y
+        );
+    }
+}
+
+Geometry.Rectangle = Rectangle;
+Geometry.QuadTree = QuadTree;
+
 // Export for module usage
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = Geometry;
