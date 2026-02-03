@@ -99,6 +99,10 @@ const App = {
         const paperPoint = this.screenToPaper(e.offsetX, e.offsetY);
         const world = this.screenToActiveSpace(paperPoint);
         const cursorPoint = world || paperPoint;
+        const activeViewport = this.getActiveViewport();
+        const effectiveZoom = this.isModelSpaceInLayout() && activeViewport
+            ? CAD.zoom * activeViewport.viewScale
+            : CAD.zoom;
 
         // Update cursor position
         CAD.cursor = cursorPoint;
