@@ -347,7 +347,11 @@ const Renderer = {
             }
 
             if (entity.type === 'hatch') {
-                this.drawHatchEntity(entity, color);
+                if (entity.renderLines && entity.renderLines.length) {
+                    this.drawHatchRenderLines(entity, color, zoom);
+                } else {
+                    this.drawHatchEntity(entity, color);
+                }
                 return;
             }
 
@@ -1017,6 +1021,12 @@ const Renderer = {
                 // Draw block reference by expanding its entities
                 this.drawBlockReference(entity, ctx);
                 break;
+            case 'insert':
+                this.drawInsertEntity(entity, ctx);
+                break;
+            case 'hatch':
+                this.drawHatchRenderLines(entity, ctx.strokeStyle, CAD.zoom);
+                break;
         }
     },
 
@@ -1066,6 +1076,84 @@ const Renderer = {
             this.drawEntity(entity, ctx);
             ctx.stroke();
         });
+    },
+
+    drawInsertEntity(insertRef, ctx, depth = 0) {
+        if (depth > 10) {
+            return;
+        }
+
+        const block = CAD.getBlock(insertRef.blockName);
+        if (!block || !block.entities || block.entities.length === 0) {
+            return;
+        }
+
+        const basePoint = block.basePoint || { x: 0, y: 0 };
+        const scaleX = insertRef.scaleX ?? insertRef.scale?.x ?? 1;
+        const scaleY = insertRef.scaleY ?? insertRef.scale?.y ?? 1;
+        const rotation = insertRef.rotation || 0;
+        const insertX = insertRef.x ?? insertRef.insertPoint?.x ?? 0;
+        const insertY = insertRef.y ?? insertRef.insertPoint?.y ?? 0;
+
+        ctx.save();
+        ctx.translate(insertX, insertY);
+        if (rotation) {
+            ctx.rotate(rotation);
+        }
+        ctx.scale(scaleX, scaleY);
+        ctx.translate(-basePoint.x, -basePoint.y);
+
+        block.entities.forEach(entity => {
+            if (!entity) return;
+            ctx.beginPath();
+            if (entity.type === 'insert') {
+                this.drawInsertEntity(entity, ctx, depth + 1);
+            } else {
+                this.drawEntity(entity, ctx);
+            }
+            ctx.stroke();
+        });
+
+        ctx.restore();
+    },
+
+    drawHatchRenderLines(entity, color, zoom = CAD.zoom) {
+        const ctx = this.ctx;
+        const hatch = entity.renderLines && entity.renderLines.length
+            ? entity.renderLines
+            : this.ensureHatchRenderLines(entity);
+        if (!hatch || hatch.length === 0) {
+            return;
+        }
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1 / zoom;
+        hatch.forEach(segment => {
+            if (!segment || !segment.p1 || !segment.p2) return;
+            ctx.moveTo(segment.p1.x, segment.p1.y);
+            ctx.lineTo(segment.p2.x, segment.p2.y);
+        });
+        ctx.stroke();
+        ctx.restore();
+    },
+
+    ensureHatchRenderLines(entity) {
+        if (entity.renderLines && entity.renderLines.length) {
+            return entity.renderLines;
+        }
+        if (typeof entity.generateRenderLines === 'function') {
+            entity.renderLines = entity.generateRenderLines();
+            return entity.renderLines;
+        }
+        if (typeof Geometry !== 'undefined' && Geometry.Hatch) {
+            const pattern = entity.patternName || entity.pattern || entity.hatch?.pattern || 'ANSI31';
+            const hatch = new Geometry.Hatch(entity.boundary || entity.points || [], pattern, entity.scale || 1, entity.angle || 0);
+            entity.renderLines = hatch.generateRenderLines();
+            return entity.renderLines;
+        }
+        return [];
     },
 
     drawDimension(entity, ctx) {

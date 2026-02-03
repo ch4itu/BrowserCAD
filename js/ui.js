@@ -40,6 +40,7 @@ const UI = {
         this.renderLayoutTabs();
         this.updateStatusBar();
         this.updateCommandPrompt(null);
+        this.ensureCommandButtons();
 
         // Focus command line
         this.focusCommandLine();
@@ -86,6 +87,56 @@ const UI = {
         this.renderLayoutTabs();
         Renderer.draw();
         UI.log(`LAYOUT: Created ${name}.`, 'success');
+    },
+
+    ensureCommandButtons() {
+        const desktopTargets = [
+            { cmd: 'block', label: 'Block', title: 'Make Block (B)', icon: '\u25A3' },
+            { cmd: 'insert', label: 'Insert', title: 'Insert Block (I)', icon: '\u2795' },
+            { cmd: 'hatch', label: 'Hatch', title: 'Hatch (H)', icon: '\u2592' }
+        ];
+        const drawPanel = document.querySelector('.ribbon-content[data-tab="draw"] .ribbon-panel-content');
+        if (drawPanel) {
+            desktopTargets.forEach(target => {
+                const existing = document.querySelector(`.tool-btn[data-cmd="${target.cmd}"]`);
+                if (existing) return;
+                const button = document.createElement('button');
+                button.className = 'tool-btn';
+                button.dataset.cmd = target.cmd;
+                button.title = target.title;
+                button.onclick = () => App.executeCommand(target.cmd);
+                const icon = document.createElement('i');
+                icon.className = 'icon';
+                icon.textContent = target.icon;
+                const label = document.createElement('span');
+                label.className = 'label';
+                label.textContent = target.label;
+                button.appendChild(icon);
+                button.appendChild(label);
+                drawPanel.appendChild(button);
+            });
+        }
+
+        const mobileRow = document.querySelector('.mobile-tool-row[data-mtab="draw"]');
+        if (mobileRow) {
+            desktopTargets.forEach(target => {
+                const existing = mobileRow.querySelector(`.mobile-tool-btn[data-cmd="${target.cmd}"]`);
+                if (existing) return;
+                const button = document.createElement('button');
+                button.className = 'mobile-tool-btn';
+                button.dataset.cmd = target.cmd;
+                button.onclick = () => App.executeCommand(target.cmd);
+                const icon = document.createElement('i');
+                icon.className = 'm-icon';
+                icon.textContent = target.icon;
+                const label = document.createElement('span');
+                label.className = 'm-label';
+                label.textContent = target.label;
+                button.appendChild(icon);
+                button.appendChild(label);
+                mobileRow.appendChild(button);
+            });
+        }
     },
 
     // ==========================================
