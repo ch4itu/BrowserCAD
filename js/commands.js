@@ -284,6 +284,12 @@ const Commands = {
         'help': 'help',
         '?': 'help',
 
+        // Layout & plotting
+        'mview': 'mview',
+        'mspace': 'mspace',
+        'pspace': 'pspace',
+        'plot': 'plot',
+
         // Phase 3: Advanced Drawing & Editing
         'chprop': 'chprop',
         'change': 'chprop',
@@ -357,6 +363,28 @@ const Commands = {
             (CAD.activeCmd === 'line' || CAD.activeCmd === 'polyline' || CAD.activeCmd === 'spline')) {
             this.handleInput('u');
             return;
+        }
+
+        if (cmdName === 'plot') {
+            this.plotLayout();
+            return;
+        }
+
+        if (cmdName === 'pspace') {
+            this.enterPaperSpace();
+            return;
+        }
+
+        if (cmdName === 'mspace') {
+            const layout = CAD.getLayout(CAD.currentLayout);
+            if (!layout || layout.type !== 'paper') {
+                UI.log('MSPACE: Not in a layout. Switch to a layout tab first.', 'error');
+                return;
+            }
+            if (CAD.activeViewportId) {
+                this.enterModelSpace();
+                return;
+            }
         }
 
         const command = this.aliases[cmdName];
@@ -484,6 +512,17 @@ const Commands = {
                 UI.log('RECTANGLE: Specify first corner point:', 'prompt');
                 break;
 
+            case 'mview': {
+                const layout = CAD.getLayout(CAD.currentLayout);
+                if (!layout || layout.type !== 'paper') {
+                    UI.log('MVIEW: Not in a layout. Switch to a layout tab first.', 'error');
+                    this.finishCommand();
+                    return;
+                }
+                UI.log('MVIEW: Specify first corner of viewport:', 'prompt');
+                break;
+            }
+
             case 'ellipse':
                 UI.log('ELLIPSE: Specify axis endpoint 1:', 'prompt');
                 break;
@@ -503,6 +542,10 @@ const Commands = {
             case 'polygon':
                 UI.log('POLYGON: Enter number of sides <4>:', 'prompt');
                 CAD.cmdOptions.sides = 4;
+                break;
+
+            case 'mspace':
+                UI.log('MSPACE: Select viewport to activate:', 'prompt');
                 break;
 
             case 'ray':
@@ -1467,6 +1510,10 @@ const Commands = {
         UI.log('  PURGE (PU)      Remove unused items');
         UI.log('  APPLOAD         Load Lisp scripts');
         UI.log('  LAYOUT          Manage layouts/paperspace');
+        UI.log('  MVIEW           Create layout viewport');
+        UI.log('  MSPACE          Activate model space in viewport');
+        UI.log('  PSPACE          Return to paper space');
+        UI.log('  PLOT            Export layout to PDF');
         UI.log('  LAYERSTATE      Manage layer states');
         UI.log('');
 
@@ -1551,6 +1598,10 @@ const Commands = {
             'layer': 'LAYER (LA): Layer management. Options: New (create), Set (current), On/Off (visibility), List.',
             'layout': 'LAYOUT: Manage Model/Layout tabs. Options: New/Set/List/Delete.',
             'layerstate': 'LAYERSTATE: Save/restore layer states. Options: Save/Restore/List/Delete.',
+            'mview': 'MVIEW: Create a paper space viewport. Click two corners to define the viewport rectangle.',
+            'mspace': 'MSPACE: Activate model space within a viewport. Select a viewport to edit its view.',
+            'pspace': 'PSPACE: Return to paper space editing.',
+            'plot': 'PLOT: Export the current layout to PDF (requires jsPDF).',
             'zoom': 'ZOOM (Z): Zoom view. Options: All/Extents/Window/Center. Scroll wheel also zooms.',
             'find': 'FIND: Search and replace text in all text/mtext entities.',
             'filter': 'FILTER (FI): Select entities by Type, Layer, or Color filter.',
@@ -1696,6 +1747,10 @@ const Commands = {
                 this.handleRectClick(point);
                 break;
 
+            case 'mview':
+                this.handleMViewClick(point);
+                break;
+
             case 'ellipse':
                 this.handleEllipseClick(point);
                 break;
@@ -1710,6 +1765,10 @@ const Commands = {
 
             case 'mtext':
                 this.handleMTextClick(point);
+                break;
+
+            case 'mspace':
+                this.handleMSpaceClick(point);
                 break;
 
             case 'point':
@@ -2051,6 +2110,77 @@ const Commands = {
             UI.log('Rectangle created.');
             this.finishCommand();
         }
+    },
+
+    handleMViewClick(point) {
+        const state = CAD;
+        const layout = state.getLayout(state.currentLayout);
+        if (!layout || layout.type !== 'paper') {
+            UI.log('MVIEW: Not in a layout. Switch to a layout tab first.', 'error');
+            this.finishCommand();
+            return;
+        }
+
+        state.points.push(point);
+        state.step++;
+
+        if (state.points.length === 1) {
+            UI.log('MVIEW: Specify opposite corner:', 'prompt');
+            return;
+        }
+
+        const p1 = state.points[0];
+        const p2 = state.points[1];
+        const width = Math.abs(p2.x - p1.x);
+        const height = Math.abs(p2.y - p1.y);
+
+        if (width < 1 || height < 1) {
+            UI.log('MVIEW: Viewport is too small.', 'error');
+            this.finishCommand();
+            return;
+        }
+
+        const centerPoint = Utils.midpoint(p1, p2);
+        const modelLayout = state.getLayout('Model') || { pan: { x: 0, y: 0 }, zoom: 1 };
+        const canvasSize = Renderer.getCanvasSize();
+        const modelViewCenter = Utils.screenToWorld(
+            canvasSize.width / 2,
+            canvasSize.height / 2,
+            modelLayout.pan,
+            modelLayout.zoom
+        );
+        const viewScale = modelLayout.zoom / (state.zoom || 1);
+
+        layout.viewports.push({
+            id: generateId(),
+            type: 'viewport',
+            centerPoint: { ...centerPoint },
+            width,
+            height,
+            viewCenter: { ...modelViewCenter },
+            viewScale: Math.max(viewScale, 0.001)
+        });
+
+        UI.log('MVIEW: Viewport created.', 'success');
+        this.finishCommand();
+    },
+
+    handleMSpaceClick(point) {
+        const layout = CAD.getLayout(CAD.currentLayout);
+        if (!layout || layout.type !== 'paper') {
+            UI.log('MSPACE: Not in a layout. Switch to a layout tab first.', 'error');
+            this.finishCommand();
+            return;
+        }
+
+        const viewport = this.getViewportAtPoint(point, layout);
+        if (!viewport) {
+            UI.log('MSPACE: Select a viewport.', 'prompt');
+            return;
+        }
+
+        this.enterModelSpace(viewport);
+        this.finishCommand(true);
     },
 
     handleEllipseClick(point) {
@@ -3442,6 +3572,75 @@ const Commands = {
         UI.updateSelectionRibbon();
         UI.hideCanvasSelectionToolbar();
         Renderer.draw();
+    },
+
+    getViewportAtPoint(point, layout) {
+        if (!layout || !layout.viewports) return null;
+        return layout.viewports.find(viewport => {
+            const left = viewport.centerPoint.x - viewport.width / 2;
+            const right = viewport.centerPoint.x + viewport.width / 2;
+            const top = viewport.centerPoint.y - viewport.height / 2;
+            const bottom = viewport.centerPoint.y + viewport.height / 2;
+            return point.x >= left && point.x <= right && point.y >= top && point.y <= bottom;
+        }) || null;
+    },
+
+    enterModelSpace(viewport = null) {
+        const layout = CAD.getLayout(CAD.currentLayout);
+        if (!layout || layout.type !== 'paper') {
+            UI.log('MSPACE: Not in a layout. Switch to a layout tab first.', 'error');
+            return;
+        }
+        const target = viewport || layout.viewports.find(v => v.id === CAD.activeViewportId);
+        if (!target) {
+            UI.log('MSPACE: Select a viewport to activate.', 'prompt');
+            return;
+        }
+        CAD.activeSpace = 'MODEL';
+        CAD.activeViewportId = target.id;
+        UI.log('MSPACE: Model space active in viewport.');
+        Renderer.draw();
+    },
+
+    enterPaperSpace() {
+        CAD.activeSpace = 'PAPER';
+        CAD.activeViewportId = null;
+        UI.log('PSPACE: Paper space active.');
+        Renderer.draw();
+    },
+
+    plotLayout() {
+        const layout = CAD.getLayout(CAD.currentLayout);
+        if (!layout || layout.type !== 'paper' || !layout.paper) {
+            UI.log('PLOT: Switch to a layout tab first.', 'error');
+            return;
+        }
+
+        const PDF = window.jspdf?.jsPDF || window.jsPDF;
+        if (!PDF) {
+            UI.log('PLOT: jsPDF not available.', 'error');
+            return;
+        }
+
+        const { width, height } = layout.paper;
+        const scale = 3;
+        const canvas = document.createElement('canvas');
+        canvas.width = width * scale;
+        canvas.height = height * scale;
+        const ctx = canvas.getContext('2d');
+
+        Renderer.renderLayoutToContext(ctx, layout, { scale });
+
+        const doc = new PDF({
+            orientation: width >= height ? 'landscape' : 'portrait',
+            unit: 'mm',
+            format: [width, height]
+        });
+
+        const imageData = canvas.toDataURL('image/png');
+        doc.addImage(imageData, 'PNG', 0, 0, width, height);
+        doc.save(`${CAD.drawingName || 'BrowserCAD'}.pdf`);
+        UI.log('PLOT: PDF generated.', 'success');
     },
 
     // ==========================================

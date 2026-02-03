@@ -147,9 +147,9 @@ Lisp support exists; advanced IDE/integration does not.
 - [ ] Action Recorder
 
 ## 9) Paper Space & Layouts (Partial)
-Basic layout tabs and paper space backgrounds are present; viewports and plotting are still missing.
+Basic layout tabs, paper space backgrounds, and viewports are present; plotting is limited to PDF output.
 - [x] Layout Tabs (Model + Paper Space backgrounds)
-- [ ] Viewports (MVIEW)
+- [x] Viewports (MVIEW)
 - [ ] Page Setup
 - [ ] Title Blocks
 - [ ] Viewport Scaling (XP)
@@ -174,7 +174,7 @@ The engine is strictly 2D.
 - [x] Google Drive Open/Save
 - [ ] DWG Support
 - [ ] PDF Import/Export
-- [ ] Plot/Print (PLOT)
+- [x] Plot/Print (PLOT)
 
 ## 12) UI & Interaction
 - [x] Ribbon UI (desktop)

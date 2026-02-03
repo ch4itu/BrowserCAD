@@ -61,7 +61,13 @@ const App = {
     },
 
     onMouseDown(e) {
-        const world = Utils.screenToWorld(e.offsetX, e.offsetY, CAD.pan, CAD.zoom);
+        const paperPoint = this.screenToPaper(e.offsetX, e.offsetY);
+        const world = this.screenToActiveSpace(paperPoint);
+        if (!world) return;
+        const activeViewport = this.getActiveViewport();
+        const effectiveZoom = this.isModelSpaceInLayout() && activeViewport
+            ? CAD.zoom * activeViewport.viewScale
+            : CAD.zoom;
 
         // Middle mouse button - start pan or zoom extents on double-click
         if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
@@ -90,7 +96,9 @@ const App = {
     },
 
     onMouseMove(e) {
-        const world = Utils.screenToWorld(e.offsetX, e.offsetY, CAD.pan, CAD.zoom);
+        const paperPoint = this.screenToPaper(e.offsetX, e.offsetY);
+        const world = this.screenToActiveSpace(paperPoint);
+        if (!world) return;
 
         // Update cursor position
         CAD.cursor = world;
@@ -102,20 +110,29 @@ const App = {
         if (CAD.isPanning) {
             const dx = e.offsetX - CAD.panStart.x;
             const dy = e.offsetY - CAD.panStart.y;
-            CAD.pan.x += dx;
-            CAD.pan.y += dy;
+            const activeViewport = this.getActiveViewport();
+
+            if (this.isModelSpaceInLayout() && activeViewport) {
+                const paperDx = dx / CAD.zoom;
+                const paperDy = dy / CAD.zoom;
+                activeViewport.viewCenter.x -= paperDx / activeViewport.viewScale;
+                activeViewport.viewCenter.y -= paperDy / activeViewport.viewScale;
+            } else {
+                CAD.pan.x += dx;
+                CAD.pan.y += dy;
+            }
             CAD.panStart = { x: e.offsetX, y: e.offsetY };
         }
 
         // Update hover highlighting (detect entity under cursor)
-        const tolerance = 10 / CAD.zoom;
+        const tolerance = 10 / effectiveZoom;
         const hit = Commands.hitTest(world);
         CAD.hoveredId = hit ? hit.id : null;
 
         // Update snap point (separate OSNAP and Grid Snap)
         if (CAD.osnapEnabled || CAD.gridSnapEnabled) {
             const entities = this.getSnapEntities(world);
-            const snapTolerance = 15 / CAD.zoom;
+            const snapTolerance = 15 / effectiveZoom;
 
             // Build effective snap modes based on current settings
             const effectiveSnapModes = {
@@ -246,6 +263,61 @@ const App = {
         return entities;
     },
 
+    screenToPaper(x, y) {
+        return Utils.screenToWorld(x, y, CAD.pan, CAD.zoom);
+    },
+
+    paperToModel(point, viewport) {
+        return {
+            x: (point.x - viewport.centerPoint.x) / viewport.viewScale + viewport.viewCenter.x,
+            y: (point.y - viewport.centerPoint.y) / viewport.viewScale + viewport.viewCenter.y
+        };
+    },
+
+    modelToPaper(point, viewport) {
+        return {
+            x: (point.x - viewport.viewCenter.x) * viewport.viewScale + viewport.centerPoint.x,
+            y: (point.y - viewport.viewCenter.y) * viewport.viewScale + viewport.centerPoint.y
+        };
+    },
+
+    screenToActiveSpace(paperPoint) {
+        if (!paperPoint) return null;
+        if (this.isModelSpaceInLayout()) {
+            const viewport = this.getActiveViewport();
+            if (!viewport || !this.isPointInViewport(paperPoint, viewport)) return null;
+            return this.paperToModel(paperPoint, viewport);
+        }
+        return paperPoint;
+    },
+
+    isModelSpaceInLayout() {
+        const layout = CAD.getLayout(CAD.currentLayout);
+        return layout && layout.type === 'paper' && CAD.activeSpace === 'MODEL';
+    },
+
+    getActiveViewport() {
+        if (!CAD.activeViewportId) return null;
+        const layout = CAD.getLayout(CAD.currentLayout);
+        if (!layout) return null;
+        return layout.viewports.find(viewport => viewport.id === CAD.activeViewportId) || null;
+    },
+
+    getViewportAtPoint(point) {
+        const layout = CAD.getLayout(CAD.currentLayout);
+        if (!layout) return null;
+        return layout.viewports.find(viewport => this.isPointInViewport(point, viewport)) || null;
+    },
+
+    isPointInViewport(point, viewport) {
+        if (!viewport || !point) return false;
+        const left = viewport.centerPoint.x - viewport.width / 2;
+        const right = viewport.centerPoint.x + viewport.width / 2;
+        const top = viewport.centerPoint.y - viewport.height / 2;
+        const bottom = viewport.centerPoint.y + viewport.height / 2;
+        return point.x >= left && point.x <= right && point.y >= top && point.y <= bottom;
+    },
+
     onMouseUp(e) {
         if (CAD.isPanning) {
             CAD.isPanning = false;
@@ -258,8 +330,23 @@ const App = {
         e.preventDefault();
 
         const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-        const worldBefore = Utils.screenToWorld(e.offsetX, e.offsetY, CAD.pan, CAD.zoom);
+        const paperPoint = this.screenToPaper(e.offsetX, e.offsetY);
+        const activeViewport = this.getActiveViewport();
 
+        if (this.isModelSpaceInLayout() && activeViewport && this.isPointInViewport(paperPoint, activeViewport)) {
+            const modelPoint = this.paperToModel(paperPoint, activeViewport);
+            activeViewport.viewScale *= zoomFactor;
+            activeViewport.viewScale = Utils.clamp(activeViewport.viewScale, 0.001, 100);
+
+            activeViewport.viewCenter = {
+                x: modelPoint.x - (paperPoint.x - activeViewport.centerPoint.x) / activeViewport.viewScale,
+                y: modelPoint.y - (paperPoint.y - activeViewport.centerPoint.y) / activeViewport.viewScale
+            };
+            Renderer.draw();
+            return;
+        }
+
+        const worldBefore = Utils.screenToWorld(e.offsetX, e.offsetY, CAD.pan, CAD.zoom);
         CAD.zoom *= zoomFactor;
 
         // Clamp zoom level
@@ -291,8 +378,25 @@ const App = {
     lastMiddleClick: 0,
 
     onDoubleClick(e) {
-        // Double left click does nothing now
-        // Use double middle click for zoom extents
+        if (e.button !== 0) return;
+        const layout = CAD.getLayout(CAD.currentLayout);
+        if (!layout || layout.type !== 'paper') return;
+
+        const paperPoint = this.screenToPaper(e.offsetX, e.offsetY);
+        if (CAD.activeSpace === 'PAPER') {
+            const viewport = this.getViewportAtPoint(paperPoint);
+            if (viewport) {
+                CAD.activeSpace = 'MODEL';
+                CAD.activeViewportId = viewport.id;
+                UI.log('MSPACE: Model space active in viewport.');
+                Renderer.draw();
+            }
+        } else {
+            CAD.activeSpace = 'PAPER';
+            CAD.activeViewportId = null;
+            UI.log('PSPACE: Paper space active.');
+            Renderer.draw();
+        }
     },
 
     onMiddleDoubleClick() {
