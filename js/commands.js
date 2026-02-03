@@ -3,13 +3,13 @@
    ============================================ */
 
 const Commands = {
-    // Commands that should repeat automatically (like AutoCAD)
+    // Commands that should repeat automatically (like CAD)
     repeatableCommands: ['line', 'polyline', 'circle', 'arc', 'rect', 'ellipse', 'text', 'point', 'polygon', 'donut', 'ray', 'xline', 'spline'],
 
     // Last executed drawing command (for repeat)
     lastDrawingCmd: null,
 
-    // Command aliases (AutoCAD-like shortcuts)
+    // Command aliases (CAD-like shortcuts)
     aliases: {
         // Drawing commands
         'l': 'line',
@@ -189,7 +189,7 @@ const Commands = {
         'lt': 'linetype',
         'ltscale': 'ltscale',
 
-        // AutoLISP
+        // Lisp
         'lisp': 'lisp',
         'vlisp': 'lisp',
         'appload': 'appload',
@@ -284,6 +284,12 @@ const Commands = {
         'help': 'help',
         '?': 'help',
 
+        // Layout & plotting
+        'mview': 'mview',
+        'mspace': 'mspace',
+        'pspace': 'pspace',
+        'plot': 'plot',
+
         // Phase 3: Advanced Drawing & Editing
         'chprop': 'chprop',
         'change': 'chprop',
@@ -336,7 +342,7 @@ const Commands = {
     execute(input) {
         const trimmedInput = input.trim();
 
-        // Check for AutoLISP expression (starts with parenthesis)
+        // Check for Lisp expression (starts with parenthesis)
         if (trimmedInput.startsWith('(')) {
             this.executeLisp(trimmedInput);
             return;
@@ -359,11 +365,33 @@ const Commands = {
             return;
         }
 
+        if (cmdName === 'plot') {
+            this.plotLayout();
+            return;
+        }
+
+        if (cmdName === 'pspace') {
+            this.enterPaperSpace();
+            return;
+        }
+
+        if (cmdName === 'mspace') {
+            const layout = CAD.getLayout(CAD.currentLayout);
+            if (!layout || layout.type !== 'paper') {
+                UI.log('MSPACE: Not in a layout. Switch to a layout tab first.', 'error');
+                return;
+            }
+            if (CAD.activeViewportId) {
+                this.enterModelSpace();
+                return;
+            }
+        }
+
         const command = this.aliases[cmdName];
         if (!command) {
-            if (typeof AutoLISP !== 'undefined') {
+            if (typeof Lisp !== 'undefined') {
                 const lispCmdName = 'C:' + cmdName.toUpperCase();
-                if (AutoLISP.userFunctions && AutoLISP.userFunctions[lispCmdName]) {
+                if (Lisp.userFunctions && Lisp.userFunctions[lispCmdName]) {
                     this.executeLisp(`(${lispCmdName})`);
                     return;
                 }
@@ -401,15 +429,15 @@ const Commands = {
         this.startCommand(command, args);
     },
 
-    // Execute AutoLISP code
+    // Execute Lisp code
     async executeLisp(code) {
-        if (typeof AutoLISP === 'undefined') {
-            UI.log('AutoLISP interpreter not loaded.', 'error');
+        if (typeof Lisp === 'undefined') {
+            UI.log('Lisp interpreter not loaded.', 'error');
             return;
         }
 
         try {
-            const result = await AutoLISP.execute(code);
+            const result = await Lisp.execute(code);
             if (result !== undefined && result !== null) {
                 // Format the result for display
                 const formatted = this.formatLispResult(result);
@@ -466,6 +494,9 @@ const Commands = {
                 break;
 
             case 'polyline':
+                CAD.cmdOptions.polylineMode = 'line';
+                CAD.cmdOptions.polylineArcStep = 0;
+                CAD.cmdOptions.polylineArcEnd = null;
                 UI.log('PLINE: Specify start point:', 'prompt');
                 break;
 
@@ -480,6 +511,17 @@ const Commands = {
             case 'rect':
                 UI.log('RECTANGLE: Specify first corner point:', 'prompt');
                 break;
+
+            case 'mview': {
+                const layout = CAD.getLayout(CAD.currentLayout);
+                if (!layout || layout.type !== 'paper') {
+                    UI.log('MVIEW: Not in a layout. Switch to a layout tab first.', 'error');
+                    this.finishCommand();
+                    return;
+                }
+                UI.log('MVIEW: Specify first corner of viewport:', 'prompt');
+                break;
+            }
 
             case 'ellipse':
                 UI.log('ELLIPSE: Specify axis endpoint 1:', 'prompt');
@@ -500,6 +542,10 @@ const Commands = {
             case 'polygon':
                 UI.log('POLYGON: Enter number of sides <4>:', 'prompt');
                 CAD.cmdOptions.sides = 4;
+                break;
+
+            case 'mspace':
+                UI.log('MSPACE: Select viewport to activate:', 'prompt');
                 break;
 
             case 'ray':
@@ -646,6 +692,11 @@ const Commands = {
                 break;
 
             case 'hatch':
+                if (CAD.selectedIds.length > 0) {
+                    this.applyHatchToSelection();
+                    this.finishCommand();
+                    return;
+                }
                 UI.log(`HATCH: Click inside a closed area or select a closed object.`, 'prompt');
                 UI.log(`HATCH: Pattern [${this.getHatchPatternOptions()}] <${CAD.hatchPattern}>:`, 'prompt');
                 break;
@@ -933,7 +984,7 @@ const Commands = {
                 break;
 
             case 'lisp':
-                UI.log('AutoLISP Mode. Type (expression) to execute LISP code.');
+                UI.log('Lisp Mode. Type (expression) to execute LISP code.');
                 UI.log('Examples: (+ 1 2 3), (setq x 10), (command "circle" \'(0 0) 50)');
                 UI.log('Type (help) for available functions.');
                 this.finishCommand();
@@ -946,7 +997,7 @@ const Commands = {
                         this.finishCommand(true);
                         return;
                     }
-                    await AutoLISP.load(lispFile.code);
+                    await Lisp.load(lispFile.code);
                     UI.log(`APPLOAD: Loaded ${lispFile.name}.`);
                     this.finishCommand(true);
                 });
@@ -1462,8 +1513,12 @@ const Commands = {
         UI.log('  VIEW            Named views');
         UI.log('  FIND            Search and replace text');
         UI.log('  PURGE (PU)      Remove unused items');
-        UI.log('  APPLOAD         Load AutoLISP scripts');
+        UI.log('  APPLOAD         Load Lisp scripts');
         UI.log('  LAYOUT          Manage layouts/paperspace');
+        UI.log('  MVIEW           Create layout viewport');
+        UI.log('  MSPACE          Activate model space in viewport');
+        UI.log('  PSPACE          Return to paper space');
+        UI.log('  PLOT            Export layout to PDF');
         UI.log('  LAYERSTATE      Manage layer states');
         UI.log('');
 
@@ -1548,6 +1603,10 @@ const Commands = {
             'layer': 'LAYER (LA): Layer management. Options: New (create), Set (current), On/Off (visibility), List.',
             'layout': 'LAYOUT: Manage Model/Layout tabs. Options: New/Set/List/Delete.',
             'layerstate': 'LAYERSTATE: Save/restore layer states. Options: Save/Restore/List/Delete.',
+            'mview': 'MVIEW: Create a paper space viewport. Click two corners to define the viewport rectangle.',
+            'mspace': 'MSPACE: Activate model space within a viewport. Select a viewport to edit its view.',
+            'pspace': 'PSPACE: Return to paper space editing.',
+            'plot': 'PLOT: Export the current layout to PDF (requires jsPDF).',
             'zoom': 'ZOOM (Z): Zoom view. Options: All/Extents/Window/Center. Scroll wheel also zooms.',
             'find': 'FIND: Search and replace text in all text/mtext entities.',
             'filter': 'FILTER (FI): Select entities by Type, Layer, or Color filter.',
@@ -1598,17 +1657,17 @@ const Commands = {
             point = Utils.applyOrtho(state.points[state.points.length - 1], point);
         }
 
-        if (typeof AutoLISP !== 'undefined' && AutoLISP.pendingInput) {
+        if (typeof Lisp !== 'undefined' && Lisp.pendingInput) {
             const lispType = CAD.lispInputType;
             if (lispType === 'point' || lispType === 'corner') {
-                AutoLISP.handleUserInput(point);
+                Lisp.handleUserInput(point);
                 Renderer.draw();
                 return;
             }
             if (lispType === 'entsel') {
                 const hit = this.hitTest(point);
                 if (hit) {
-                    AutoLISP.handleUserInput({ entity: hit, point });
+                    Lisp.handleUserInput({ entity: hit, point });
                 } else {
                     UI.log('No object found for selection.', 'error');
                 }
@@ -1618,9 +1677,9 @@ const Commands = {
             if (lispType === 'ssget') {
                 const hits = this.hitTestAll(point);
                 if (hits.length > 0) {
-                    AutoLISP.handleUserInput({ ids: hits.map(hit => hit.id) });
+                    Lisp.handleUserInput({ ids: hits.map(hit => hit.id) });
                 } else if (CAD.selectedIds.length > 0) {
-                    AutoLISP.handleUserInput({ ids: [...CAD.selectedIds] });
+                    Lisp.handleUserInput({ ids: [...CAD.selectedIds] });
                 } else {
                     UI.log('No objects selected.', 'error');
                 }
@@ -1646,7 +1705,7 @@ const Commands = {
         if (state.cmdOptions.needSelection) {
             const hit = this.hitTest(point);
             if (hit) {
-                // Toggle selection on click (like AutoCAD)
+                // Toggle selection on click (like CAD)
                 if (state.isSelected(hit.id)) {
                     state.deselect(hit.id);
                     UI.log(`1 removed, ${state.selectedIds.length} total`);
@@ -1693,6 +1752,10 @@ const Commands = {
                 this.handleRectClick(point);
                 break;
 
+            case 'mview':
+                this.handleMViewClick(point);
+                break;
+
             case 'ellipse':
                 this.handleEllipseClick(point);
                 break;
@@ -1707,6 +1770,10 @@ const Commands = {
 
             case 'mtext':
                 this.handleMTextClick(point);
+                break;
+
+            case 'mspace':
+                this.handleMSpaceClick(point);
                 break;
 
             case 'point':
@@ -1954,14 +2021,36 @@ const Commands = {
 
     handlePolylineClick(point) {
         const state = CAD;
+        const mode = state.cmdOptions.polylineMode || 'line';
+
+        if (mode === 'arc' && state.points.length >= 1) {
+            if (!state.cmdOptions.polylineArcStep) {
+                state.cmdOptions.polylineArcEnd = point;
+                state.cmdOptions.polylineArcStep = 1;
+                UI.log('PLINE: Specify point on arc:', 'prompt');
+                return;
+            }
+
+            const startPoint = state.points[state.points.length - 1];
+            const arcEnd = state.cmdOptions.polylineArcEnd;
+            const arcPoints = this.getArcPointsFromThreePoints(startPoint, point, arcEnd);
+
+            if (arcPoints && arcPoints.length) {
+                state.points.push(...arcPoints);
+            } else {
+                state.points.push({ ...arcEnd });
+                UI.log('PLINE: Arc points invalid, used straight segment.', 'error');
+            }
+
+            state.cmdOptions.polylineArcStep = 0;
+            state.cmdOptions.polylineArcEnd = null;
+            UI.log('PLINE: Specify next point or [Arc/Line/Close/Undo]:', 'prompt');
+            return;
+        }
+
         state.points.push(point);
         state.step++;
-
-        if (state.points.length === 1) {
-            UI.log('PLINE: Specify next point or [Arc/Close/Undo]:', 'prompt');
-        } else {
-            UI.log('PLINE: Specify next point or [Arc/Close/Undo]:', 'prompt');
-        }
+        UI.log('PLINE: Specify next point or [Arc/Line/Close/Undo]:', 'prompt');
     },
 
     handleCircleClick(point) {
@@ -2026,6 +2115,77 @@ const Commands = {
             UI.log('Rectangle created.');
             this.finishCommand();
         }
+    },
+
+    handleMViewClick(point) {
+        const state = CAD;
+        const layout = state.getLayout(state.currentLayout);
+        if (!layout || layout.type !== 'paper') {
+            UI.log('MVIEW: Not in a layout. Switch to a layout tab first.', 'error');
+            this.finishCommand();
+            return;
+        }
+
+        state.points.push(point);
+        state.step++;
+
+        if (state.points.length === 1) {
+            UI.log('MVIEW: Specify opposite corner:', 'prompt');
+            return;
+        }
+
+        const p1 = state.points[0];
+        const p2 = state.points[1];
+        const width = Math.abs(p2.x - p1.x);
+        const height = Math.abs(p2.y - p1.y);
+
+        if (width < 1 || height < 1) {
+            UI.log('MVIEW: Viewport is too small.', 'error');
+            this.finishCommand();
+            return;
+        }
+
+        const centerPoint = Utils.midpoint(p1, p2);
+        const modelLayout = state.getLayout('Model') || { pan: { x: 0, y: 0 }, zoom: 1 };
+        const canvasSize = Renderer.getCanvasSize();
+        const modelViewCenter = Utils.screenToWorld(
+            canvasSize.width / 2,
+            canvasSize.height / 2,
+            modelLayout.pan,
+            modelLayout.zoom
+        );
+        const viewScale = modelLayout.zoom / (state.zoom || 1);
+
+        layout.viewports.push({
+            id: generateId(),
+            type: 'viewport',
+            centerPoint: { ...centerPoint },
+            width,
+            height,
+            viewCenter: { ...modelViewCenter },
+            viewScale: Math.max(viewScale, 0.001)
+        });
+
+        UI.log('MVIEW: Viewport created.', 'success');
+        this.finishCommand();
+    },
+
+    handleMSpaceClick(point) {
+        const layout = CAD.getLayout(CAD.currentLayout);
+        if (!layout || layout.type !== 'paper') {
+            UI.log('MSPACE: Not in a layout. Switch to a layout tab first.', 'error');
+            this.finishCommand();
+            return;
+        }
+
+        const viewport = this.getViewportAtPoint(point, layout);
+        if (!viewport) {
+            UI.log('MSPACE: Select a viewport.', 'prompt');
+            return;
+        }
+
+        this.enterModelSpace(viewport);
+        this.finishCommand(true);
     },
 
     handleEllipseClick(point) {
@@ -2163,7 +2323,7 @@ const Commands = {
             position: { ...point }
         });
         UI.log(`Point: X=${point.x.toFixed(4)}, Y=${point.y.toFixed(4)}. Specify next point:`);
-        // Don't finish - allow multiple points (like AutoCAD)
+        // Don't finish - allow multiple points (like CAD)
     },
 
     // ==========================================
@@ -2525,7 +2685,7 @@ const Commands = {
         const state = CAD;
 
         if (state.cmdOptions.selectingEdges) {
-            // Use all entities as cutting edges (AutoCAD behavior when Enter is pressed without selection)
+            // Use all entities as cutting edges (CAD behavior when Enter is pressed without selection)
             return;
         }
 
@@ -2551,7 +2711,7 @@ const Commands = {
         const state = CAD;
 
         if (state.cmdOptions.selectingEdges) {
-            // Use all entities as boundary edges (AutoCAD behavior when Enter is pressed without selection)
+            // Use all entities as boundary edges (CAD behavior when Enter is pressed without selection)
             return;
         }
 
@@ -2596,6 +2756,7 @@ const Commands = {
         }
 
         if (targets.length > 1) {
+            CAD.saveUndoState('Hatch');
             CAD.addEntity({
                 type: 'hatch',
                 clipIds: targets.map(entity => entity.id),
@@ -2619,6 +2780,7 @@ const Commands = {
 
         const loop = this.findLineLoopContainingPoint(point);
         if (loop) {
+            CAD.saveUndoState('Hatch');
             CAD.addEntity({
                 type: 'polyline',
                 points: loop,
@@ -2644,30 +2806,50 @@ const Commands = {
             underline('diagonal', 'd'),
             underline('cross', 'c'),
             underline('dots', 'o'),
-            'ANSI31-38',
+            underline('angle', 'a'),
+            'ANSI31', 'ANSI32', 'ANSI33', 'ANSI34',
+            'ANSI35', 'ANSI36', 'ANSI37', 'ANSI38',
             'brick', 'honey', 'earth', 'grass',
-            'steel', 'insul', 'net', 'dash',
+            'steel', 'insul', 'net', 'net3', 'dash',
             'square', 'zigzag'
         ].join('/');
     },
 
     hatchPatterns: [
-        'solid', 'diagonal', 'cross', 'dots',
+        'solid', 'diagonal', 'cross', 'dots', 'angle',
         'ansi31', 'ansi32', 'ansi33', 'ansi34', 'ansi35', 'ansi36', 'ansi37', 'ansi38',
         'brick', 'earth', 'grass', 'honey',
         'steel', 'insul', 'net', 'net3',
         'dash', 'square', 'zigzag'
     ],
 
+    hatchPatternAliases: {
+        angle: 'ansi31',
+        diagonal: 'ansi31',
+        cross: 'ansi37',
+        dots: 'dots',
+        brick: 'brick',
+        honey: 'honey',
+        earth: 'earth',
+        grass: 'grass',
+        steel: 'steel',
+        insul: 'insul',
+        net: 'net',
+        dash: 'dash',
+        square: 'square',
+        zigzag: 'zigzag'
+    },
+
     setHatchPattern(pattern) {
-        const p = pattern.toLowerCase();
-        // Check if valid pattern
-        if (this.hatchPatterns.includes(p)) {
-            CAD.hatchPattern = p;
-        } else {
-            CAD.hatchPattern = p; // Allow custom pattern names
+        const raw = pattern.toLowerCase();
+        const normalized = this.hatchPatternAliases[raw] || raw;
+        if (!this.hatchPatterns.includes(normalized)) {
+            UI.log(`HATCH: Unsupported pattern "${pattern}". Use LIST to see options.`, 'error');
+            return false;
         }
-        UI.log(`HATCH: Pattern set to ${p.toUpperCase()}.`, 'prompt');
+        CAD.hatchPattern = normalized;
+        UI.log(`HATCH: Pattern set to ${CAD.hatchPattern.toUpperCase()}.`, 'prompt');
+        return true;
     },
 
     entitySupportsHatch(entity) {
@@ -2678,8 +2860,25 @@ const Commands = {
     },
 
     applyHatch(entity) {
+        CAD.saveUndoState('Hatch');
         CAD.updateEntity(entity.id, { hatch: { pattern: CAD.hatchPattern } });
         UI.log('Hatch applied.');
+        Renderer.draw();
+    },
+
+    applyHatchToSelection() {
+        const selected = CAD.getSelectedEntities();
+        const targets = selected.filter(entity => this.entitySupportsHatch(entity));
+        if (targets.length === 0) {
+            UI.log('HATCH: No closed objects selected.', 'error');
+            return;
+        }
+        CAD.saveUndoState('Hatch');
+        targets.forEach(entity => {
+            CAD.updateEntity(entity.id, { hatch: { pattern: CAD.hatchPattern } }, true);
+        });
+        UI.log(`HATCH: Applied to ${targets.length} object(s).`, 'success');
+        Renderer.draw();
     },
 
     findHatchTargets(point) {
@@ -3393,7 +3592,7 @@ const Commands = {
         UI.resetPrompt();
         Renderer.draw();
 
-        // Auto-restart repeatable commands (like AutoCAD)
+        // Auto-restart repeatable commands (like CAD)
         if (!preventRestart && lastCmd && this.repeatableCommands.includes(lastCmd)) {
             // Small delay to allow UI to update
             setTimeout(() => {
@@ -3417,6 +3616,75 @@ const Commands = {
         UI.updateSelectionRibbon();
         UI.hideCanvasSelectionToolbar();
         Renderer.draw();
+    },
+
+    getViewportAtPoint(point, layout) {
+        if (!layout || !layout.viewports) return null;
+        return layout.viewports.find(viewport => {
+            const left = viewport.centerPoint.x - viewport.width / 2;
+            const right = viewport.centerPoint.x + viewport.width / 2;
+            const top = viewport.centerPoint.y - viewport.height / 2;
+            const bottom = viewport.centerPoint.y + viewport.height / 2;
+            return point.x >= left && point.x <= right && point.y >= top && point.y <= bottom;
+        }) || null;
+    },
+
+    enterModelSpace(viewport = null) {
+        const layout = CAD.getLayout(CAD.currentLayout);
+        if (!layout || layout.type !== 'paper') {
+            UI.log('MSPACE: Not in a layout. Switch to a layout tab first.', 'error');
+            return;
+        }
+        const target = viewport || layout.viewports.find(v => v.id === CAD.activeViewportId);
+        if (!target) {
+            UI.log('MSPACE: Select a viewport to activate.', 'prompt');
+            return;
+        }
+        CAD.activeSpace = 'MODEL';
+        CAD.activeViewportId = target.id;
+        UI.log('MSPACE: Model space active in viewport.');
+        Renderer.draw();
+    },
+
+    enterPaperSpace() {
+        CAD.activeSpace = 'PAPER';
+        CAD.activeViewportId = null;
+        UI.log('PSPACE: Paper space active.');
+        Renderer.draw();
+    },
+
+    plotLayout() {
+        const layout = CAD.getLayout(CAD.currentLayout);
+        if (!layout || layout.type !== 'paper' || !layout.paper) {
+            UI.log('PLOT: Switch to a layout tab first.', 'error');
+            return;
+        }
+
+        const PDF = window.jspdf?.jsPDF || window.jsPDF;
+        if (!PDF) {
+            UI.log('PLOT: jsPDF not available.', 'error');
+            return;
+        }
+
+        const { width, height } = layout.paper;
+        const scale = 3;
+        const canvas = document.createElement('canvas');
+        canvas.width = width * scale;
+        canvas.height = height * scale;
+        const ctx = canvas.getContext('2d');
+
+        Renderer.renderLayoutToContext(ctx, layout, { scale });
+
+        const doc = new PDF({
+            orientation: width >= height ? 'landscape' : 'portrait',
+            unit: 'mm',
+            format: [width, height]
+        });
+
+        const imageData = canvas.toDataURL('image/png');
+        doc.addImage(imageData, 'PNG', 0, 0, width, height);
+        doc.save(`${CAD.drawingName || 'BrowserCAD'}.pdf`);
+        UI.log('PLOT: PDF generated.', 'success');
     },
 
     // ==========================================
@@ -3527,6 +3795,75 @@ const Commands = {
         UI.log(`SPLINE: Specify point ${state.points.length + 1} or [Close/Enter to finish]:`, 'prompt');
     },
 
+    getArcPointsFromThreePoints(start, mid, end) {
+        const ax = start.x;
+        const ay = start.y;
+        const bx = mid.x;
+        const by = mid.y;
+        const cx = end.x;
+        const cy = end.y;
+
+        const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+        if (Math.abs(d) < 1e-8) return null;
+
+        const ax2ay2 = ax * ax + ay * ay;
+        const bx2by2 = bx * bx + by * by;
+        const cx2cy2 = cx * cx + cy * cy;
+
+        const ux = (ax2ay2 * (by - cy) + bx2by2 * (cy - ay) + cx2cy2 * (ay - by)) / d;
+        const uy = (ax2ay2 * (cx - bx) + bx2by2 * (ax - cx) + cx2cy2 * (bx - ax)) / d;
+        const center = { x: ux, y: uy };
+        const radius = Utils.dist(center, start);
+        if (!radius || Number.isNaN(radius)) return null;
+
+        const startAngle = Utils.angle(center, start);
+        const midAngle = Utils.angle(center, mid);
+        const endAngle = Utils.angle(center, end);
+        const ccw = this.isAngleBetweenCCW(startAngle, endAngle, midAngle);
+
+        const twoPi = Math.PI * 2;
+        let startAdj = startAngle;
+        let endAdj = endAngle;
+        let delta = 0;
+
+        if (ccw) {
+            if (endAdj < startAdj) endAdj += twoPi;
+            delta = endAdj - startAdj;
+        } else {
+            if (startAdj < endAdj) startAdj += twoPi;
+            delta = startAdj - endAdj;
+        }
+
+        const segments = Math.max(6, Math.ceil(Math.abs(delta) / (Math.PI / 12)));
+        const step = delta / segments;
+        const points = [];
+
+        for (let i = 1; i <= segments; i += 1) {
+            const angle = ccw ? startAdj + step * i : startAdj - step * i;
+            points.push({
+                x: center.x + radius * Math.cos(angle),
+                y: center.y + radius * Math.sin(angle)
+            });
+        }
+
+        return points;
+    },
+
+    isAngleBetweenCCW(start, end, test) {
+        const twoPi = Math.PI * 2;
+        const norm = (angle) => {
+            let val = angle % twoPi;
+            if (val < 0) val += twoPi;
+            return val;
+        };
+        let s = norm(start);
+        let e = norm(end);
+        let t = norm(test);
+        if (e < s) e += twoPi;
+        if (t < s) t += twoPi;
+        return t <= e;
+    },
+
     handleDonutClick(point) {
         const state = CAD;
 
@@ -3585,7 +3922,7 @@ const Commands = {
         // Create the block definition
         const block = CAD.addBlock(name, basePoint, selectedEntities);
         if (block) {
-            // Remove the original entities (like AutoCAD)
+            // Remove the original entities (like CAD)
             CAD.removeEntities(state.selectedIds, true);
 
             // Insert a block reference at the base point
@@ -3627,7 +3964,7 @@ const Commands = {
 
             UI.log(`INSERT: Block "${blockName}" inserted.`);
 
-            // Ask for next insertion point (like AutoCAD)
+            // Ask for next insertion point (like CAD)
             UI.log('INSERT: Specify insertion point or [Enter] to finish:', 'prompt');
         }
     },
@@ -4919,7 +5256,7 @@ const Commands = {
         }
         CAD.saveUndoState('Solid');
         const pts = [...state.points];
-        // AutoCAD SOLID uses triangle (3 pts) or quad (4 pts)
+        // CAD SOLID uses triangle (3 pts) or quad (4 pts)
         if (pts.length === 3) {
             pts.push({ ...pts[2] }); // Degenerate quad
         }
@@ -5814,14 +6151,15 @@ const Commands = {
     handleInput(input) {
         const state = CAD;
         input = input.trim();
+        const inputLower = input.toLowerCase();
 
-        if (typeof AutoLISP !== 'undefined' && AutoLISP.pendingInput) {
+        if (typeof Lisp !== 'undefined' && Lisp.pendingInput) {
             const lispType = CAD.lispInputType;
             if (lispType === 'point' || lispType === 'corner') {
-                const basePoint = AutoLISP.inputBasePoint || null;
+                const basePoint = Lisp.inputBasePoint || null;
                 const coord = Utils.parseCoordInput(input, basePoint);
                 if (coord) {
-                    AutoLISP.handleUserInput(coord);
+                    Lisp.handleUserInput(coord);
                 } else {
                     UI.log('Invalid point. Use x,y format.', 'error');
                 }
@@ -5832,7 +6170,7 @@ const Commands = {
                 if (Number.isNaN(value)) {
                     UI.log('Invalid number.', 'error');
                 } else {
-                    AutoLISP.handleUserInput(value);
+                    Lisp.handleUserInput(value);
                 }
                 return true;
             }
@@ -5841,17 +6179,62 @@ const Commands = {
                 if (Number.isNaN(value)) {
                     UI.log('Invalid integer.', 'error');
                 } else {
-                    AutoLISP.handleUserInput(value);
+                    Lisp.handleUserInput(value);
                 }
                 return true;
             }
             if (lispType === 'string' || lispType === 'keyword') {
-                AutoLISP.handleUserInput(input);
+                Lisp.handleUserInput(input);
                 return true;
             }
             if (lispType === 'entsel' || lispType === 'ssget') {
                 UI.log('Select object(s) on the canvas.', 'prompt');
                 return true;
+            }
+        }
+
+        if (state.activeCmd && inputLower) {
+            const active = state.activeCmd;
+            const allowed = {
+                line: ['c', 'close', 'u', 'undo'],
+                polyline: ['a', 'arc', 'l', 'line', 'c', 'close', 'u', 'undo'],
+                spline: ['c', 'close', 'u', 'undo'],
+                revcloud: ['c', 'close'],
+                hatch: ['list']
+            };
+
+            if (active === 'polyline') {
+                if (inputLower === 'a' || inputLower === 'arc') {
+                    state.cmdOptions.polylineMode = 'arc';
+                    state.cmdOptions.polylineArcStep = 0;
+                    state.cmdOptions.polylineArcEnd = null;
+                    UI.log('PLINE: Arc mode. Specify arc endpoint:', 'prompt');
+                    return true;
+                }
+                if (inputLower === 'l' || inputLower === 'line') {
+                    state.cmdOptions.polylineMode = 'line';
+                    state.cmdOptions.polylineArcStep = 0;
+                    state.cmdOptions.polylineArcEnd = null;
+                    UI.log('PLINE: Line mode. Specify next point:', 'prompt');
+                    return true;
+                }
+                if (inputLower === 'c' || inputLower === 'close') {
+                    this.closeShape();
+                    return true;
+                }
+            }
+
+            if (active === 'spline' && (inputLower === 'c' || inputLower === 'close')) {
+                this.closeShape();
+                return true;
+            }
+
+            if (this.aliases[inputLower] && this.aliases[inputLower] !== active) {
+                const allowedOptions = allowed[active] || [];
+                if (!allowedOptions.includes(inputLower)) {
+                    UI.log(`${active.toUpperCase()}: Command in progress. Finish or cancel to start another.`, 'error');
+                    return true;
+                }
             }
         }
 
@@ -7034,12 +7417,18 @@ const Commands = {
         }
 
         if (state.activeCmd === 'hatch') {
-            const pattern = input.toLowerCase();
+            const trimmed = input.trim();
+            if (!trimmed) {
+                UI.log(`HATCH: Pattern unchanged (${CAD.hatchPattern.toUpperCase()}). Click inside a closed area or select a closed object.`, 'prompt');
+                return true;
+            }
+            const pattern = trimmed.toLowerCase();
             const shortcuts = {
                 s: 'solid',
                 d: 'diagonal',
                 c: 'cross',
-                o: 'dots'
+                o: 'dots',
+                a: 'angle'
             };
 
             if (pattern === 'list') {
@@ -7047,16 +7436,19 @@ const Commands = {
                 return true;
             }
 
-            // Check shortcut first, then direct pattern name
-            const resolved = shortcuts[pattern] || pattern;
-            if (this.hatchPatterns.includes(resolved)) {
-                this.setHatchPattern(resolved);
+            if (/^ansi\d+\s*-\s*\d+$/.test(pattern)) {
+                UI.log('HATCH: Specify a single ANSI pattern (ANSI31 through ANSI38).', 'error');
                 return true;
             }
+
+            const cleaned = pattern.replace(/[\s_-]+/g, '');
+            const resolved = shortcuts[cleaned] || cleaned;
+            this.setHatchPattern(resolved);
+            return true;
         }
 
         // Undo last point during LINE or POLYLINE drawing
-        if ((input.toLowerCase() === 'u' || input.toLowerCase() === 'undo') &&
+        if ((inputLower === 'u' || inputLower === 'undo') &&
             (state.activeCmd === 'line' || state.activeCmd === 'polyline' || state.activeCmd === 'spline')) {
             if (state.points.length > 1) {
                 // Remove the last point
@@ -7089,7 +7481,7 @@ const Commands = {
 
         // SCALE options: Copy, Reference, Points
         if (state.activeCmd === 'scale') {
-            const option = input.toLowerCase();
+            const option = inputLower;
 
             if ((option === 'c' || option === 'copy') && state.step === 1) {
                 state.cmdOptions.scaleCopy = true;
@@ -7110,7 +7502,7 @@ const Commands = {
             }
         }
 
-        if (state.activeCmd === 'fillet' && input.toLowerCase() === 'r') {
+        if (state.activeCmd === 'fillet' && inputLower === 'r') {
             const radius = prompt('Enter fillet radius:', CAD.filletRadius || '0');
             if (radius !== null) {
                 CAD.filletRadius = Math.abs(parseFloat(radius)) || 0;
@@ -7119,7 +7511,7 @@ const Commands = {
             return true;
         }
 
-        if (state.activeCmd === 'chamfer' && input.toLowerCase() === 'd') {
+        if (state.activeCmd === 'chamfer' && inputLower === 'd') {
             const d1 = prompt('Enter first chamfer distance:', CAD.chamferDist1 || '0');
             if (d1 !== null) {
                 CAD.chamferDist1 = Math.abs(parseFloat(d1)) || 0;
