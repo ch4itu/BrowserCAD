@@ -1,6 +1,6 @@
-# AutoCAD vs. BrowserCAD Feature Coverage
+# CAD vs. BrowserCAD Feature Coverage
 
-This checklist compares commonly expected AutoCAD features against what is **present in this repository**. Items are checked when a matching command/UI exists in the codebase; unchecked items were not found during a repo scan.
+This checklist compares commonly expected CAD features against what is **present in this repository**. Items are checked when a matching command/UI exists in the codebase; unchecked items were not found during a repo scan.
 
 Legend: **[x] implemented**, **[ ] missing (not found in repo)**
 
@@ -23,6 +23,7 @@ BrowserCAD has strong support for core 2D primitives.
 - [x] Boundary (BOUNDARY)
 - [x] Region (REGION)
 - [x] Multiline (MLINE)
+- [x] Tables (TABLE)
 - [ ] Multiline Styles (MLSTYLE)
 - [ ] Trace (TRACE)
 - [ ] Helix (HELIX)
@@ -138,18 +139,17 @@ A strong set of utilities and drafting aids is implemented.
 - [ ] Design Center (ADCENTER)
 
 ## 8) Programming & Scripting
-AutoLISP support exists; advanced IDE/integration does not.
-- [x] AutoLISP Interpreter
+Lisp support exists; advanced IDE/integration does not.
+- [x] Lisp Interpreter
 - [x] Load Script (APPLOAD)
 - [ ] Visual LISP Editor (VLIDE)
 - [ ] VBA / .NET Support
 - [ ] Action Recorder
 
-## 9) Paper Space & Layouts (Missing)
-Currently Model Space only.
-Currently supports basic layout tabs with paper space backgrounds; viewports and plotting are still missing.
-- [x] Layout Tabs
-- [ ] Viewports (MVIEW)
+## 9) Paper Space & Layouts (Partial)
+Basic layout tabs, paper space backgrounds, and viewports are present; plotting is limited to PDF output.
+- [x] Layout Tabs (Model + Paper Space backgrounds)
+- [x] Viewports (MVIEW)
 - [ ] Page Setup
 - [ ] Title Blocks
 - [ ] Viewport Scaling (XP)
@@ -165,8 +165,22 @@ The engine is strictly 2D.
 
 ## 11) File I/O
 - [x] Save/Open - LocalStorage
+- [x] Import - DXF
+- [x] Import - SVG
+- [x] Import - JSON
 - [x] Export - DXF
+- [x] Export - SVG
 - [x] Export - JSON
+- [x] Google Drive Open/Save
 - [ ] DWG Support
 - [ ] PDF Import/Export
-- [ ] Plot/Print (PLOT)
+- [x] Plot/Print (PLOT)
+
+## 12) UI & Interaction
+- [x] Ribbon UI (desktop)
+- [x] Command line with history/autocomplete
+- [x] Properties panel + selection ribbon
+- [x] Status bar toggles (OSNAP/GRID/ORTHO/POLAR)
+- [x] Mobile draw bar + tool tabs
+- [x] On-screen numpad + system keyboard toggle
+- [x] Touch gestures (tap to draw, pinch zoom, two-finger pan)
