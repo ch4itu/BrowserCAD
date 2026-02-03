@@ -261,6 +261,10 @@ When multiple objects overlap at the click point, clicking again in the same spo
 | VIEW | `VIEW` | Named views — Save, Restore, Delete, or List saved views. |
 | FIND | `FIND` | Search and replace text in all text/mtext entities. |
 | PURGE | `PU` | Remove unused layers and unreferenced block definitions. |
+| MVIEW |  | Create a paper space viewport. |
+| MSPACE |  | Activate model space inside a viewport. |
+| PSPACE |  | Return to paper space. |
+| PLOT |  | Plot the current layout to PDF. |
 
 ### VIEW workflow
 
@@ -332,7 +336,7 @@ The Properties panel reflects per-entity attributes, including color overrides (
 
 ## Layouts & Layer States
 
-BrowserCAD includes basic layout tabs (Model + Paper Space) and a lightweight layer state manager. Use `LAYOUT` to create/switch/delete layouts, and `LAYERSTATE` to save/restore named layer configurations.
+BrowserCAD includes layout tabs (Model + Paper Space), viewport creation, and a lightweight layer state manager. Use `LAYOUT` to create/switch/delete layouts, `MVIEW` to create viewports, `MSPACE`/`PSPACE` to toggle the active space, and `PLOT` for PDF output. `LAYERSTATE` saves/restores named layer configurations.
 
 Dimension styles can be managed via `DIMSTYLE`, which lets you save and switch between dimension variable presets.
 

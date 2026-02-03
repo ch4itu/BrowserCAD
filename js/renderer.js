@@ -70,6 +70,8 @@ const Renderer = {
 
         const ctx = this.ctx;
         const state = CAD;
+        const layout = state.getLayout(state.currentLayout);
+        const isPaper = layout && layout.type === 'paper';
 
         // Clear canvas
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -80,16 +82,17 @@ const Renderer = {
         ctx.translate(state.pan.x, state.pan.y);
         ctx.scale(state.zoom, state.zoom);
 
-        // Draw grid
-        if (state.showGrid) {
-            this.drawGrid();
+        if (isPaper) {
+            this.drawLayout(layout);
+        } else {
+            // Draw grid
+            if (state.showGrid) {
+                this.drawGrid();
+            }
+
+            // Draw entities
+            this.drawEntities();
         }
-
-        // Draw paperspace background if active
-        this.drawPaperLayout();
-
-        // Draw entities
-        this.drawEntities();
 
         // Draw preview (for active command)
         this.drawPreview();
@@ -116,18 +119,22 @@ const Renderer = {
         this.drawUCSIcon();
     },
 
-    drawPaperLayout() {
+    drawPaperLayout(layout = null, zoom = null) {
         const state = CAD;
-        const layout = state.getLayout(state.currentLayout);
-        if (!layout || layout.type !== 'paper' || !layout.paper) return;
+        const activeLayout = layout || state.getLayout(state.currentLayout);
+        if (!activeLayout || activeLayout.type !== 'paper' || !activeLayout.paper) return;
 
         const ctx = this.ctx;
-        const { width, height, margin } = layout.paper;
+        const { width, height, margin } = activeLayout.paper;
+        const effectiveZoom = zoom ?? state.zoom;
 
         ctx.save();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+        ctx.fillRect(6 / effectiveZoom, 6 / effectiveZoom, width, height);
+
         ctx.fillStyle = '#ffffff';
         ctx.strokeStyle = '#666666';
-        ctx.lineWidth = 1 / state.zoom;
+        ctx.lineWidth = 1 / effectiveZoom;
         ctx.beginPath();
         ctx.rect(0, 0, width, height);
         ctx.fill();
@@ -135,7 +142,7 @@ const Renderer = {
 
         if (margin) {
             ctx.strokeStyle = '#999999';
-            ctx.setLineDash([5 / state.zoom, 5 / state.zoom]);
+            ctx.setLineDash([5 / effectiveZoom, 5 / effectiveZoom]);
             ctx.beginPath();
             ctx.rect(margin, margin, width - margin * 2, height - margin * 2);
             ctx.stroke();
@@ -143,6 +150,36 @@ const Renderer = {
         }
 
         ctx.restore();
+    },
+
+    drawLayout(layout) {
+        if (!layout) return;
+        this.drawPaperLayout(layout, CAD.zoom);
+        this.drawPaperEntities(layout, CAD.zoom);
+        this.drawViewports(layout, { zoom: CAD.zoom });
+    },
+
+    renderLayoutToContext(ctx, layout, options = {}) {
+        if (!layout || layout.type !== 'paper' || !layout.paper) return;
+        const { width, height } = layout.paper;
+        const scale = options.scale ?? 1;
+
+        const previousContext = this.ctx;
+        const previousCanvas = this.canvas;
+
+        this.ctx = ctx;
+        this.canvas = { width: width * scale, height: height * scale };
+
+        ctx.setTransform(scale, 0, 0, scale, 0, 0);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+
+        this.drawPaperLayout(layout, scale);
+        this.drawPaperEntities(layout, scale);
+        this.drawViewports(layout, { zoom: scale });
+
+        this.ctx = previousContext;
+        this.canvas = previousCanvas;
     },
 
     // ==========================================
@@ -234,16 +271,70 @@ const Renderer = {
     // ==========================================
 
     drawEntities() {
+        this.drawEntityList(CAD.entities, { zoom: CAD.zoom });
+    },
+
+    drawPaperEntities(layout, zoom = CAD.zoom) {
+        if (!layout || !layout.entities || layout.entities.length === 0) return;
+        this.drawEntityList(layout.entities, { zoom, includeSelection: false });
+    },
+
+    drawViewports(layout, options = {}) {
+        if (!layout || !layout.viewports) return;
+        const zoom = options.zoom ?? CAD.zoom;
+        layout.viewports.forEach(viewport => this.drawViewport(viewport, zoom));
+    },
+
+    drawViewport(viewport, zoom = CAD.zoom) {
+        if (!viewport) return;
+
         const ctx = this.ctx;
         const state = CAD;
+        const { centerPoint, width, height, viewCenter, viewScale } = viewport;
 
-        state.entities.forEach(entity => {
+        if (!centerPoint || !width || !height || !viewCenter || !viewScale) return;
+
+        const left = centerPoint.x - width / 2;
+        const top = centerPoint.y - height / 2;
+        const effectiveZoom = zoom * viewScale;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(left, top, width, height);
+        ctx.clip();
+
+        ctx.translate(centerPoint.x, centerPoint.y);
+        ctx.scale(viewScale, viewScale);
+        ctx.translate(-viewCenter.x, -viewCenter.y);
+
+        this.drawEntityList(state.entities, { zoom: effectiveZoom });
+
+        ctx.restore();
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(left, top, width, height);
+        ctx.strokeStyle = viewport.id === state.activeViewportId ? this.colors.accent : '#9aa0a6';
+        ctx.lineWidth = 1 / zoom;
+        ctx.setLineDash(viewport.id === state.activeViewportId ? [6 / zoom, 4 / zoom] : []);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+    },
+
+    drawEntityList(entities, options = {}) {
+        const ctx = this.ctx;
+        const state = CAD;
+        const zoom = options.zoom ?? state.zoom;
+        const includeSelection = options.includeSelection !== false;
+
+        entities.forEach(entity => {
             if (entity._hidden) return;
             const layer = state.getLayer(entity.layer);
             if (!layer || !state.isLayerVisible(entity.layer)) return;
 
-            const isSelected = state.isSelected(entity.id);
-            const isHovered = state.hoveredId === entity.id && !isSelected;
+            const isSelected = includeSelection && state.isSelected(entity.id);
+            const isHovered = includeSelection && state.hoveredId === entity.id && !isSelected;
 
             // Determine color: selected > hovered > normal
             let color;
@@ -281,10 +372,10 @@ const Renderer = {
             } else if (isHovered) {
                 lineWidth = Math.max(baseLineWeight + 0.5, 1.5);
             }
-            ctx.lineWidth = lineWidth / state.zoom;
+            ctx.lineWidth = lineWidth / zoom;
 
             // Line dash: selected = dashed, others use linetype
-            ctx.setLineDash(isSelected ? [5 / state.zoom, 3 / state.zoom] : this.getLineDash(entity));
+            ctx.setLineDash(isSelected ? [5 / zoom, 3 / zoom] : this.getLineDash(entity, zoom));
 
             this.drawEntity(entity, ctx);
 
@@ -324,7 +415,7 @@ const Renderer = {
         return current || 'continuous';
     },
 
-    getLineDash(entity) {
+    getLineDash(entity, zoom = CAD.zoom) {
         const lineType = this.getEffectiveLineType(entity);
         const scale = CAD.lineTypeScale || 1;
         const basePatterns = {
@@ -338,7 +429,7 @@ const Renderer = {
         };
         const pattern = basePatterns[lineType] || [];
         if (pattern.length === 0) return [];
-        return pattern.map(value => (value * scale) / CAD.zoom);
+        return pattern.map(value => (value * scale) / zoom);
     },
 
     getLineWeight(entity) {
@@ -1277,6 +1368,14 @@ const Renderer = {
                 break;
 
             case 'rect':
+                ctx.rect(
+                    state.points[0].x, state.points[0].y,
+                    endPoint.x - state.points[0].x,
+                    endPoint.y - state.points[0].y
+                );
+                break;
+
+            case 'mview':
                 ctx.rect(
                     state.points[0].x, state.points[0].y,
                     endPoint.x - state.points[0].x,

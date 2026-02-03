@@ -142,10 +142,14 @@ class StateManager {
                 pan: { x: 0, y: 0 },
                 zoom: 1,
                 showGrid: true,
-                paper: null
+                paper: null,
+                viewports: [],
+                entities: []
             }
         ];
         this.currentLayout = 'Model';
+        this.activeSpace = 'MODEL';
+        this.activeViewportId = null;
 
         // Grid display
         this.showGrid = true;
@@ -173,7 +177,9 @@ class StateManager {
             pan: { x: 0, y: 0 },
             zoom: 1,
             showGrid: options.showGrid ?? false,
-            paper: options.paper || { width: 420, height: 297, margin: 10 }
+            paper: options.paper || { width: 420, height: 297, margin: 10 },
+            viewports: [],
+            entities: []
         };
         this.layouts.push(layout);
         this.modified = true;
@@ -219,7 +225,24 @@ class StateManager {
         this.pan = { ...layout.pan };
         this.zoom = layout.zoom;
         this.showGrid = layout.showGrid;
+        this.activeSpace = layout.type === 'paper' ? 'PAPER' : 'MODEL';
+        this.activeViewportId = null;
         return true;
+    }
+
+    normalizeLayout(layout) {
+        const normalized = {
+            ...layout,
+            viewports: Array.isArray(layout.viewports) ? layout.viewports : [],
+            entities: Array.isArray(layout.entities) ? layout.entities : []
+        };
+        if (normalized.type === 'paper' && !normalized.paper) {
+            normalized.paper = { width: 420, height: 297, margin: 10 };
+        }
+        if (normalized.type === 'model') {
+            normalized.paper = null;
+        }
+        return normalized;
     }
 
     // ==========================================
@@ -1102,7 +1125,7 @@ class StateManager {
             this.entities = data.entities || [];
             this.blocks = data.blocks || {};
             this.namedViews = data.namedViews || {};
-            this.layouts = data.layouts || this.layouts;
+            this.layouts = (data.layouts || this.layouts).map(layout => this.normalizeLayout(layout));
             this.currentLayout = data.currentLayout || this.currentLayout;
             this.dimStyles = data.dimStyles || this.dimStyles;
             this.currentDimStyle = data.currentDimStyle || this.currentDimStyle;
@@ -1169,7 +1192,9 @@ class StateManager {
                 pan: { x: 0, y: 0 },
                 zoom: 1,
                 showGrid: true,
-                paper: null
+                paper: null,
+                viewports: [],
+                entities: []
             }
         ];
         this.currentLayout = 'Model';
