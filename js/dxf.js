@@ -211,8 +211,87 @@ const DXF = (() => {
                     rotation: parseNumber(tags[50], 0)
                 };
             }
+            case 'INSERT': {
+                const scaleX = parseNumber(tags[41], 1);
+                const scaleY = parseNumber(tags[42], scaleX || 1);
+                return {
+                    type: 'insert',
+                    layer,
+                    // 2 = block name, 10/20/30 = insertion point, 41/42 = scale, 50 = rotation
+                    blockName: tags[2] || '',
+                    p: { x: parseNumber(tags[10]), y: parseNumber(tags[20]), z: parseNumber(tags[30]) },
+                    scale: { x: scaleX || 1, y: scaleY || 1 },
+                    rotation: parseNumber(tags[50], 0)
+                };
+            }
+            case 'HATCH': {
+                const points = [];
+                let pendingX = null;
+                tags.list.forEach(tag => {
+                    if (tag.code === 10) {
+                        pendingX = parseNumber(tag.value);
+                    } else if (tag.code === 20 && pendingX !== null) {
+                        points.push({ x: pendingX, y: parseNumber(tag.value) });
+                        pendingX = null;
+                    }
+                });
+                return {
+                    type: 'hatch',
+                    layer,
+                    // 2 = pattern name, 91 = loop count, 41 = scale, 52 = angle
+                    pattern: tags[2] || 'ANSI31',
+                    loopCount: parseIntValue(tags[91], 0),
+                    scale: parseNumber(tags[41], 1),
+                    angle: parseNumber(tags[52], 0),
+                    points
+                };
+            }
             default:
                 return null;
+        }
+    };
+
+    const parseBlocks = (reader, data) => {
+        while (reader.peek()) {
+            const peek = reader.peek();
+            if (peek.code === 0 && peek.value === 'ENDSEC') {
+                reader.next();
+                break;
+            }
+            if (peek.code === 0 && peek.value === 'BLOCK') {
+                reader.next();
+                const blockTags = parseEntityTags(reader);
+                const name = blockTags[2] || 'BLOCK';
+                const basePoint = {
+                    x: parseNumber(blockTags[10]),
+                    y: parseNumber(blockTags[20]),
+                    z: parseNumber(blockTags[30])
+                };
+                const entities = [];
+                while (reader.peek()) {
+                    const inner = reader.peek();
+                    if (inner.code === 0 && inner.value === 'ENDBLK') {
+                        reader.next();
+                        break;
+                    }
+                    if (inner.code === 0) {
+                        const entityType = reader.next().value;
+                        const entity = parseEntity(entityType, reader);
+                        if (entity) {
+                            entities.push(entity);
+                        }
+                    } else {
+                        reader.next();
+                    }
+                }
+                data.blocks[name] = {
+                    name,
+                    origin: basePoint,
+                    entities
+                };
+                continue;
+            }
+            reader.next();
         }
     };
 
@@ -255,6 +334,8 @@ const DXF = (() => {
                     parseHeader(reader, data);
                 } else if (name === 'TABLES') {
                     parseTables(reader, data);
+                } else if (name === 'BLOCKS') {
+                    parseBlocks(reader, data);
                 } else if (name === 'ENTITIES') {
                     parseEntities(reader, data);
                 } else {
@@ -349,48 +430,145 @@ const DXF = (() => {
         }
     };
 
-    const generateDXF = (entities = [], layers = []) => {
+    const writeEntityInsert = (out, entity) => {
+        const insertPoint = entity.insertPoint || entity.p || { x: entity.x || 0, y: entity.y || 0, z: 0 };
+        const scale = entity.scale || { x: entity.scaleX ?? 1, y: entity.scaleY ?? 1 };
+        const rotation = entity.rotation || 0;
+        const rotationDeg = Math.abs(rotation) <= Math.PI * 2 + 0.001 ? rotation * (180 / Math.PI) : rotation;
+        out.push('0', 'INSERT');
+        out.push('8', entity.layer || '0');
+        out.push('2', entity.blockName || '');
+        out.push('10', formatNumber(insertPoint.x), '20', formatNumber(insertPoint.y), '30', formatNumber(insertPoint.z || 0));
+        out.push('41', formatNumber(scale.x ?? 1));
+        out.push('42', formatNumber(scale.y ?? 1));
+        out.push('50', formatNumber(rotationDeg));
+    };
+
+    const getHatchBoundaryPoints = (entity, state) => {
+        if (entity.points && entity.points.length) return entity.points;
+        if (entity.boundary && entity.boundary.length && entity.boundary[0].x !== undefined) {
+            return entity.boundary;
+        }
+        if (entity.clipIds && state?.getEntity) {
+            const clip = state.getEntity(entity.clipIds[0]);
+            if (clip?.points) return clip.points;
+            if (clip?.type === 'circle') {
+                const points = [];
+                const steps = 36;
+                for (let i = 0; i < steps; i++) {
+                    const angle = (Math.PI * 2 * i) / steps;
+                    points.push({
+                        x: clip.center.x + Math.cos(angle) * clip.r,
+                        y: clip.center.y + Math.sin(angle) * clip.r
+                    });
+                }
+                return points;
+            }
+        }
+        return [];
+    };
+
+    const writeEntityHatch = (out, entity, state) => {
+        const points = getHatchBoundaryPoints(entity, state);
+        if (!points.length) return;
+        const pattern = (entity.patternName || entity.pattern || entity.hatch?.pattern || 'ANSI31').toUpperCase();
+        const scale = entity.scale || 1;
+        const angle = entity.angle || 0;
+        out.push('0', 'HATCH');
+        out.push('8', entity.layer || '0');
+        out.push('2', pattern);
+        out.push('70', '0');
+        out.push('71', '0');
+        out.push('91', '1');
+        out.push('92', '2');
+        out.push('72', '1');
+        out.push('73', '1');
+        out.push('93', String(points.length));
+        points.forEach(point => {
+            out.push('10', formatNumber(point.x));
+            out.push('20', formatNumber(point.y));
+        });
+        out.push('97', '0');
+        out.push('75', '0');
+        out.push('52', formatNumber(angle));
+        out.push('41', formatNumber(scale));
+    };
+
+    const writeBlocksSection = (out, blocks = {}, state = null) => {
+        out.push('0', 'SECTION', '2', 'BLOCKS');
+        Object.values(blocks).forEach(block => {
+            const basePoint = block.basePoint || block.origin || { x: 0, y: 0, z: 0 };
+            out.push('0', 'BLOCK');
+            out.push('2', block.name || 'BLOCK');
+            out.push('70', '0');
+            out.push('10', formatNumber(basePoint.x), '20', formatNumber(basePoint.y), '30', formatNumber(basePoint.z || 0));
+            out.push('3', block.name || 'BLOCK');
+            out.push('1', '');
+            (block.entities || []).forEach(entity => {
+                writeEntity(out, entity, state);
+            });
+            out.push('0', 'ENDBLK');
+        });
+        out.push('0', 'ENDSEC');
+    };
+
+    const writeEntity = (out, entity, state) => {
+        switch (entity.type) {
+            case 'line':
+                writeEntityLine(out, entity);
+                break;
+            case 'circle':
+                writeEntityCircle(out, entity);
+                break;
+            case 'arc':
+                writeEntityArc(out, entity);
+                break;
+            case 'lwpolyline':
+            case 'polyline':
+                writeEntityLwPolyline(out, entity);
+                break;
+            case 'text':
+                writeEntityText(out, entity, false);
+                break;
+            case 'mtext':
+                writeEntityText(out, entity, true);
+                break;
+            case 'insert':
+            case 'block':
+                writeEntityInsert(out, entity);
+                break;
+            case 'hatch':
+                writeEntityHatch(out, entity, state);
+                break;
+            default:
+                break;
+        }
+    };
+
+    const writeEntitiesSection = (out, entities = [], state = null) => {
+        out.push('0', 'SECTION', '2', 'ENTITIES');
+        entities.forEach(entity => writeEntity(out, entity, state));
+        out.push('0', 'ENDSEC');
+    };
+
+    const generateDXF = (stateOrEntities = [], layers = []) => {
+        const state = Array.isArray(stateOrEntities)
+            ? { entities: stateOrEntities, layers, blocks: {} }
+            : (stateOrEntities || { entities: [], layers: [], blocks: {} });
         const out = [];
         out.push('0', 'SECTION', '2', 'HEADER');
         out.push('9', '$ACADVER', '1', DEFAULT_HEADER.$ACADVER);
         out.push('9', '$INSUNITS', '70', String(DEFAULT_HEADER.$INSUNITS));
         out.push('0', 'ENDSEC');
-        writeTables(out, layers);
-        out.push('0', 'SECTION', '2', 'ENTITIES');
-        entities.forEach(entity => {
-            switch (entity.type) {
-                case 'line':
-                    writeEntityLine(out, entity);
-                    break;
-                case 'circle':
-                    writeEntityCircle(out, entity);
-                    break;
-                case 'arc':
-                    writeEntityArc(out, entity);
-                    break;
-                case 'lwpolyline':
-                case 'polyline':
-                    writeEntityLwPolyline(out, entity);
-                    break;
-                case 'text':
-                    writeEntityText(out, entity, false);
-                    break;
-                case 'mtext':
-                    writeEntityText(out, entity, true);
-                    break;
-                default:
-                    break;
-            }
-        });
-        out.push('0', 'ENDSEC');
+        writeTables(out, state.layers || []);
+        writeBlocksSection(out, state.blocks || {}, state);
+        writeEntitiesSection(out, state.entities || [], state);
         out.push('0', 'EOF');
         return out.join('\n');
     };
 
     const exportFromCadState = (state) => {
-        const entities = state?.entities || [];
-        const layers = state?.layers || [];
-        return generateDXF(entities, layers);
+        return generateDXF(state || { entities: [], layers: [], blocks: {} });
     };
 
     return {

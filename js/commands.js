@@ -2757,11 +2757,11 @@ const Commands = {
 
         if (targets.length > 1) {
             CAD.saveUndoState('Hatch');
-            CAD.addEntity({
-                type: 'hatch',
-                clipIds: targets.map(entity => entity.id),
-                hatch: { pattern: CAD.hatchPattern }
-            });
+            const hatchEntity = this.createHatchEntity(
+                this.getHatchBoundaryPoints(targets[0]),
+                targets.map(entity => entity.id)
+            );
+            CAD.addEntity(hatchEntity);
             UI.log('Hatch applied to intersection.');
             this.finishCommand();
             return;
@@ -2781,12 +2781,14 @@ const Commands = {
         const loop = this.findLineLoopContainingPoint(point);
         if (loop) {
             CAD.saveUndoState('Hatch');
-            CAD.addEntity({
+            const boundary = CAD.addEntity({
                 type: 'polyline',
                 points: loop,
                 hatch: { pattern: CAD.hatchPattern },
                 noStroke: true
             });
+            const hatchEntity = this.createHatchEntity(loop, [boundary.id]);
+            CAD.addEntity(hatchEntity);
             UI.log('Hatch applied from boundary.');
         } else {
             UI.log('No closed boundary found at that point.', 'error');
@@ -2861,7 +2863,9 @@ const Commands = {
 
     applyHatch(entity) {
         CAD.saveUndoState('Hatch');
-        CAD.updateEntity(entity.id, { hatch: { pattern: CAD.hatchPattern } });
+        const boundary = this.getHatchBoundaryPoints(entity);
+        const hatchEntity = this.createHatchEntity(boundary, [entity.id]);
+        CAD.addEntity(hatchEntity);
         UI.log('Hatch applied.');
         Renderer.draw();
     },
@@ -2875,10 +2879,70 @@ const Commands = {
         }
         CAD.saveUndoState('Hatch');
         targets.forEach(entity => {
-            CAD.updateEntity(entity.id, { hatch: { pattern: CAD.hatchPattern } }, true);
+            const boundary = this.getHatchBoundaryPoints(entity);
+            const hatchEntity = this.createHatchEntity(boundary, [entity.id]);
+            CAD.addEntity(hatchEntity, true);
         });
         UI.log(`HATCH: Applied to ${targets.length} object(s).`, 'success');
         Renderer.draw();
+    },
+
+    getHatchBoundaryPoints(entity) {
+        if (!entity) return [];
+        if (entity.points && entity.points.length) return entity.points;
+        if (entity.type === 'rect') {
+            const x1 = entity.p1.x;
+            const y1 = entity.p1.y;
+            const x2 = entity.p2.x;
+            const y2 = entity.p2.y;
+            return [
+                { x: x1, y: y1 },
+                { x: x2, y: y1 },
+                { x: x2, y: y2 },
+                { x: x1, y: y2 }
+            ];
+        }
+        if (entity.type === 'circle') {
+            const points = [];
+            const steps = 36;
+            for (let i = 0; i < steps; i++) {
+                const angle = (Math.PI * 2 * i) / steps;
+                points.push({
+                    x: entity.center.x + Math.cos(angle) * entity.r,
+                    y: entity.center.y + Math.sin(angle) * entity.r
+                });
+            }
+            return points;
+        }
+        if (entity.type === 'ellipse') {
+            const points = [];
+            const steps = 36;
+            for (let i = 0; i < steps; i++) {
+                const angle = (Math.PI * 2 * i) / steps;
+                points.push({
+                    x: entity.center.x + Math.cos(angle) * entity.rx,
+                    y: entity.center.y + Math.sin(angle) * entity.ry
+                });
+            }
+            return points;
+        }
+        return [];
+    },
+
+    createHatchEntity(boundaryPoints, clipIds = []) {
+        const pattern = CAD.hatchPattern || 'ANSI31';
+        const hatch = new Geometry.Hatch(boundaryPoints, pattern, 1, 0);
+        const renderLines = hatch.generateRenderLines();
+        return {
+            type: 'hatch',
+            hatch: { pattern },
+            boundary: boundaryPoints,
+            patternName: pattern,
+            scale: hatch.scale,
+            angle: hatch.angle,
+            renderLines,
+            clipIds
+        };
     },
 
     findHatchTargets(point) {

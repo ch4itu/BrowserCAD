@@ -2023,17 +2023,274 @@ class Text {
 }
 
 class Insert {
-    constructor(point = { x: 0, y: 0 }) {
+    constructor(blockName = '', x = 0, y = 0, scaleX = 1, scaleY = 1, rotation = 0) {
         this.type = 'insert';
-        this.point = point;
+        this.blockName = blockName;
+        this.x = x;
+        this.y = y;
+        this.scaleX = scaleX;
+        this.scaleY = scaleY;
+        this.rotation = rotation;
     }
 
-    getBoundingBox() {
+    getBoundingBox(state = null) {
+        const resolvedState = state || (typeof CAD !== 'undefined' ? CAD : null);
+        if (!resolvedState || !resolvedState.getBlockEntities) {
+            return {
+                minX: this.x,
+                minY: this.y,
+                maxX: this.x + 1,
+                maxY: this.y + 1
+            };
+        }
+
+        const blockRef = {
+            blockName: this.blockName,
+            insertPoint: { x: this.x, y: this.y },
+            scale: { x: this.scaleX, y: this.scaleY },
+            rotation: this.rotation
+        };
+        const entities = resolvedState.getBlockEntities(blockRef);
+        if (!entities.length) {
+            return {
+                minX: this.x,
+                minY: this.y,
+                maxX: this.x + 1,
+                maxY: this.y + 1
+            };
+        }
+
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+
+        entities.forEach(entity => {
+            const bbox = Insert.getEntityBoundingBox(entity, resolvedState);
+            if (!bbox) return;
+            minX = Math.min(minX, bbox.minX);
+            minY = Math.min(minY, bbox.minY);
+            maxX = Math.max(maxX, bbox.maxX);
+            maxY = Math.max(maxY, bbox.maxY);
+        });
+
+        if (!Number.isFinite(minX)) {
+            return {
+                minX: this.x,
+                minY: this.y,
+                maxX: this.x + 1,
+                maxY: this.y + 1
+            };
+        }
+
+        return { minX, minY, maxX, maxY };
+    }
+
+    static getEntityBoundingBox(entity, state) {
+        if (!entity) return null;
+        if (entity.getBoundingBox) {
+            return entity.getBoundingBox(state);
+        }
+        switch (entity.type) {
+            case 'line':
+                return {
+                    minX: Math.min(entity.p1.x, entity.p2.x),
+                    minY: Math.min(entity.p1.y, entity.p2.y),
+                    maxX: Math.max(entity.p1.x, entity.p2.x),
+                    maxY: Math.max(entity.p1.y, entity.p2.y)
+                };
+            case 'circle':
+                return {
+                    minX: entity.center.x - entity.r,
+                    minY: entity.center.y - entity.r,
+                    maxX: entity.center.x + entity.r,
+                    maxY: entity.center.y + entity.r
+                };
+            case 'arc': {
+                const arc = new Arc(entity.center, entity.r, entity.start, entity.end);
+                return arc.getBoundingBox();
+            }
+            case 'polyline':
+            case 'lwpolyline': {
+                const points = entity.points || [];
+                if (!points.length) return null;
+                let minX = points[0].x;
+                let minY = points[0].y;
+                let maxX = points[0].x;
+                let maxY = points[0].y;
+                points.forEach(point => {
+                    minX = Math.min(minX, point.x);
+                    minY = Math.min(minY, point.y);
+                    maxX = Math.max(maxX, point.x);
+                    maxY = Math.max(maxY, point.y);
+                });
+                return { minX, minY, maxX, maxY };
+            }
+            case 'text':
+            case 'mtext': {
+                const text = entity.text || '';
+                const height = entity.height || 0;
+                const width = text.length * height * 0.6;
+                const point = entity.position || entity.point || { x: 0, y: 0 };
+                return {
+                    minX: point.x,
+                    minY: point.y,
+                    maxX: point.x + width,
+                    maxY: point.y + height
+                };
+            }
+            case 'block': {
+                if (!state || !state.getBlockEntities) return null;
+                const expanded = state.getBlockEntities(entity);
+                if (!expanded.length) return null;
+                let minX = Infinity;
+                let minY = Infinity;
+                let maxX = -Infinity;
+                let maxY = -Infinity;
+                expanded.forEach(item => {
+                    const bbox = Insert.getEntityBoundingBox(item, state);
+                    if (!bbox) return;
+                    minX = Math.min(minX, bbox.minX);
+                    minY = Math.min(minY, bbox.minY);
+                    maxX = Math.max(maxX, bbox.maxX);
+                    maxY = Math.max(maxY, bbox.maxY);
+                });
+                return { minX, minY, maxX, maxY };
+            }
+            default:
+                return null;
+        }
+    }
+}
+
+class Hatch {
+    constructor(boundary = [], patternName = 'ANSI31', scale = 1, angle = 0) {
+        this.type = 'hatch';
+        this.boundary = boundary;
+        this.patternName = patternName || 'ANSI31';
+        this.scale = scale || 1;
+        this.angle = angle || 0;
+        this.renderLines = [];
+    }
+
+    generateRenderLines() {
+        const points = Hatch.getBoundaryPoints(this.boundary);
+        if (!points.length) {
+            this.renderLines = [];
+            return this.renderLines;
+        }
+
+        const bbox = Hatch.getPointsBoundingBox(points);
+        const spacing = Math.max(this.scale, 0.0001);
+        const radians = (typeof Utils !== 'undefined' && Utils.degToRad)
+            ? Utils.degToRad(this.angle)
+            : (this.angle * (Math.PI / 180));
+        const dir = { x: Math.cos(radians), y: Math.sin(radians) };
+        const normal = { x: -dir.y, y: dir.x };
+
+        const corners = [
+            { x: bbox.minX, y: bbox.minY },
+            { x: bbox.maxX, y: bbox.minY },
+            { x: bbox.maxX, y: bbox.maxY },
+            { x: bbox.minX, y: bbox.maxY }
+        ];
+        let minProj = Infinity;
+        let maxProj = -Infinity;
+        corners.forEach(corner => {
+            const proj = corner.x * normal.x + corner.y * normal.y;
+            minProj = Math.min(minProj, proj);
+            maxProj = Math.max(maxProj, proj);
+        });
+
+        const segments = [];
+        for (let offset = minProj - spacing; offset <= maxProj + spacing; offset += spacing) {
+            const intersections = Hatch.collectIntersections(points, dir, normal, offset);
+            for (let i = 0; i + 1 < intersections.length; i += 2) {
+                segments.push({ p1: intersections[i], p2: intersections[i + 1] });
+            }
+        }
+
+        this.renderLines = segments;
+        return segments;
+    }
+
+    static getBoundaryPoints(boundary) {
+        if (!boundary) return [];
+        if (Array.isArray(boundary)) {
+            if (boundary.length === 0) return [];
+            if (boundary[0].x !== undefined) {
+                return boundary;
+            }
+            if (boundary[0].p1 && boundary[0].p2) {
+                return Hatch.chainLines(boundary);
+            }
+        }
+        if (boundary.points) {
+            return boundary.points;
+        }
+        return [];
+    }
+
+    static chainLines(lines) {
+        if (!lines.length) return [];
+        const remaining = lines.slice();
+        const loop = [remaining[0].p1, remaining[0].p2];
+        remaining.splice(0, 1);
+        const matches = (a, b) => Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6;
+        while (remaining.length) {
+            const end = loop[loop.length - 1];
+            const index = remaining.findIndex(line => matches(line.p1, end) || matches(line.p2, end));
+            if (index === -1) break;
+            const line = remaining.splice(index, 1)[0];
+            if (matches(line.p1, end)) {
+                loop.push(line.p2);
+            } else {
+                loop.push(line.p1);
+            }
+        }
+        return loop;
+    }
+
+    static getPointsBoundingBox(points) {
+        let minX = points[0].x;
+        let minY = points[0].y;
+        let maxX = points[0].x;
+        let maxY = points[0].y;
+        points.forEach(point => {
+            minX = Math.min(minX, point.x);
+            minY = Math.min(minY, point.y);
+            maxX = Math.max(maxX, point.x);
+            maxY = Math.max(maxY, point.y);
+        });
+        return { minX, minY, maxX, maxY };
+    }
+
+    static collectIntersections(points, dir, normal, offset) {
+        const intersections = [];
+        for (let i = 0; i < points.length; i++) {
+            const a = points[i];
+            const b = points[(i + 1) % points.length];
+            const hit = Hatch.intersectLineSegment(a, b, dir, normal, offset);
+            if (hit) {
+                intersections.push(hit);
+            }
+        }
+        intersections.sort((p1, p2) => {
+            const t1 = p1.x * dir.x + p1.y * dir.y;
+            const t2 = p2.x * dir.x + p2.y * dir.y;
+            return t1 - t2;
+        });
+        return intersections;
+    }
+
+    static intersectLineSegment(a, b, dir, normal, offset) {
+        const denom = (b.x - a.x) * normal.x + (b.y - a.y) * normal.y;
+        if (Math.abs(denom) < 1e-10) return null;
+        const t = (offset - (a.x * normal.x + a.y * normal.y)) / denom;
+        if (t < 0 || t > 1) return null;
         return {
-            minX: this.point.x,
-            minY: this.point.y,
-            maxX: this.point.x + 1,
-            maxY: this.point.y + 1
+            x: a.x + t * (b.x - a.x),
+            y: a.y + t * (b.y - a.y)
         };
     }
 }
@@ -2044,6 +2301,7 @@ Geometry.Arc = Arc;
 Geometry.LwPolyline = LwPolyline;
 Geometry.Text = Text;
 Geometry.Insert = Insert;
+Geometry.Hatch = Hatch;
 
 // Export for module usage
 if (typeof module !== 'undefined' && module.exports) {

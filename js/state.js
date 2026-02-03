@@ -414,6 +414,12 @@ class StateManager {
     // ==========================================
 
     addBlock(name, basePoint, entities, description = '') {
+        if (Array.isArray(basePoint)) {
+            const resolvedEntities = basePoint;
+            const resolvedBasePoint = entities || { x: 0, y: 0 };
+            entities = resolvedEntities;
+            basePoint = resolvedBasePoint;
+        }
         if (this.blocks[name]) {
             return null; // Block already exists
         }
