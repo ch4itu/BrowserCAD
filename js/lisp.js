@@ -1,8 +1,8 @@
 /* ============================================
-   BrowserCAD - AutoLISP Interpreter Module
+   BrowserCAD - Lisp Interpreter Module
    ============================================ */
 
-const AutoLISP = {
+const Lisp = {
     // Environment for variables
     globalEnv: {},
 
@@ -444,7 +444,7 @@ const AutoLISP = {
                         }
                         let res = null;
                         for (const bodyExpr of func.body) {
-                            res = await AutoLISP.evaluate(bodyExpr, newEnv);
+                            res = await Lisp.evaluate(bodyExpr, newEnv);
                         }
                         result.push(res);
                     }
@@ -459,7 +459,7 @@ const AutoLISP = {
                     }
                     let res = null;
                     for (const bodyExpr of func.body) {
-                        res = await AutoLISP.evaluate(bodyExpr, newEnv);
+                        res = await Lisp.evaluate(bodyExpr, newEnv);
                     }
                     return res;
                 }
@@ -510,17 +510,17 @@ const AutoLISP = {
             },
 
             // ========== UTILITY ==========
-            'EVAL': async (expr) => await AutoLISP.evaluate(expr),
+            'EVAL': async (expr) => await Lisp.evaluate(expr),
             'READ': (str) => {
-                const tokens = AutoLISP.tokenize(str);
-                const parsed = AutoLISP.parse(tokens);
+                const tokens = Lisp.tokenize(str);
+                const parsed = Lisp.parse(tokens);
                 return parsed[0];
             },
 
             // ========== OUTPUT ==========
-            'PRINT': (x) => { UI.log(AutoLISP.toString(x)); return x; },
-            'PRINC': (x) => { UI.log(typeof x === 'string' ? x : AutoLISP.toString(x)); return x; },
-            'PRIN1': (x) => { UI.log(AutoLISP.toString(x)); return x; },
+            'PRINT': (x) => { UI.log(Lisp.toString(x)); return x; },
+            'PRINC': (x) => { UI.log(typeof x === 'string' ? x : Lisp.toString(x)); return x; },
+            'PRIN1': (x) => { UI.log(Lisp.toString(x)); return x; },
             'PROMPT': (msg) => { UI.log(msg); return null; },
             'ALERT': (msg) => { alert(msg); return null; },
             'TERPRI': () => { UI.log(''); return null; },
@@ -551,41 +551,41 @@ const AutoLISP = {
 
             // ========== CAD SPECIFIC - USER INPUT ==========
             'GETPOINT': async (basePoint, prompt) => {
-                return await AutoLISP.getUserInput('point', prompt || 'Specify point:');
+                return await Lisp.getUserInput('point', prompt || 'Specify point:');
             },
             'GETCORNER': async (basePoint, prompt) => {
-                return await AutoLISP.getUserInput('corner', prompt || 'Specify corner:', basePoint);
+                return await Lisp.getUserInput('corner', prompt || 'Specify corner:', basePoint);
             },
             'GETDIST': async (basePoint, prompt) => {
-                return await AutoLISP.getUserInput('dist', prompt || 'Specify distance:');
+                return await Lisp.getUserInput('dist', prompt || 'Specify distance:');
             },
             'GETANGLE': async (basePoint, prompt) => {
-                return await AutoLISP.getUserInput('angle', prompt || 'Specify angle:');
+                return await Lisp.getUserInput('angle', prompt || 'Specify angle:');
             },
             'GETORIENT': async (basePoint, prompt) => {
-                return await AutoLISP.getUserInput('angle', prompt || 'Specify orientation:');
+                return await Lisp.getUserInput('angle', prompt || 'Specify orientation:');
             },
             'GETREAL': async (prompt) => {
-                return await AutoLISP.getUserInput('real', prompt || 'Enter a real number:');
+                return await Lisp.getUserInput('real', prompt || 'Enter a real number:');
             },
             'GETINT': async (prompt) => {
-                return await AutoLISP.getUserInput('int', prompt || 'Enter an integer:');
+                return await Lisp.getUserInput('int', prompt || 'Enter an integer:');
             },
             'GETSTRING': async (allowSpaces, prompt) => {
-                return await AutoLISP.getUserInput('string', prompt || 'Enter text:');
+                return await Lisp.getUserInput('string', prompt || 'Enter text:');
             },
             'GETKWORD': async (prompt) => {
-                return await AutoLISP.getUserInput('keyword', prompt || 'Enter option:');
+                return await Lisp.getUserInput('keyword', prompt || 'Enter option:');
             },
             'INITGET': (bits, keywords) => {
-                AutoLISP.initgetBits = bits;
-                AutoLISP.initgetKeywords = keywords;
+                Lisp.initgetBits = bits;
+                Lisp.initgetKeywords = keywords;
                 return null;
             },
 
             // ========== CAD SPECIFIC - ENTITY ACCESS ==========
             'ENTSEL': async (prompt) => {
-                return await AutoLISP.getUserInput('entsel', prompt || 'Select object:');
+                return await Lisp.getUserInput('entsel', prompt || 'Select object:');
             },
             'SSGET': async (mode, pt1, pt2, filterList) => {
                 if (!mode || mode === 'I') {
@@ -595,7 +595,7 @@ const AutoLISP = {
                     }
                 }
                 // Interactive selection
-                return await AutoLISP.getUserInput('ssget', 'Select objects:');
+                return await Lisp.getUserInput('ssget', 'Select objects:');
             },
             'SSLENGTH': (ss) => ss && ss.ids ? ss.ids.length : 0,
             'SSNAME': (ss, index) => {
@@ -624,28 +624,28 @@ const AutoLISP = {
                 if (!ename || !ename.id) return null;
                 const entity = CAD.getEntity(ename.id);
                 if (!entity) return null;
-                return AutoLISP.entityToAssocList(entity);
+                return Lisp.entityToAssocList(entity);
             },
             'ENTMOD': (elist) => {
-                const id = AutoLISP.getAssoc(-1, elist);
+                const id = Lisp.getAssoc(-1, elist);
                 if (!id) return null;
 
                 const entity = CAD.getEntity(id.id);
                 if (!entity) return null;
 
                 CAD.saveUndoState('LISP ENTMOD');
-                AutoLISP.assocListToEntity(elist, entity);
+                Lisp.assocListToEntity(elist, entity);
                 Renderer.draw();
                 return elist;
             },
             'ENTMAKE': (elist) => {
-                const entityData = AutoLISP.assocListToNewEntity(elist);
+                const entityData = Lisp.assocListToNewEntity(elist);
                 if (!entityData) return null;
 
                 CAD.saveUndoState('LISP ENTMAKE');
                 const entity = CAD.addEntity(entityData, true);
                 Renderer.draw();
-                return AutoLISP.entityToAssocList(entity);
+                return Lisp.entityToAssocList(entity);
             },
             'ENTDEL': (ename) => {
                 if (!ename || !ename.id) return null;
@@ -723,7 +723,7 @@ const AutoLISP = {
                     'SNAPMODE': CAD.snapEnabled ? 1 : 0,
                     'GRIDMODE': CAD.showGrid ? 1 : 0,
                     'ORTHOMODE': CAD.orthoEnabled ? 1 : 0,
-                    'OSMODE': AutoLISP.getOsmode(),
+                    'OSMODE': Lisp.getOsmode(),
                     'CMDECHO': 1,
                     'ERRNO': 0
                 };
@@ -749,7 +749,7 @@ const AutoLISP = {
                         UI.updateStatusBar();
                         break;
                     case 'OSMODE':
-                        AutoLISP.setOsmode(value);
+                        Lisp.setOsmode(value);
                         break;
                 }
                 return value;
@@ -760,7 +760,7 @@ const AutoLISP = {
                 if (table.toUpperCase() === 'LAYER') {
                     const layer = CAD.getLayer(name);
                     if (layer) {
-                        return [[0, 'LAYER'], [2, layer.name], [70, layer.locked ? 4 : 0], [62, AutoLISP.colorToACI(layer.color)]];
+                        return [[0, 'LAYER'], [2, layer.name], [70, layer.locked ? 4 : 0], [62, Lisp.colorToACI(layer.color)]];
                     }
                 }
                 return null;
@@ -780,7 +780,7 @@ const AutoLISP = {
 
         functions['HELP'] = () => {
             const names = Object.keys(functions).sort();
-            UI.log('AutoLISP functions:');
+            UI.log('Lisp functions:');
             const chunkSize = 12;
             for (let i = 0; i < names.length; i += chunkSize) {
                 UI.log(names.slice(i, i + chunkSize).join(', '));
@@ -1079,5 +1079,5 @@ const AutoLISP = {
 
 // Export for module usage
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = AutoLISP;
+    module.exports = Lisp;
 }
