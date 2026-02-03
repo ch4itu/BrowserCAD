@@ -692,6 +692,11 @@ const Commands = {
                 break;
 
             case 'hatch':
+                if (CAD.selectedIds.length > 0) {
+                    this.applyHatchToSelection();
+                    this.finishCommand();
+                    return;
+                }
                 UI.log(`HATCH: Click inside a closed area or select a closed object.`, 'prompt');
                 UI.log(`HATCH: Pattern [${this.getHatchPatternOptions()}] <${CAD.hatchPattern}>:`, 'prompt');
                 break;
@@ -2751,6 +2756,7 @@ const Commands = {
         }
 
         if (targets.length > 1) {
+            CAD.saveUndoState('Hatch');
             CAD.addEntity({
                 type: 'hatch',
                 clipIds: targets.map(entity => entity.id),
@@ -2774,6 +2780,7 @@ const Commands = {
 
         const loop = this.findLineLoopContainingPoint(point);
         if (loop) {
+            CAD.saveUndoState('Hatch');
             CAD.addEntity({
                 type: 'polyline',
                 points: loop,
@@ -2799,30 +2806,50 @@ const Commands = {
             underline('diagonal', 'd'),
             underline('cross', 'c'),
             underline('dots', 'o'),
-            'ANSI31-38',
+            underline('angle', 'a'),
+            'ANSI31', 'ANSI32', 'ANSI33', 'ANSI34',
+            'ANSI35', 'ANSI36', 'ANSI37', 'ANSI38',
             'brick', 'honey', 'earth', 'grass',
-            'steel', 'insul', 'net', 'dash',
+            'steel', 'insul', 'net', 'net3', 'dash',
             'square', 'zigzag'
         ].join('/');
     },
 
     hatchPatterns: [
-        'solid', 'diagonal', 'cross', 'dots',
+        'solid', 'diagonal', 'cross', 'dots', 'angle',
         'ansi31', 'ansi32', 'ansi33', 'ansi34', 'ansi35', 'ansi36', 'ansi37', 'ansi38',
         'brick', 'earth', 'grass', 'honey',
         'steel', 'insul', 'net', 'net3',
         'dash', 'square', 'zigzag'
     ],
 
+    hatchPatternAliases: {
+        angle: 'ansi31',
+        diagonal: 'ansi31',
+        cross: 'ansi37',
+        dots: 'dots',
+        brick: 'brick',
+        honey: 'honey',
+        earth: 'earth',
+        grass: 'grass',
+        steel: 'steel',
+        insul: 'insul',
+        net: 'net',
+        dash: 'dash',
+        square: 'square',
+        zigzag: 'zigzag'
+    },
+
     setHatchPattern(pattern) {
-        const p = pattern.toLowerCase();
-        // Check if valid pattern
-        if (this.hatchPatterns.includes(p)) {
-            CAD.hatchPattern = p;
-        } else {
-            CAD.hatchPattern = p; // Allow custom pattern names
+        const raw = pattern.toLowerCase();
+        const normalized = this.hatchPatternAliases[raw] || raw;
+        if (!this.hatchPatterns.includes(normalized)) {
+            UI.log(`HATCH: Unsupported pattern "${pattern}". Use LIST to see options.`, 'error');
+            return false;
         }
-        UI.log(`HATCH: Pattern set to ${p.toUpperCase()}.`, 'prompt');
+        CAD.hatchPattern = normalized;
+        UI.log(`HATCH: Pattern set to ${CAD.hatchPattern.toUpperCase()}.`, 'prompt');
+        return true;
     },
 
     entitySupportsHatch(entity) {
@@ -2833,8 +2860,25 @@ const Commands = {
     },
 
     applyHatch(entity) {
+        CAD.saveUndoState('Hatch');
         CAD.updateEntity(entity.id, { hatch: { pattern: CAD.hatchPattern } });
         UI.log('Hatch applied.');
+        Renderer.draw();
+    },
+
+    applyHatchToSelection() {
+        const selected = CAD.getSelectedEntities();
+        const targets = selected.filter(entity => this.entitySupportsHatch(entity));
+        if (targets.length === 0) {
+            UI.log('HATCH: No closed objects selected.', 'error');
+            return;
+        }
+        CAD.saveUndoState('Hatch');
+        targets.forEach(entity => {
+            CAD.updateEntity(entity.id, { hatch: { pattern: CAD.hatchPattern } }, true);
+        });
+        UI.log(`HATCH: Applied to ${targets.length} object(s).`, 'success');
+        Renderer.draw();
     },
 
     findHatchTargets(point) {
@@ -7373,12 +7417,18 @@ const Commands = {
         }
 
         if (state.activeCmd === 'hatch') {
-            const pattern = input.toLowerCase();
+            const trimmed = input.trim();
+            if (!trimmed) {
+                UI.log(`HATCH: Pattern unchanged (${CAD.hatchPattern.toUpperCase()}). Click inside a closed area or select a closed object.`, 'prompt');
+                return true;
+            }
+            const pattern = trimmed.toLowerCase();
             const shortcuts = {
                 s: 'solid',
                 d: 'diagonal',
                 c: 'cross',
-                o: 'dots'
+                o: 'dots',
+                a: 'angle'
             };
 
             if (pattern === 'list') {
@@ -7386,12 +7436,15 @@ const Commands = {
                 return true;
             }
 
-            // Check shortcut first, then direct pattern name
-            const resolved = shortcuts[pattern] || pattern;
-            if (this.hatchPatterns.includes(resolved)) {
-                this.setHatchPattern(resolved);
+            if (/^ansi\d+\s*-\s*\d+$/.test(pattern)) {
+                UI.log('HATCH: Specify a single ANSI pattern (ANSI31 through ANSI38).', 'error');
                 return true;
             }
+
+            const cleaned = pattern.replace(/[\s_-]+/g, '');
+            const resolved = shortcuts[cleaned] || cleaned;
+            this.setHatchPattern(resolved);
+            return true;
         }
 
         // Undo last point during LINE or POLYLINE drawing

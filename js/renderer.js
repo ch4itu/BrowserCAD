@@ -532,6 +532,7 @@ const Renderer = {
 
         switch (pattern) {
             case 'diagonal':
+            case 'angle':
             case 'ansi31':
                 ctx.beginPath();
                 ctx.moveTo(0, size);
