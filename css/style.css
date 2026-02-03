@@ -2383,7 +2383,7 @@ body {
 
 /* Target any device that is short (like a phone in landscape) 
    regardless of how wide it is. */
-@media (max-height: 600px) and (orientation: landscape) {
+@media (max-height: 600px) and (max-width: 900px) and (orientation: landscape) {
     
     /* 1. FORCE HIDE DESKTOP ELEMENTS 
        (Prevents ribbon from showing on high-res phones) */
