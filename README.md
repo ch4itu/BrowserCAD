@@ -410,4 +410,4 @@ js/
 Try it live: https://ch4itu.github.io/BrowserCAD/
 
 ## Legal Disclaimer
-This project is an independent open-source work. 'AutoCAD', 'AutoLISP', and 'DWG' are registered trademarks of Autodesk, Inc. This application is not affiliated with, endorsed by, or sponsored by Autodesk, Inc. Uses of these terms are for descriptive purposes only.
+This project is an independent open-source work. Certain software, scripting languages, and file formats mentioned herein are registered trademarks of their respective owners. This application is not affiliated with, endorsed by, or sponsored by those owners. Uses of these terms are for descriptive purposes only.
