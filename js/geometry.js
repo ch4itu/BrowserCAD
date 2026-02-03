@@ -1841,33 +1841,35 @@ class QuadTree {
         return inserted;
     }
 
-    query(range, found = [], foundSet = null) {
+    retrieve(range, out = [], seen = null) {
         if (!this.boundary.intersects(range)) {
-            return found;
-        }
-
-        if (!foundSet) {
-            foundSet = new Set(found);
+            return out;
         }
 
         for (const entity of this.entities) {
             const bbox = entity.getBoundingBox ? entity.getBoundingBox() : entity.boundingBox;
             if (bbox && this._bboxIntersects(bbox, range)) {
-                if (!foundSet.has(entity)) {
-                    found.push(entity);
-                    foundSet.add(entity);
+                if (!seen || !seen.has(entity)) {
+                    out.push(entity);
+                    if (seen) {
+                        seen.add(entity);
+                    }
                 }
             }
         }
 
         if (this.divided) {
-            this.northwest.query(range, found, foundSet);
-            this.northeast.query(range, found, foundSet);
-            this.southwest.query(range, found, foundSet);
-            this.southeast.query(range, found, foundSet);
+            this.northwest.retrieve(range, out, seen);
+            this.northeast.retrieve(range, out, seen);
+            this.southwest.retrieve(range, out, seen);
+            this.southeast.retrieve(range, out, seen);
         }
 
-        return found;
+        return out;
+    }
+
+    query(range, found = [], foundSet = null) {
+        return this.retrieve(range, found, foundSet);
     }
 
     clear() {
@@ -1897,6 +1899,151 @@ class QuadTree {
 
 Geometry.Rectangle = Rectangle;
 Geometry.QuadTree = QuadTree;
+
+class Line {
+    constructor(p1 = { x: 0, y: 0 }, p2 = { x: 0, y: 0 }) {
+        this.type = 'line';
+        this.p1 = p1;
+        this.p2 = p2;
+    }
+
+    getBoundingBox() {
+        return {
+            minX: Math.min(this.p1.x, this.p2.x),
+            minY: Math.min(this.p1.y, this.p2.y),
+            maxX: Math.max(this.p1.x, this.p2.x),
+            maxY: Math.max(this.p1.y, this.p2.y)
+        };
+    }
+}
+
+class Circle {
+    constructor(center = { x: 0, y: 0 }, r = 0) {
+        this.type = 'circle';
+        this.center = center;
+        this.r = r;
+    }
+
+    getBoundingBox() {
+        return {
+            minX: this.center.x - this.r,
+            minY: this.center.y - this.r,
+            maxX: this.center.x + this.r,
+            maxY: this.center.y + this.r
+        };
+    }
+}
+
+class Arc {
+    constructor(center = { x: 0, y: 0 }, r = 0, start = 0, end = 0) {
+        this.type = 'arc';
+        this.center = center;
+        this.r = r;
+        this.start = start;
+        this.end = end;
+    }
+
+    getBoundingBox() {
+        const angles = [this.start, this.end];
+        const normalize = angle => {
+            const twoPi = Math.PI * 2;
+            let a = angle % twoPi;
+            if (a < 0) a += twoPi;
+            return a;
+        };
+        const start = normalize(this.start);
+        const end = normalize(this.end);
+        const inRange = (angle) => {
+            if (start <= end) {
+                return angle >= start && angle <= end;
+            }
+            return angle >= start || angle <= end;
+        };
+        const quadrants = [0, Math.PI / 2, Math.PI, (Math.PI * 3) / 2];
+        quadrants.forEach(angle => {
+            if (inRange(angle)) angles.push(angle);
+        });
+        const points = angles.map(angle => ({
+            x: this.center.x + Math.cos(angle) * this.r,
+            y: this.center.y + Math.sin(angle) * this.r
+        }));
+        const xs = points.map(p => p.x);
+        const ys = points.map(p => p.y);
+        return {
+            minX: Math.min(...xs),
+            minY: Math.min(...ys),
+            maxX: Math.max(...xs),
+            maxY: Math.max(...ys)
+        };
+    }
+}
+
+class LwPolyline {
+    constructor(points = [], closed = false) {
+        this.type = 'lwpolyline';
+        this.points = points;
+        this.closed = closed;
+    }
+
+    getBoundingBox() {
+        if (!this.points.length) {
+            return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+        }
+        let minX = this.points[0].x;
+        let minY = this.points[0].y;
+        let maxX = this.points[0].x;
+        let maxY = this.points[0].y;
+        for (const point of this.points) {
+            minX = Math.min(minX, point.x);
+            minY = Math.min(minY, point.y);
+            maxX = Math.max(maxX, point.x);
+            maxY = Math.max(maxY, point.y);
+        }
+        return { minX, minY, maxX, maxY };
+    }
+}
+
+class Text {
+    constructor(point = { x: 0, y: 0 }, text = '', height = 0) {
+        this.type = 'text';
+        this.point = point;
+        this.text = text;
+        this.height = height;
+    }
+
+    getBoundingBox() {
+        const width = (this.text?.length || 0) * (this.height || 0) * 0.6;
+        return {
+            minX: this.point.x,
+            minY: this.point.y,
+            maxX: this.point.x + width,
+            maxY: this.point.y + (this.height || 0)
+        };
+    }
+}
+
+class Insert {
+    constructor(point = { x: 0, y: 0 }) {
+        this.type = 'insert';
+        this.point = point;
+    }
+
+    getBoundingBox() {
+        return {
+            minX: this.point.x,
+            minY: this.point.y,
+            maxX: this.point.x + 1,
+            maxY: this.point.y + 1
+        };
+    }
+}
+
+Geometry.Line = Line;
+Geometry.Circle = Circle;
+Geometry.Arc = Arc;
+Geometry.LwPolyline = LwPolyline;
+Geometry.Text = Text;
+Geometry.Insert = Insert;
 
 // Export for module usage
 if (typeof module !== 'undefined' && module.exports) {
