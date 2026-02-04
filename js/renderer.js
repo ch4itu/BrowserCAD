@@ -892,9 +892,13 @@ const Renderer = {
                 // Font size is in world units - zoom is already applied to the context
                 ctx.font = `${entity.height}px Arial`;
                 ctx.fillStyle = ctx.strokeStyle;
-                ctx.translate(entity.position.x, entity.position.y);
+                const textPos = entity.position || entity.point || { x: 0, y: 0 };
+                ctx.translate(textPos.x, textPos.y);
                 if (entity.rotation) {
-                    ctx.rotate(-Utils.degToRad(entity.rotation)); // Negative for correct rotation direction
+                    const rotation = Math.abs(entity.rotation) > Math.PI * 2 + 0.001
+                        ? Utils.degToRad(entity.rotation)
+                        : entity.rotation;
+                    ctx.rotate(-rotation); // Negative for correct rotation direction
                 }
                 ctx.fillText(entity.text, 0, entity.height * 0.3); // Offset for baseline
                 ctx.restore();
@@ -904,9 +908,13 @@ const Renderer = {
                 ctx.save();
                 ctx.font = `${entity.height}px Arial`;
                 ctx.fillStyle = ctx.strokeStyle;
-                ctx.translate(entity.position.x, entity.position.y);
+                const mtextPos = entity.position || entity.point || { x: 0, y: 0 };
+                ctx.translate(mtextPos.x, mtextPos.y);
                 if (entity.rotation) {
-                    ctx.rotate(-Utils.degToRad(entity.rotation));
+                    const rotation = Math.abs(entity.rotation) > Math.PI * 2 + 0.001
+                        ? Utils.degToRad(entity.rotation)
+                        : entity.rotation;
+                    ctx.rotate(-rotation);
                 }
 
                 // Draw multiline text
@@ -1102,8 +1110,8 @@ const Renderer = {
         const scaleX = insertRef.scaleX ?? insertRef.scale?.x ?? 1;
         const scaleY = insertRef.scaleY ?? insertRef.scale?.y ?? 1;
         const rotation = insertRef.rotation || 0;
-        const insertX = insertRef.x ?? insertRef.insertPoint?.x ?? 0;
-        const insertY = insertRef.y ?? insertRef.insertPoint?.y ?? 0;
+        const insertX = insertRef.insertPoint?.x ?? insertRef.x ?? 0;
+        const insertY = insertRef.insertPoint?.y ?? insertRef.y ?? 0;
 
         ctx.save();
         ctx.translate(insertX, insertY);
@@ -1150,16 +1158,21 @@ const Renderer = {
     },
 
     ensureHatchRenderLines(entity) {
-        if (entity.renderLines && entity.renderLines.length) {
+        const boundary = entity.boundary || entity.points || [];
+        const isEdgeBoundary = Array.isArray(boundary)
+            && boundary.length > 0
+            && (boundary[0].type || boundary[0].p1 || boundary[0].p2);
+        if (entity.renderLines && entity.renderLines.length > 0 && !isEdgeBoundary) {
             return entity.renderLines;
         }
+
         if (typeof entity.generateRenderLines === 'function') {
             entity.renderLines = entity.generateRenderLines();
             return entity.renderLines;
         }
         if (typeof Geometry !== 'undefined' && Geometry.Hatch) {
             const pattern = entity.patternName || entity.pattern || entity.hatch?.pattern || 'ANSI31';
-            const hatch = new Geometry.Hatch(entity.boundary || entity.points || [], pattern, entity.scale || 1, entity.angle || 0);
+            const hatch = new Geometry.Hatch(boundary, pattern, entity.scale || 1, entity.angle || 0);
             entity.renderLines = hatch.generateRenderLines();
             return entity.renderLines;
         }

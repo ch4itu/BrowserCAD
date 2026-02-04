@@ -2004,9 +2004,9 @@ class LwPolyline {
 }
 
 class Text {
-    constructor(point = { x: 0, y: 0 }, text = '', height = 0) {
+    constructor(position = { x: 0, y: 0 }, text = '', height = 0) {
         this.type = 'text';
-        this.point = point;
+        this.position = position;
         this.text = text;
         this.height = height;
     }
@@ -2014,10 +2014,10 @@ class Text {
     getBoundingBox() {
         const width = (this.text?.length || 0) * (this.height || 0) * 0.6;
         return {
-            minX: this.point.x,
-            minY: this.point.y,
-            maxX: this.point.x + width,
-            maxY: this.point.y + (this.height || 0)
+            minX: this.position.x,
+            minY: this.position.y,
+            maxX: this.position.x + width,
+            maxY: this.position.y + (this.height || 0)
         };
     }
 }
@@ -2180,7 +2180,7 @@ class Hatch {
             return this.renderLines;
         }
 
-        const spacing = Math.max(this.scale, 0.001);
+        let spacing = Math.max(this.scale, 0.001);
         const radians = (typeof Utils !== 'undefined' && Utils.degToRad)
             ? Utils.degToRad(this.angle)
             : (this.angle * (Math.PI / 180));
@@ -2200,6 +2200,11 @@ class Hatch {
 
         const rotated = boundaryPoints.map(rotatePoint);
         const bbox = Hatch.getPointsBoundingBox(rotated);
+        const maxSpacing = Math.max(
+            Math.min(bbox.maxY - bbox.minY, bbox.maxX - bbox.minX),
+            0.001
+        );
+        spacing = Math.min(spacing, maxSpacing);
         const segments = [];
 
         for (let y = bbox.minY; y <= bbox.maxY; y += spacing) {

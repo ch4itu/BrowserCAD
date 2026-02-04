@@ -270,8 +270,8 @@ const DXF = (() => {
                                         if (dataTag.code === 10) edge.center.x = parseNumber(dataTag.value);
                                         if (dataTag.code === 20) edge.center.y = parseNumber(dataTag.value);
                                         if (dataTag.code === 40) edge.radius = parseNumber(dataTag.value);
-                                        if (dataTag.code === 50) edge.start = parseNumber(dataTag.value);
-                                        if (dataTag.code === 51) edge.end = parseNumber(dataTag.value);
+                                        if (dataTag.code === 50) edge.start = parseNumber(dataTag.value) * (Math.PI / 180);
+                                        if (dataTag.code === 51) edge.end = parseNumber(dataTag.value) * (Math.PI / 180);
                                         if (dataTag.code === 73) edge.ccw = parseIntValue(dataTag.value, 1) === 1;
                                     }
                                     edges.push(edge);
@@ -440,8 +440,8 @@ const DXF = (() => {
         // 10/20/30 = center X/Y/Z, 40 = radius, 50/51 = start/end angles
         out.push('10', formatNumber(entity.center?.x), '20', formatNumber(entity.center?.y), '30', formatNumber(entity.center?.z || 0));
         out.push('40', formatNumber(entity.r || 0));
-        out.push('50', formatNumber(entity.start || 0));
-        out.push('51', formatNumber(entity.end || 0));
+        out.push('50', formatNumber((entity.start || 0) * (180 / Math.PI)));
+        out.push('51', formatNumber((entity.end || 0) * (180 / Math.PI)));
     };
 
     const writeEntityLwPolyline = (out, entity) => {
@@ -469,19 +469,20 @@ const DXF = (() => {
         out.push('0', isMText ? 'MTEXT' : 'TEXT');
         out.push('8', entity.layer || '0');
         // 10/20/30 = insertion X/Y/Z, 40 = height, 1 = text, 50 = rotation
-        out.push('10', formatNumber(entity.point?.x), '20', formatNumber(entity.point?.y), '30', formatNumber(entity.point?.z || 0));
+        const pos = entity.position || { x: 0, y: 0 };
+        out.push('10', formatNumber(pos.x), '20', formatNumber(pos.y), '30', formatNumber(pos.z || 0));
         out.push('40', formatNumber(entity.height || 0));
         out.push('1', entity.text || '');
         if (entity.rotation) {
-            out.push('50', formatNumber(entity.rotation));
+            out.push('50', formatNumber(entity.rotation * (180 / Math.PI)));
         }
     };
 
     const writeEntityInsert = (out, entity) => {
-        const insertPoint = entity.insertPoint || entity.p || { x: entity.x || 0, y: entity.y || 0, z: 0 };
+        const insertPoint = entity.insertPoint || { x: entity.x || 0, y: entity.y || 0, z: 0 };
         const scale = entity.scale || { x: entity.scaleX ?? 1, y: entity.scaleY ?? 1 };
         const rotation = entity.rotation || 0;
-        const rotationDeg = Math.abs(rotation) <= Math.PI * 2 + 0.001 ? rotation * (180 / Math.PI) : rotation;
+        const rotationDeg = rotation * (180 / Math.PI);
         out.push('0', 'INSERT');
         out.push('8', entity.layer || '0');
         out.push('2', entity.blockName || '');
