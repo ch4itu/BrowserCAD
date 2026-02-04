@@ -2174,45 +2174,50 @@ class Hatch {
     }
 
     generateRenderLines() {
-        const edges = this.getBoundaryEdges();
-        if (!edges.length) {
-            this.renderLines = [];
-            return this.renderLines;
-        }
-
         const boundaryPoints = Hatch.getBoundaryPoints(this.boundary);
         if (!boundaryPoints.length) {
             this.renderLines = [];
             return this.renderLines;
         }
 
-        const bbox = Hatch.getPointsBoundingBox(boundaryPoints);
         const spacing = Math.max(this.scale, 0.0001);
         const radians = (typeof Utils !== 'undefined' && Utils.degToRad)
             ? Utils.degToRad(this.angle)
             : (this.angle * (Math.PI / 180));
-        const dir = { x: Math.cos(radians), y: Math.sin(radians) };
-        const normal = { x: -dir.y, y: dir.x };
 
-        const corners = [
-            { x: bbox.minX, y: bbox.minY },
-            { x: bbox.maxX, y: bbox.minY },
-            { x: bbox.maxX, y: bbox.maxY },
-            { x: bbox.minX, y: bbox.maxY }
-        ];
-        let minProj = Infinity;
-        let maxProj = -Infinity;
-        corners.forEach(corner => {
-            const proj = corner.x * normal.x + corner.y * normal.y;
-            minProj = Math.min(minProj, proj);
-            maxProj = Math.max(maxProj, proj);
+        const cos = Math.cos(-radians);
+        const sin = Math.sin(-radians);
+        const rotatePoint = (point) => ({
+            x: point.x * cos - point.y * sin,
+            y: point.x * sin + point.y * cos
+        });
+        const invCos = Math.cos(radians);
+        const invSin = Math.sin(radians);
+        const inverseRotatePoint = (point) => ({
+            x: point.x * invCos - point.y * invSin,
+            y: point.x * invSin + point.y * invCos
         });
 
+        const rotated = boundaryPoints.map(rotatePoint);
+        const bbox = Hatch.getPointsBoundingBox(rotated);
         const segments = [];
-        for (let offset = minProj - spacing; offset <= maxProj + spacing; offset += spacing) {
-            const intersections = Hatch.collectEdgeIntersections(edges, dir, normal, offset);
+
+        for (let y = bbox.minY; y <= bbox.maxY; y += spacing) {
+            const intersections = [];
+            for (let i = 0; i < rotated.length; i++) {
+                const a = rotated[i];
+                const b = rotated[(i + 1) % rotated.length];
+                if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
+                    const t = (y - a.y) / (b.y - a.y);
+                    const x = a.x + t * (b.x - a.x);
+                    intersections.push({ x, y });
+                }
+            }
+            intersections.sort((p1, p2) => p1.x - p2.x);
             for (let i = 0; i + 1 < intersections.length; i += 2) {
-                segments.push({ p1: intersections[i], p2: intersections[i + 1] });
+                const p1 = inverseRotatePoint(intersections[i]);
+                const p2 = inverseRotatePoint(intersections[i + 1]);
+                segments.push({ p1, p2 });
             }
         }
 

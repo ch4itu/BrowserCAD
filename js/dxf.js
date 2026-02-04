@@ -522,15 +522,16 @@ const DXF = (() => {
         const isSolid = entity.solid === 1 || rawPattern.toLowerCase() === 'solid';
         out.push('0', 'HATCH');
         out.push('100', 'AcDbEntity');
-        out.push('8', entity.layer || '0');
         out.push('100', 'AcDbHatch');
-        out.push('10', '0', '20', '0', '30', '0');
-        out.push('210', '0', '220', '0', '230', '1');
+        out.push('10', '0.0');
+        out.push('20', '0.0');
+        out.push('30', '0.0');
+        out.push('210', '0.0');
+        out.push('220', '0.0');
+        out.push('230', '1.0');
         out.push('2', pattern);
         out.push('70', isSolid ? '1' : '0');
-        out.push('75', '0');
-        out.push('41', formatNumber(scale));
-        out.push('52', formatNumber(angle));
+        out.push('71', '0');
         out.push('91', '1');
         out.push('92', '1');
         out.push('93', String(edges.length));
@@ -542,7 +543,7 @@ const DXF = (() => {
                 out.push('40', formatNumber(edge.radius ?? edge.r ?? 0));
                 out.push('50', formatNumber(edge.start || 0));
                 out.push('51', formatNumber(edge.end || 0));
-                out.push('73', edge.ccw === false ? '0' : '1');
+                out.push('73', '1');
             } else {
                 out.push('72', '1');
                 const start = edge.start || edge.p1;
@@ -553,7 +554,12 @@ const DXF = (() => {
                 out.push('21', formatNumber(end.y));
             }
         });
-        out.push('98', '0');
+        out.push('75', '0');
+        out.push('76', '1');
+        out.push('52', formatNumber(angle));
+        out.push('41', formatNumber(scale));
+        out.push('77', '0');
+        out.push('78', '0');
     };
 
     const writeBlocksSection = (out, blocks = {}, state = null) => {
