@@ -347,11 +347,10 @@ const Renderer = {
             }
 
             if (entity.type === 'hatch') {
-                if (entity.renderLines && entity.renderLines.length) {
-                    this.drawHatchRenderLines(entity, color, zoom);
-                } else {
-                    this.drawHatchEntity(entity, color);
+                if (!entity.renderLines || entity.renderLines.length === 0) {
+                    this.ensureHatchRenderLines(entity);
                 }
+                this.drawHatchRenderLines(entity, color, zoom);
                 return;
             }
 
@@ -756,6 +755,17 @@ const Renderer = {
     },
 
     traceEntityPath(entity, ctx, forceClose = false) {
+        if (Array.isArray(entity.boundary)) {
+            const points = Geometry.Hatch.getBoundaryPoints(entity.boundary);
+            if (points.length > 0) {
+                ctx.moveTo(points[0].x, points[0].y);
+                for (let i = 1; i < points.length; i++) {
+                    ctx.lineTo(points[i].x, points[i].y);
+                }
+                ctx.closePath();
+            }
+            return;
+        }
         switch (entity.type) {
             case 'line':
                 ctx.moveTo(entity.p1.x, entity.p1.y);

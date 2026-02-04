@@ -181,13 +181,13 @@ const DXF = (() => {
                     // 10/20/30 = center X/Y/Z, 40 = radius, 50/51 = start/end angles (degrees)
                     center: { x: parseNumber(tags[10]), y: parseNumber(tags[20]), z: parseNumber(tags[30]) },
                     r: parseNumber(tags[40]),
-                    start: parseNumber(tags[50]),
-                    end: parseNumber(tags[51])
+                    start: parseNumber(tags[50]) * (Math.PI / 180),
+                    end: parseNumber(tags[51]) * (Math.PI / 180)
                 };
             case 'LWPOLYLINE': {
                 const poly = parseLwPolyline(tags);
                 return {
-                    type: 'lwpolyline',
+                    type: 'polyline',
                     layer,
                     points: poly.points,
                     closed: poly.closed
@@ -206,9 +206,9 @@ const DXF = (() => {
                     layer,
                     // 1/3 = text string, 10/20/30 = insertion point, 40 = height, 50 = rotation
                     text: textChunks.join('') || '',
-                    point: { x: parseNumber(tags[10]), y: parseNumber(tags[20]), z: parseNumber(tags[30]) },
-                    height: parseNumber(tags[40], 0),
-                    rotation: parseNumber(tags[50], 0)
+                    position: { x: parseNumber(tags[10]), y: parseNumber(tags[20]), z: parseNumber(tags[30]) },
+                    height: parseNumber(tags[40], 10),
+                    rotation: parseNumber(tags[50], 0) * (Math.PI / 180)
                 };
             }
             case 'INSERT': {
@@ -219,9 +219,9 @@ const DXF = (() => {
                     layer,
                     // 2 = block name, 10/20/30 = insertion point, 41/42 = scale, 50 = rotation
                     blockName: tags[2] || '',
-                    p: { x: parseNumber(tags[10]), y: parseNumber(tags[20]), z: parseNumber(tags[30]) },
+                    insertPoint: { x: parseNumber(tags[10]), y: parseNumber(tags[20]), z: parseNumber(tags[30]) },
                     scale: { x: scaleX || 1, y: scaleY || 1 },
-                    rotation: parseNumber(tags[50], 0)
+                    rotation: parseNumber(tags[50], 0) * (Math.PI / 180)
                 };
             }
             case 'HATCH': {

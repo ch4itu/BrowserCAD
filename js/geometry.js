@@ -2175,12 +2175,12 @@ class Hatch {
 
     generateRenderLines() {
         const boundaryPoints = Hatch.getBoundaryPoints(this.boundary);
-        if (!boundaryPoints.length) {
+        if (!boundaryPoints || boundaryPoints.length < 3) {
             this.renderLines = [];
             return this.renderLines;
         }
 
-        const spacing = Math.max(this.scale, 0.0001);
+        const spacing = Math.max(this.scale, 0.001);
         const radians = (typeof Utils !== 'undefined' && Utils.degToRad)
             ? Utils.degToRad(this.angle)
             : (this.angle * (Math.PI / 180));
