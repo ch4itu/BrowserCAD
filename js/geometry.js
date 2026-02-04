@@ -2174,13 +2174,19 @@ class Hatch {
     }
 
     generateRenderLines() {
-        const points = Hatch.getBoundaryPoints(this.boundary);
-        if (!points.length) {
+        const edges = this.getBoundaryEdges();
+        if (!edges.length) {
             this.renderLines = [];
             return this.renderLines;
         }
 
-        const bbox = Hatch.getPointsBoundingBox(points);
+        const boundaryPoints = Hatch.getBoundaryPoints(this.boundary);
+        if (!boundaryPoints.length) {
+            this.renderLines = [];
+            return this.renderLines;
+        }
+
+        const bbox = Hatch.getPointsBoundingBox(boundaryPoints);
         const spacing = Math.max(this.scale, 0.0001);
         const radians = (typeof Utils !== 'undefined' && Utils.degToRad)
             ? Utils.degToRad(this.angle)
@@ -2204,7 +2210,7 @@ class Hatch {
 
         const segments = [];
         for (let offset = minProj - spacing; offset <= maxProj + spacing; offset += spacing) {
-            const intersections = Hatch.collectIntersections(points, dir, normal, offset);
+            const intersections = Hatch.collectEdgeIntersections(edges, dir, normal, offset);
             for (let i = 0; i + 1 < intersections.length; i += 2) {
                 segments.push({ p1: intersections[i], p2: intersections[i + 1] });
             }
@@ -2374,6 +2380,26 @@ class Hatch {
         return intersections;
     }
 
+    static collectEdgeIntersections(edges, dir, normal, offset) {
+        const hits = [];
+        edges.forEach(edge => {
+            if (edge.type === 'arc') {
+                Hatch.intersectLineArc(edge, dir, normal, offset).forEach(point => hits.push(point));
+            } else {
+                const start = edge.start || edge.p1;
+                const end = edge.end || edge.p2;
+                const hit = Hatch.intersectLineSegment(start, end, dir, normal, offset);
+                if (hit) hits.push(hit);
+            }
+        });
+        hits.sort((p1, p2) => {
+            const t1 = p1.x * dir.x + p1.y * dir.y;
+            const t2 = p2.x * dir.x + p2.y * dir.y;
+            return t1 - t2;
+        });
+        return hits;
+    }
+
     static intersectLineSegment(a, b, dir, normal, offset) {
         const denom = (b.x - a.x) * normal.x + (b.y - a.y) * normal.y;
         if (Math.abs(denom) < 1e-10) return null;
@@ -2383,6 +2409,56 @@ class Hatch {
             x: a.x + t * (b.x - a.x),
             y: a.y + t * (b.y - a.y)
         };
+    }
+
+    static intersectLineArc(edge, dir, normal, offset) {
+        const center = edge.center;
+        if (!center) return [];
+        const radius = edge.radius ?? edge.r ?? 0;
+        if (!radius) return [];
+        const lineOrigin = {
+            x: normal.x * offset,
+            y: normal.y * offset
+        };
+        const dx = lineOrigin.x - center.x;
+        const dy = lineOrigin.y - center.y;
+        const b = 2 * (dir.x * dx + dir.y * dy);
+        const c = dx * dx + dy * dy - radius * radius;
+        const discriminant = b * b - 4 * c;
+        if (discriminant < 0) return [];
+        const sqrtDisc = Math.sqrt(discriminant);
+        const t1 = (-b - sqrtDisc) / 2;
+        const t2 = (-b + sqrtDisc) / 2;
+        const points = [
+            { x: lineOrigin.x + dir.x * t1, y: lineOrigin.y + dir.y * t1 },
+            { x: lineOrigin.x + dir.x * t2, y: lineOrigin.y + dir.y * t2 }
+        ];
+        const start = Hatch.normalizeAngle(edge.start);
+        const end = Hatch.normalizeAngle(edge.end);
+        const ccw = edge.ccw !== false;
+        return points.filter(point => {
+            const angle = Hatch.normalizeAngle(Math.atan2(point.y - center.y, point.x - center.x));
+            return Hatch.isAngleOnArc(angle, start, end, ccw);
+        });
+    }
+
+    static normalizeAngle(angle) {
+        const twoPi = Math.PI * 2;
+        if (Math.abs(angle) > twoPi + 0.001) {
+            angle = angle * (Math.PI / 180);
+        }
+        let normalized = angle % twoPi;
+        if (normalized < 0) normalized += twoPi;
+        return normalized;
+    }
+
+    static isAngleOnArc(angle, start, end, ccw = true) {
+        if (ccw) {
+            if (start <= end) return angle >= start && angle <= end;
+            return angle >= start || angle <= end;
+        }
+        if (end <= start) return angle <= start && angle >= end;
+        return angle <= start || angle >= end;
     }
 }
 

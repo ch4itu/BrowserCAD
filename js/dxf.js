@@ -228,10 +228,14 @@ const DXF = (() => {
                 const edges = [];
                 let loopCount = 0;
                 let edgeCount = 0;
+                let solid = 0;
                 for (let i = 0; i < tags.list.length; i++) {
                     const tag = tags.list[i];
                     if (tag.code === 91) {
                         loopCount = parseIntValue(tag.value, 0);
+                    }
+                    if (tag.code === 70) {
+                        solid = parseIntValue(tag.value, 0);
                     }
                     if (tag.code === 93) {
                         edgeCount = parseIntValue(tag.value, 0);
@@ -283,6 +287,7 @@ const DXF = (() => {
                     // 2 = pattern name, 91 = loop count, 41 = scale, 52 = angle
                     pattern: tags[2] || 'ANSI31',
                     loopCount,
+                    solid,
                     scale: parseNumber(tags[41], 1),
                     angle: parseNumber(tags[52], 0),
                     boundary: edges
@@ -510,9 +515,11 @@ const DXF = (() => {
     const writeEntityHatch = (out, entity, state) => {
         const edges = getHatchBoundaryEdges(entity, state);
         if (!edges.length) return;
-        const pattern = (entity.patternName || entity.pattern || entity.hatch?.pattern || 'ANSI31').toUpperCase();
+        const rawPattern = entity.patternName || entity.pattern || entity.hatch?.pattern || 'ANSI31';
+        const pattern = rawPattern.toUpperCase();
         const scale = entity.scale || 1;
         const angle = entity.angle || 0;
+        const isSolid = entity.solid === 1 || rawPattern.toLowerCase() === 'solid';
         out.push('0', 'HATCH');
         out.push('100', 'AcDbEntity');
         out.push('8', entity.layer || '0');
@@ -520,7 +527,7 @@ const DXF = (() => {
         out.push('10', '0', '20', '0', '30', '0');
         out.push('210', '0', '220', '0', '230', '1');
         out.push('2', pattern);
-        out.push('70', '0');
+        out.push('70', isSolid ? '1' : '0');
         out.push('75', '0');
         out.push('41', formatNumber(scale));
         out.push('52', formatNumber(angle));
