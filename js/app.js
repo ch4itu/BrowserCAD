@@ -61,7 +61,12 @@ const App = {
     },
 
     onMouseDown(e) {
-        const world = Utils.screenToWorld(e.offsetX, e.offsetY, CAD.pan, CAD.zoom);
+        const paperPoint = this.screenToPaper(e.offsetX, e.offsetY);
+        const world = this.screenToActiveSpace(paperPoint);
+        const activeViewport = this.getActiveViewport();
+        const effectiveZoom = this.isModelSpaceInLayout() && activeViewport
+            ? CAD.zoom * activeViewport.viewScale
+            : CAD.zoom;
 
         // Middle mouse button - start pan or zoom extents on double-click
         if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
@@ -84,38 +89,54 @@ const App = {
 
         // Left click - handle command or selection
         if (e.button === 0) {
+            if (!world) return;
             Commands.handleClick(world);
             UI.updatePropertiesPanel();
         }
     },
 
     onMouseMove(e) {
-        const world = Utils.screenToWorld(e.offsetX, e.offsetY, CAD.pan, CAD.zoom);
+        const paperPoint = this.screenToPaper(e.offsetX, e.offsetY);
+        const world = this.screenToActiveSpace(paperPoint);
+        const cursorPoint = world || paperPoint;
+        const activeViewport = this.getActiveViewport();
+        const effectiveZoom = this.isModelSpaceInLayout() && activeViewport
+            ? CAD.zoom * activeViewport.viewScale
+            : CAD.zoom;
 
         // Update cursor position
-        CAD.cursor = world;
-        CAD.cursorWorld = world;
-        CAD.tempEnd = world;
-        UI.updateCoordinates(world.x, world.y);
+        CAD.cursor = cursorPoint;
+        CAD.cursorWorld = cursorPoint;
+        CAD.tempEnd = cursorPoint;
+        UI.updateCoordinates(cursorPoint.x, cursorPoint.y);
 
         // Handle panning
         if (CAD.isPanning) {
             const dx = e.offsetX - CAD.panStart.x;
             const dy = e.offsetY - CAD.panStart.y;
-            CAD.pan.x += dx;
-            CAD.pan.y += dy;
+            const activeViewport = this.getActiveViewport();
+
+            if (this.isModelSpaceInLayout() && activeViewport) {
+                const paperDx = dx / CAD.zoom;
+                const paperDy = dy / CAD.zoom;
+                activeViewport.viewCenter.x -= paperDx / activeViewport.viewScale;
+                activeViewport.viewCenter.y -= paperDy / activeViewport.viewScale;
+            } else {
+                CAD.pan.x += dx;
+                CAD.pan.y += dy;
+            }
             CAD.panStart = { x: e.offsetX, y: e.offsetY };
         }
 
         // Update hover highlighting (detect entity under cursor)
-        const tolerance = 10 / CAD.zoom;
-        const hit = Commands.hitTest(world);
+        const tolerance = 10 / effectiveZoom;
+        const hit = world ? Commands.hitTest(world) : null;
         CAD.hoveredId = hit ? hit.id : null;
 
         // Update snap point (separate OSNAP and Grid Snap)
-        if (CAD.osnapEnabled || CAD.gridSnapEnabled) {
-            const entities = CAD.getVisibleEntities();
-            const snapTolerance = 15 / CAD.zoom;
+        if ((CAD.osnapEnabled || CAD.gridSnapEnabled) && world) {
+            const entities = this.getSnapEntities(world);
+            const snapTolerance = 15 / effectiveZoom;
 
             // Build effective snap modes based on current settings
             const effectiveSnapModes = {
@@ -129,7 +150,10 @@ const App = {
                 grid: CAD.gridSnapEnabled  // Grid snap is separate
             };
 
-            const snap = Geometry.findSnapPoints(world, entities, effectiveSnapModes, snapTolerance, CAD.gridSize);
+            const fromPoint = (CAD.points && CAD.points.length > 0)
+                ? CAD.points[CAD.points.length - 1]
+                : (CAD.lineChainStart || null);
+            const snap = Geometry.findSnapPoints(world, entities, effectiveSnapModes, snapTolerance, CAD.gridSize, fromPoint);
 
             if (snap) {
                 CAD.snapPoint = snap.point;
@@ -146,6 +170,161 @@ const App = {
         Renderer.draw();
     },
 
+    getSnapEntities(cursorPoint) {
+        const entities = CAD.getVisibleEntities();
+        if (!CAD.activeCmd) return entities;
+
+        const points = CAD.points || [];
+        if (!points.length) return entities;
+
+        const endPoint = CAD.tempEnd || cursorPoint;
+        let previewEntity = null;
+
+        switch (CAD.activeCmd) {
+            case 'line': {
+                previewEntity = {
+                    type: 'line',
+                    p1: { ...points[points.length - 1] },
+                    p2: { ...endPoint }
+                };
+                break;
+            }
+            case 'polyline': {
+                previewEntity = {
+                    type: 'polyline',
+                    points: [...points.map(p => ({ ...p })), { ...endPoint }]
+                };
+                break;
+            }
+            case 'rect': {
+                previewEntity = {
+                    type: 'rect',
+                    p1: { ...points[0] },
+                    p2: { ...endPoint }
+                };
+                break;
+            }
+            case 'circle': {
+                previewEntity = {
+                    type: 'circle',
+                    center: { ...points[0] },
+                    r: Utils.dist(points[0], endPoint)
+                };
+                break;
+            }
+            case 'arc': {
+                if (points.length >= 2) {
+                    const center = points[0];
+                    previewEntity = {
+                        type: 'arc',
+                        center: { ...center },
+                        r: Utils.dist(center, points[1]),
+                        start: Utils.angle(center, points[1]),
+                        end: Utils.angle(center, endPoint)
+                    };
+                }
+                break;
+            }
+            case 'ellipse': {
+                if (points.length >= 2) {
+                    const center = Utils.midpoint(points[0], points[1]);
+                    previewEntity = {
+                        type: 'ellipse',
+                        center: { ...center },
+                        rx: Utils.dist(points[0], points[1]) / 2,
+                        ry: Utils.dist(center, endPoint),
+                        rotation: Utils.angle(points[0], points[1])
+                    };
+                }
+                break;
+            }
+            case 'polygon': {
+                const center = points[0];
+                const radius = Utils.dist(center, endPoint);
+                const startAngle = Utils.angle(center, endPoint);
+                const sides = CAD.cmdOptions.sides || 4;
+                const polyPoints = [];
+                for (let i = 0; i < sides; i++) {
+                    const angle = startAngle + (i * 2 * Math.PI / sides);
+                    polyPoints.push({
+                        x: center.x + radius * Math.cos(angle),
+                        y: center.y + radius * Math.sin(angle)
+                    });
+                }
+                polyPoints.push({ ...polyPoints[0] });
+                previewEntity = {
+                    type: 'polyline',
+                    points: polyPoints,
+                    closed: true
+                };
+                break;
+            }
+            default:
+                break;
+        }
+
+        if (previewEntity) {
+            entities.push(previewEntity);
+        }
+
+        return entities;
+    },
+
+    screenToPaper(x, y) {
+        return Utils.screenToWorld(x, y, CAD.pan, CAD.zoom);
+    },
+
+    paperToModel(point, viewport) {
+        return {
+            x: (point.x - viewport.centerPoint.x) / viewport.viewScale + viewport.viewCenter.x,
+            y: (point.y - viewport.centerPoint.y) / viewport.viewScale + viewport.viewCenter.y
+        };
+    },
+
+    modelToPaper(point, viewport) {
+        return {
+            x: (point.x - viewport.viewCenter.x) * viewport.viewScale + viewport.centerPoint.x,
+            y: (point.y - viewport.viewCenter.y) * viewport.viewScale + viewport.centerPoint.y
+        };
+    },
+
+    screenToActiveSpace(paperPoint) {
+        if (!paperPoint) return null;
+        if (this.isModelSpaceInLayout()) {
+            const viewport = this.getActiveViewport();
+            if (!viewport || !this.isPointInViewport(paperPoint, viewport)) return null;
+            return this.paperToModel(paperPoint, viewport);
+        }
+        return paperPoint;
+    },
+
+    isModelSpaceInLayout() {
+        const layout = CAD.getLayout(CAD.currentLayout);
+        return layout && layout.type === 'paper' && CAD.activeSpace === 'MODEL';
+    },
+
+    getActiveViewport() {
+        if (!CAD.activeViewportId) return null;
+        const layout = CAD.getLayout(CAD.currentLayout);
+        if (!layout) return null;
+        return layout.viewports.find(viewport => viewport.id === CAD.activeViewportId) || null;
+    },
+
+    getViewportAtPoint(point) {
+        const layout = CAD.getLayout(CAD.currentLayout);
+        if (!layout) return null;
+        return layout.viewports.find(viewport => this.isPointInViewport(point, viewport)) || null;
+    },
+
+    isPointInViewport(point, viewport) {
+        if (!viewport || !point) return false;
+        const left = viewport.centerPoint.x - viewport.width / 2;
+        const right = viewport.centerPoint.x + viewport.width / 2;
+        const top = viewport.centerPoint.y - viewport.height / 2;
+        const bottom = viewport.centerPoint.y + viewport.height / 2;
+        return point.x >= left && point.x <= right && point.y >= top && point.y <= bottom;
+    },
+
     onMouseUp(e) {
         if (CAD.isPanning) {
             CAD.isPanning = false;
@@ -158,8 +337,23 @@ const App = {
         e.preventDefault();
 
         const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-        const worldBefore = Utils.screenToWorld(e.offsetX, e.offsetY, CAD.pan, CAD.zoom);
+        const paperPoint = this.screenToPaper(e.offsetX, e.offsetY);
+        const activeViewport = this.getActiveViewport();
 
+        if (this.isModelSpaceInLayout() && activeViewport && this.isPointInViewport(paperPoint, activeViewport)) {
+            const modelPoint = this.paperToModel(paperPoint, activeViewport);
+            activeViewport.viewScale *= zoomFactor;
+            activeViewport.viewScale = Utils.clamp(activeViewport.viewScale, 0.001, 100);
+
+            activeViewport.viewCenter = {
+                x: modelPoint.x - (paperPoint.x - activeViewport.centerPoint.x) / activeViewport.viewScale,
+                y: modelPoint.y - (paperPoint.y - activeViewport.centerPoint.y) / activeViewport.viewScale
+            };
+            Renderer.draw();
+            return;
+        }
+
+        const worldBefore = Utils.screenToWorld(e.offsetX, e.offsetY, CAD.pan, CAD.zoom);
         CAD.zoom *= zoomFactor;
 
         // Clamp zoom level
@@ -191,8 +385,25 @@ const App = {
     lastMiddleClick: 0,
 
     onDoubleClick(e) {
-        // Double left click does nothing now
-        // Use double middle click for zoom extents
+        if (e.button !== 0) return;
+        const layout = CAD.getLayout(CAD.currentLayout);
+        if (!layout || layout.type !== 'paper') return;
+
+        const paperPoint = this.screenToPaper(e.offsetX, e.offsetY);
+        if (CAD.activeSpace === 'PAPER') {
+            const viewport = this.getViewportAtPoint(paperPoint);
+            if (viewport) {
+                CAD.activeSpace = 'MODEL';
+                CAD.activeViewportId = viewport.id;
+                UI.log('MSPACE: Model space active in viewport.');
+                Renderer.draw();
+            }
+        } else {
+            CAD.activeSpace = 'PAPER';
+            CAD.activeViewportId = null;
+            UI.log('PSPACE: Paper space active.');
+            Renderer.draw();
+        }
     },
 
     onMiddleDoubleClick() {
@@ -431,6 +642,7 @@ const MobileUI = {
             inputRow:     document.getElementById('mdbInputRow'),
             input:        document.getElementById('mdbInput'),
             actions:      document.getElementById('mdbActions'),
+            subActions:   document.getElementById('mdbSubActions'),
             doneBtn:      document.getElementById('mdbDone'),
             closeBtn:     document.getElementById('mdbClose'),
             numpadBtn:    document.getElementById('mdbNumpadBtn'),
@@ -484,6 +696,8 @@ const MobileUI = {
         if (this._els.closeBtn) {
             this._els.closeBtn.classList.toggle('visible', closable && hasPoints);
         }
+
+        this.updateSubActions();
     },
 
     /**
@@ -511,6 +725,42 @@ const MobileUI = {
                 this.hideNumpad();
             }
         }
+
+        this.updateSubActions();
+    },
+
+    updateSubActions() {
+        if (!this._els || !this._els.subActions) return;
+
+        const actions = [];
+        const cmd = CAD.activeCmd || '';
+
+        if (cmd === 'polyline') {
+            actions.push({ label: 'Arc', value: 'A' });
+            actions.push({ label: 'Line', value: 'L' });
+            actions.push({ label: 'Close', value: 'C' });
+            actions.push({ label: 'Undo', value: 'U' });
+        } else if (cmd === 'spline') {
+            actions.push({ label: 'Close', value: 'C' });
+            actions.push({ label: 'Undo', value: 'U' });
+        } else if (cmd === 'hatch') {
+            actions.push({ label: 'Solid', value: 'solid' });
+            actions.push({ label: 'Angle', value: 'angle' });
+            actions.push({ label: 'Cross', value: 'cross' });
+            actions.push({ label: 'Dots', value: 'dots' });
+            actions.push({ label: 'List', value: 'list' });
+        }
+
+        this._els.subActions.innerHTML = '';
+        if (!actions.length) return;
+
+        actions.forEach(action => {
+            const btn = document.createElement('button');
+            btn.className = 'mdb-btn mdb-subaction';
+            btn.textContent = action.label;
+            btn.addEventListener('click', () => this.submitValue(action.value));
+            this._els.subActions.appendChild(btn);
+        });
     },
 
     // ==========================================
@@ -593,7 +843,7 @@ const MobileUI = {
     submitInput() {
         if (!this._els) return;
 
-        const value = this._numpadValue || '';
+        const value = this._numpadValue || this._els.cmdInput?.value || this._els.input?.value || '';
 
         // Route through the main command input system
         if (this._els.cmdInput) {
@@ -644,6 +894,20 @@ const MobileUI = {
     showKeyboard() {
         if (!this._els || !this._els.cmdInput) return;
 
+        if (this._numpadOpen) {
+            this.hideNumpad();
+        }
+
+        if (this._els.inputRow) {
+            this._els.inputRow.classList.add('visible');
+        }
+
+        if (this._els.input) {
+            this._els.input.readOnly = false;
+            this._els.input.inputMode = 'text';
+            this._els.input.focus();
+        }
+
         // Temporarily show the command panel as a floating input
         const panel = document.querySelector('.command-panel');
         if (panel) {
@@ -661,10 +925,32 @@ const MobileUI = {
             if (history) history.style.display = 'none';
 
             this._els.cmdInput.style.fontSize = '16px';
-            this._els.cmdInput.focus();
+
+            const syncInput = () => {
+                this._numpadValue = this._els.cmdInput.value;
+                if (this._els.input) {
+                    this._els.input.value = this._numpadValue;
+                }
+            };
+
+            this._els.cmdInput.addEventListener('input', syncInput);
+            const syncMobileInput = () => {
+                if (!this._els) return;
+                this._numpadValue = this._els.input.value;
+                this._els.cmdInput.value = this._els.input.value;
+            };
+            this._els.input?.addEventListener('input', syncMobileInput);
+            let closeKeyboard;
+            const submitOnEnter = (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    this.submitInput();
+                    closeKeyboard();
+                }
+            };
 
             // Close on Enter or blur
-            const closeKeyboard = () => {
+            closeKeyboard = () => {
                 panel.style.display = '';
                 panel.style.position = '';
                 panel.style.bottom = '';
@@ -675,9 +961,18 @@ const MobileUI = {
                 panel.style.borderTop = '';
                 if (history) history.style.display = '';
                 this._els.cmdInput.removeEventListener('blur', closeKeyboard);
+                this._els.cmdInput.removeEventListener('input', syncInput);
+                this._els.input?.removeEventListener('input', syncMobileInput);
+                this._els.input?.removeEventListener('blur', closeKeyboard);
+                this._els.input?.removeEventListener('keydown', submitOnEnter);
+                if (this._els.input) {
+                    this._els.input.readOnly = true;
+                }
             };
 
             this._els.cmdInput.addEventListener('blur', closeKeyboard, { once: true });
+            this._els.input?.addEventListener('blur', closeKeyboard, { once: true });
+            this._els.input?.addEventListener('keydown', submitOnEnter);
 
             // Also close on Enter key (after command processes)
             const onEnter = (e) => {
@@ -784,7 +1079,7 @@ const MobileUI = {
     },
 
     // ==========================================
-    // LAYER PROPERTIES MANAGER (AutoCAD-style)
+    // LAYER PROPERTIES MANAGER (CAD-style)
     // ==========================================
 
     _selectedLayer: null,
