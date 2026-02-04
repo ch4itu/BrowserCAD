@@ -225,25 +225,67 @@ const DXF = (() => {
                 };
             }
             case 'HATCH': {
-                const points = [];
-                let pendingX = null;
-                tags.list.forEach(tag => {
-                    if (tag.code === 10) {
-                        pendingX = parseNumber(tag.value);
-                    } else if (tag.code === 20 && pendingX !== null) {
-                        points.push({ x: pendingX, y: parseNumber(tag.value) });
-                        pendingX = null;
+                const edges = [];
+                let loopCount = 0;
+                let edgeCount = 0;
+                for (let i = 0; i < tags.list.length; i++) {
+                    const tag = tags.list[i];
+                    if (tag.code === 91) {
+                        loopCount = parseIntValue(tag.value, 0);
                     }
-                });
+                    if (tag.code === 93) {
+                        edgeCount = parseIntValue(tag.value, 0);
+                        let edgesParsed = 0;
+                        for (let j = i + 1; j < tags.list.length && edgesParsed < edgeCount; j++) {
+                            const edgeTag = tags.list[j];
+                            if (edgeTag.code === 72) {
+                                const edgeType = parseIntValue(edgeTag.value, 0);
+                                if (edgeType === 1) {
+                                    const edge = { type: 'line', start: { x: 0, y: 0 }, end: { x: 0, y: 0 } };
+                                    for (let k = j + 1; k < tags.list.length; k++) {
+                                        const dataTag = tags.list[k];
+                                        if (dataTag.code === 72) {
+                                            j = k - 1;
+                                            break;
+                                        }
+                                        if (dataTag.code === 10) edge.start.x = parseNumber(dataTag.value);
+                                        if (dataTag.code === 20) edge.start.y = parseNumber(dataTag.value);
+                                        if (dataTag.code === 11) edge.end.x = parseNumber(dataTag.value);
+                                        if (dataTag.code === 21) edge.end.y = parseNumber(dataTag.value);
+                                    }
+                                    edges.push(edge);
+                                    edgesParsed += 1;
+                                } else if (edgeType === 2) {
+                                    const edge = { type: 'arc', center: { x: 0, y: 0 }, radius: 0, start: 0, end: 0, ccw: true };
+                                    for (let k = j + 1; k < tags.list.length; k++) {
+                                        const dataTag = tags.list[k];
+                                        if (dataTag.code === 72) {
+                                            j = k - 1;
+                                            break;
+                                        }
+                                        if (dataTag.code === 10) edge.center.x = parseNumber(dataTag.value);
+                                        if (dataTag.code === 20) edge.center.y = parseNumber(dataTag.value);
+                                        if (dataTag.code === 40) edge.radius = parseNumber(dataTag.value);
+                                        if (dataTag.code === 50) edge.start = parseNumber(dataTag.value);
+                                        if (dataTag.code === 51) edge.end = parseNumber(dataTag.value);
+                                        if (dataTag.code === 73) edge.ccw = parseIntValue(dataTag.value, 1) === 1;
+                                    }
+                                    edges.push(edge);
+                                    edgesParsed += 1;
+                                }
+                            }
+                        }
+                    }
+                }
                 return {
                     type: 'hatch',
                     layer,
                     // 2 = pattern name, 91 = loop count, 41 = scale, 52 = angle
                     pattern: tags[2] || 'ANSI31',
-                    loopCount: parseIntValue(tags[91], 0),
+                    loopCount,
                     scale: parseNumber(tags[41], 1),
                     angle: parseNumber(tags[52], 0),
-                    points
+                    boundary: edges
                 };
             }
             default:
@@ -444,54 +486,67 @@ const DXF = (() => {
         out.push('50', formatNumber(rotationDeg));
     };
 
-    const getHatchBoundaryPoints = (entity, state) => {
-        if (entity.points && entity.points.length) return entity.points;
-        if (entity.boundary && entity.boundary.length && entity.boundary[0].x !== undefined) {
-            return entity.boundary;
+    const getHatchBoundaryEdges = (entity, state) => {
+        if (entity.getBoundaryEdges) return entity.getBoundaryEdges();
+        if (entity.boundary && entity.boundary.length) {
+            if (entity.boundary[0].type || entity.boundary[0].p1 || entity.boundary[0].p2) {
+                return entity.boundary;
+            }
+            if (entity.boundary[0].x !== undefined) {
+                return Geometry?.Hatch?.getBoundaryEdges
+                    ? Geometry.Hatch.getBoundaryEdges(entity.boundary)
+                    : [];
+            }
         }
         if (entity.clipIds && state?.getEntity) {
             const clip = state.getEntity(entity.clipIds[0]);
-            if (clip?.points) return clip.points;
-            if (clip?.type === 'circle') {
-                const points = [];
-                const steps = 36;
-                for (let i = 0; i < steps; i++) {
-                    const angle = (Math.PI * 2 * i) / steps;
-                    points.push({
-                        x: clip.center.x + Math.cos(angle) * clip.r,
-                        y: clip.center.y + Math.sin(angle) * clip.r
-                    });
-                }
-                return points;
+            if (clip?.points && Geometry?.Hatch?.getBoundaryEdges) {
+                return Geometry.Hatch.getBoundaryEdges(clip.points);
             }
         }
         return [];
     };
 
     const writeEntityHatch = (out, entity, state) => {
-        const points = getHatchBoundaryPoints(entity, state);
-        if (!points.length) return;
+        const edges = getHatchBoundaryEdges(entity, state);
+        if (!edges.length) return;
         const pattern = (entity.patternName || entity.pattern || entity.hatch?.pattern || 'ANSI31').toUpperCase();
         const scale = entity.scale || 1;
         const angle = entity.angle || 0;
         out.push('0', 'HATCH');
+        out.push('100', 'AcDbEntity');
         out.push('8', entity.layer || '0');
+        out.push('100', 'AcDbHatch');
+        out.push('10', '0', '20', '0', '30', '0');
+        out.push('210', '0', '220', '0', '230', '1');
         out.push('2', pattern);
         out.push('70', '0');
-        out.push('71', '0');
-        out.push('91', '1');
-        out.push('92', '2');
-        out.push('72', '1');
-        out.push('73', '1');
-        out.push('93', String(points.length));
-        points.forEach(point => {
-            out.push('10', formatNumber(point.x));
-            out.push('20', formatNumber(point.y));
-        });
-        out.push('97', '0');
         out.push('75', '0');
-        out.push('52', formatNumber(angle));
         out.push('41', formatNumber(scale));
+        out.push('52', formatNumber(angle));
+        out.push('91', '1');
+        out.push('92', '1');
+        out.push('93', String(edges.length));
+        edges.forEach(edge => {
+            if (edge.type === 'arc') {
+                out.push('72', '2');
+                out.push('10', formatNumber(edge.center.x));
+                out.push('20', formatNumber(edge.center.y));
+                out.push('40', formatNumber(edge.radius ?? edge.r ?? 0));
+                out.push('50', formatNumber(edge.start || 0));
+                out.push('51', formatNumber(edge.end || 0));
+                out.push('73', edge.ccw === false ? '0' : '1');
+            } else {
+                out.push('72', '1');
+                const start = edge.start || edge.p1;
+                const end = edge.end || edge.p2;
+                out.push('10', formatNumber(start.x));
+                out.push('20', formatNumber(start.y));
+                out.push('11', formatNumber(end.x));
+                out.push('21', formatNumber(end.y));
+            }
+        });
+        out.push('98', '0');
     };
 
     const writeBlocksSection = (out, blocks = {}, state = null) => {

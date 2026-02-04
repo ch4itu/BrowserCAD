@@ -2221,8 +2221,8 @@ class Hatch {
             if (boundary[0].x !== undefined) {
                 return boundary;
             }
-            if (boundary[0].p1 && boundary[0].p2) {
-                return Hatch.chainLines(boundary);
+            if (boundary[0].type || boundary[0].p1 || boundary[0].p2) {
+                return Hatch.edgesToPoints(boundary);
             }
         }
         if (boundary.points) {
@@ -2249,6 +2249,97 @@ class Hatch {
             }
         }
         return loop;
+    }
+
+    getBoundaryEdges() {
+        return Hatch.getBoundaryEdges(this.boundary);
+    }
+
+    static getBoundaryEdges(boundary) {
+        if (!boundary) return [];
+        if (Array.isArray(boundary)) {
+            if (boundary.length === 0) return [];
+            const first = boundary[0];
+            if (first.type === 'line' || first.type === 'arc') {
+                return boundary.map(edge => Hatch.normalizeEdge(edge)).filter(Boolean);
+            }
+            if (first.p1 && first.p2) {
+                return boundary.map(edge => ({
+                    type: 'line',
+                    start: edge.p1,
+                    end: edge.p2
+                }));
+            }
+            if (first.x !== undefined) {
+                return Hatch.pointsToEdges(boundary);
+            }
+        }
+        if (boundary.points) {
+            return Hatch.pointsToEdges(boundary.points);
+        }
+        return [];
+    }
+
+    static normalizeEdge(edge) {
+        if (!edge) return null;
+        if (edge.type === 'line') {
+            return {
+                type: 'line',
+                start: edge.start || edge.p1,
+                end: edge.end || edge.p2
+            };
+        }
+        if (edge.type === 'arc') {
+            return {
+                type: 'arc',
+                center: edge.center,
+                radius: edge.radius ?? edge.r ?? 0,
+                start: edge.start,
+                end: edge.end,
+                ccw: edge.ccw !== undefined ? edge.ccw : true
+            };
+        }
+        return null;
+    }
+
+    static pointsToEdges(points) {
+        if (!points || points.length < 2) return [];
+        const edges = [];
+        for (let i = 0; i < points.length; i++) {
+            const start = points[i];
+            const end = points[(i + 1) % points.length];
+            edges.push({ type: 'line', start, end });
+        }
+        return edges;
+    }
+
+    static edgesToPoints(edges) {
+        if (!edges || edges.length === 0) return [];
+        const points = [];
+        edges.forEach(edge => {
+            if (edge.type === 'arc' && edge.center) {
+                const steps = 24;
+                const radius = edge.radius ?? edge.r ?? 0;
+                const start = edge.start ?? 0;
+                const end = edge.end ?? 0;
+                const ccw = edge.ccw !== false;
+                const total = ccw ? (end - start) : (start - end);
+                const sweep = total >= 0 ? total : (Math.PI * 2 + total);
+                for (let i = 0; i <= steps; i++) {
+                    const angle = start + (ccw ? 1 : -1) * (sweep * (i / steps));
+                    points.push({
+                        x: edge.center.x + Math.cos(angle) * radius,
+                        y: edge.center.y + Math.sin(angle) * radius
+                    });
+                }
+            } else {
+                const start = edge.start || edge.p1;
+                if (start) {
+                    points.push(start);
+                }
+            }
+        });
+        return points;
     }
 
     static getPointsBoundingBox(points) {
