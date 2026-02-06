@@ -799,7 +799,20 @@ const Storage = {
     hatchEntityToDXF(entity, colorInt) {
         let dxf = '';
         const clipIds = entity.clipIds || [];
-        if (clipIds.length === 0) return '';
+
+        // Resolve clip entities, falling back to stored boundary if clip entities are gone
+        const clipEntities = clipIds.map(id => CAD.getEntity(id)).filter(Boolean);
+
+        // If no clip entities found, use stored boundary points as a polyline
+        let boundaryEntities = clipEntities;
+        if (boundaryEntities.length === 0) {
+            const boundary = entity.boundary || entity.points || [];
+            const pts = (typeof Geometry !== 'undefined' && Geometry.Hatch)
+                ? Geometry.Hatch.getBoundaryPoints(boundary)
+                : boundary;
+            if (!pts || pts.length < 3) return '';
+            boundaryEntities = [{ type: 'polyline', points: pts, closed: true }];
+        }
 
         const hatchData = entity.hatch;
         const pattern = (typeof hatchData === 'string' ? hatchData : hatchData?.pattern || 'solid').toLowerCase();
@@ -814,12 +827,10 @@ const Storage = {
         dxf += '2\n' + dxfPatternName + '\n'; // Pattern name
         dxf += '70\n' + (isSolid ? 1 : 0) + '\n'; // Solid fill flag
         dxf += '71\n0\n'; // Non-associative
-        dxf += '91\n' + clipIds.length + '\n'; // Number of boundary paths
+        dxf += '91\n' + boundaryEntities.length + '\n'; // Number of boundary paths
 
-        clipIds.forEach(id => {
-            const clipEntity = CAD.getEntity(id);
-            if (!clipEntity) return;
-            dxf += this._hatchBoundaryPath(clipEntity);
+        boundaryEntities.forEach(be => {
+            dxf += this._hatchBoundaryPath(be);
         });
 
         // Pattern definition for non-solid

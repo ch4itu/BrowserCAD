@@ -347,10 +347,7 @@ const Renderer = {
             }
 
             if (entity.type === 'hatch') {
-                if (!entity.renderLines || entity.renderLines.length === 0) {
-                    this.ensureHatchRenderLines(entity);
-                }
-                this.drawHatchRenderLines(entity, color, zoom);
+                this.drawHatchFill(entity, color, zoom, isSelected, isHovered);
                 return;
             }
 
@@ -727,31 +724,77 @@ const Renderer = {
         return patternFill;
     },
 
-    drawHatchEntity(entity, color) {
-        const clipIds = entity.clipIds || [];
-        if (clipIds.length === 0) {
-            return;
-        }
-
+    drawHatchFill(entity, color, zoom, isSelected, isHovered) {
         const ctx = this.ctx;
+        const boundary = entity.boundary || entity.points || [];
+        const boundaryPoints = Geometry.Hatch.getBoundaryPoints(boundary);
+        if (!boundaryPoints || boundaryPoints.length < 3) return;
+
+        const pattern = entity.patternName || (entity.hatch && entity.hatch.pattern) || 'solid';
+        const patternLower = pattern.toLowerCase();
+
         ctx.save();
 
-        clipIds.forEach(id => {
-            const clipEntity = CAD.getEntity(id);
-            if (!clipEntity) return;
-            ctx.beginPath();
-            this.traceEntityPath(clipEntity, ctx, true);
-            ctx.clip();
+        // Build clip path from boundary
+        ctx.beginPath();
+        ctx.moveTo(boundaryPoints[0].x, boundaryPoints[0].y);
+        for (let i = 1; i < boundaryPoints.length; i++) {
+            ctx.lineTo(boundaryPoints[i].x, boundaryPoints[i].y);
+        }
+        ctx.closePath();
+        ctx.clip();
+
+        // Compute boundary bounding box for fill rect
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        boundaryPoints.forEach(p => {
+            if (p.x < minX) minX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y > maxY) maxY = p.y;
         });
+        const pad = Math.max(maxX - minX, maxY - minY) * 0.1;
 
-        const hatchStyle = this.getHatchStyle(entity, color);
-        ctx.fillStyle = hatchStyle.fillStyle;
-        ctx.globalAlpha = hatchStyle.alpha;
+        if (patternLower === 'solid') {
+            // Solid fill
+            ctx.fillStyle = color;
+            ctx.globalAlpha = 0.25;
+            ctx.fillRect(minX - pad, minY - pad, (maxX - minX) + pad * 2, (maxY - minY) + pad * 2);
+        } else {
+            // Pattern fill using canvas patterns
+            const fillPattern = this.getHatchPattern(patternLower, color);
+            if (fillPattern) {
+                ctx.fillStyle = fillPattern;
+                ctx.globalAlpha = 0.7;
+                ctx.fillRect(minX - pad, minY - pad, (maxX - minX) + pad * 2, (maxY - minY) + pad * 2);
+            }
+        }
 
-        const topLeft = Utils.screenToWorld(0, 0, CAD.pan, CAD.zoom);
-        const bottomRight = Utils.screenToWorld(this.canvas.width, this.canvas.height, CAD.pan, CAD.zoom);
-        ctx.fillRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
         ctx.restore();
+
+        // Draw boundary outline for selection/hover
+        if (isSelected || isHovered) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(boundaryPoints[0].x, boundaryPoints[0].y);
+            for (let i = 1; i < boundaryPoints.length; i++) {
+                ctx.lineTo(boundaryPoints[i].x, boundaryPoints[i].y);
+            }
+            ctx.closePath();
+            ctx.strokeStyle = isSelected ? this.colors.selection : this.colors.hover;
+            ctx.lineWidth = (isSelected ? 2 : 1.5) / zoom;
+            ctx.setLineDash(isSelected ? [5 / zoom, 3 / zoom] : []);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+        }
+    },
+
+    isLinePattern(pattern) {
+        const linePatterns = [
+            'ansi31', 'ansi32', 'ansi33', 'ansi34', 'ansi35',
+            'ansi36', 'ansi37', 'ansi38', 'diagonal', 'angle', 'cross'
+        ];
+        return linePatterns.includes(pattern);
     },
 
     traceEntityPath(entity, ctx, forceClose = false) {
@@ -1043,7 +1086,7 @@ const Renderer = {
                 this.drawInsertEntity(entity, ctx);
                 break;
             case 'hatch':
-                this.drawHatchRenderLines(entity, ctx.strokeStyle, CAD.zoom);
+                // Hatch entities are rendered via drawHatchFill in drawEntityList
                 break;
         }
     },

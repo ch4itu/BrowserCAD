@@ -662,6 +662,25 @@ const Geometry = {
                 }
                 return false;
 
+            case 'hatch': {
+                // Hit test for hatch - check if point is inside the boundary polygon
+                const hatchBoundary = entity.boundary || entity.points || [];
+                const hatchPoints = Hatch.getBoundaryPoints(hatchBoundary);
+                if (hatchPoints && hatchPoints.length >= 3) {
+                    // Check boundary edges first
+                    for (let i = 0; i < hatchPoints.length; i++) {
+                        const a = hatchPoints[i];
+                        const b = hatchPoints[(i + 1) % hatchPoints.length];
+                        if (Utils.distToSegment(point, a, b) < tolerance) {
+                            return true;
+                        }
+                    }
+                    // Check if inside the filled area
+                    return Utils.pointInPolygon(point, hatchPoints);
+                }
+                return false;
+            }
+
             case 'point':
                 return Utils.dist(point, entity.position) < tolerance;
 
@@ -2154,6 +2173,22 @@ class Insert {
                     minY = Math.min(minY, bbox.minY);
                     maxX = Math.max(maxX, bbox.maxX);
                     maxY = Math.max(maxY, bbox.maxY);
+                });
+                return { minX, minY, maxX, maxY };
+            }
+            case 'hatch': {
+                const hatchBoundary = entity.boundary || entity.points || [];
+                const hatchPts = Hatch.getBoundaryPoints(hatchBoundary);
+                if (!hatchPts || hatchPts.length === 0) return null;
+                let minX = hatchPts[0].x;
+                let minY = hatchPts[0].y;
+                let maxX = hatchPts[0].x;
+                let maxY = hatchPts[0].y;
+                hatchPts.forEach(p => {
+                    minX = Math.min(minX, p.x);
+                    minY = Math.min(minY, p.y);
+                    maxX = Math.max(maxX, p.x);
+                    maxY = Math.max(maxY, p.y);
                 });
                 return { minX, minY, maxX, maxY };
             }
