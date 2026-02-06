@@ -800,6 +800,27 @@ const Geometry = {
                     }
                 }
             }
+
+            // Quadrant snap - 0, 90, 180, 270 degree points on circles, arcs, ellipses
+            if (snapModes.quadrant) {
+                const quadrants = this.getQuadrantPoints(entity);
+                quadrants.forEach(qp => {
+                    const d = Utils.dist(point, qp);
+                    if (d < tolerance) {
+                        snaps.push({ point: qp, type: 'quadrant', distance: d });
+                    }
+                });
+            }
+
+            // Node snap - snaps to point entities
+            if (snapModes.node) {
+                if (entity.type === 'point' && entity.position) {
+                    const d = Utils.dist(point, entity.position);
+                    if (d < tolerance) {
+                        snaps.push({ point: entity.position, type: 'node', distance: d });
+                    }
+                }
+            }
         });
 
         // Intersection snap
@@ -823,10 +844,12 @@ const Geometry = {
             endpoint: 1,
             midpoint: 2,
             center: 3,
-            perpendicular: 4,
-            tangent: 5,
-            nearest: 6,
-            grid: 7
+            quadrant: 4,
+            node: 5,
+            perpendicular: 6,
+            tangent: 7,
+            nearest: 8,
+            grid: 9
         };
 
         snaps.sort((a, b) => {
@@ -922,6 +945,309 @@ const Geometry = {
             default:
                 return [];
         }
+    },
+
+    getQuadrantPoints(entity) {
+        const quadrantAngles = [0, Math.PI / 2, Math.PI, 3 * Math.PI / 2];
+        switch (entity.type) {
+            case 'circle':
+            case 'donut': {
+                const cx = entity.center.x;
+                const cy = entity.center.y;
+                const r = entity.r;
+                return [
+                    { x: cx + r, y: cy },     // 0 degrees (right)
+                    { x: cx, y: cy + r },      // 90 degrees (down in canvas / up in math)
+                    { x: cx - r, y: cy },      // 180 degrees (left)
+                    { x: cx, y: cy - r }       // 270 degrees (up in canvas / down in math)
+                ];
+            }
+            case 'arc': {
+                const cx = entity.center.x;
+                const cy = entity.center.y;
+                const r = entity.r;
+                const points = [];
+                quadrantAngles.forEach(angle => {
+                    if (this.isAngleOnArc(angle, entity)) {
+                        points.push(Utils.polarPoint(entity.center, angle, r));
+                    }
+                });
+                return points;
+            }
+            case 'ellipse': {
+                const cx = entity.center.x;
+                const cy = entity.center.y;
+                const rx = entity.rx || 0;
+                const ry = entity.ry || 0;
+                const rotation = entity.rotation || 0;
+                // Quadrant points on an unrotated ellipse, then rotate
+                const unrotated = [
+                    { x: rx, y: 0 },      // 0 degrees
+                    { x: 0, y: ry },       // 90 degrees
+                    { x: -rx, y: 0 },      // 180 degrees
+                    { x: 0, y: -ry }       // 270 degrees
+                ];
+                const cosR = Math.cos(rotation);
+                const sinR = Math.sin(rotation);
+                return unrotated.map(p => ({
+                    x: cx + p.x * cosR - p.y * sinR,
+                    y: cy + p.x * sinR + p.y * cosR
+                }));
+            }
+            default:
+                return [];
+        }
+    },
+
+    // ==========================================
+    // GRIP POINTS - Control points for each entity type
+    // ==========================================
+
+    getGripPoints(entity) {
+        switch (entity.type) {
+            case 'line':
+                return [
+                    { point: { ...entity.p1 }, type: 'endpoint', index: 0 },
+                    { point: Utils.midpoint(entity.p1, entity.p2), type: 'midpoint', index: 1 },
+                    { point: { ...entity.p2 }, type: 'endpoint', index: 2 }
+                ];
+            case 'circle':
+            case 'donut':
+                return [
+                    { point: { ...entity.center }, type: 'center', index: 0 },
+                    { point: { x: entity.center.x + (entity.r || entity.outerRadius), y: entity.center.y }, type: 'quadrant', index: 1 },
+                    { point: { x: entity.center.x, y: entity.center.y + (entity.r || entity.outerRadius) }, type: 'quadrant', index: 2 },
+                    { point: { x: entity.center.x - (entity.r || entity.outerRadius), y: entity.center.y }, type: 'quadrant', index: 3 },
+                    { point: { x: entity.center.x, y: entity.center.y - (entity.r || entity.outerRadius) }, type: 'quadrant', index: 4 }
+                ];
+            case 'arc': {
+                const startPt = Utils.polarPoint(entity.center, entity.start, entity.r);
+                const endPt = Utils.polarPoint(entity.center, entity.end, entity.r);
+                const midAngle = (entity.start + entity.end) / 2;
+                // Handle wrap-around for arc midpoint
+                let mid = midAngle;
+                if (entity.end < entity.start) mid = midAngle + Math.PI;
+                const midPt = Utils.polarPoint(entity.center, mid, entity.r);
+                return [
+                    { point: { ...entity.center }, type: 'center', index: 0 },
+                    { point: startPt, type: 'endpoint', index: 1 },
+                    { point: midPt, type: 'midpoint', index: 2 },
+                    { point: endPt, type: 'endpoint', index: 3 }
+                ];
+            }
+            case 'rect':
+                return [
+                    { point: { ...entity.p1 }, type: 'corner', index: 0 },
+                    { point: { x: (entity.p1.x + entity.p2.x) / 2, y: entity.p1.y }, type: 'midpoint', index: 1 },
+                    { point: { x: entity.p2.x, y: entity.p1.y }, type: 'corner', index: 2 },
+                    { point: { x: entity.p2.x, y: (entity.p1.y + entity.p2.y) / 2 }, type: 'midpoint', index: 3 },
+                    { point: { ...entity.p2 }, type: 'corner', index: 4 },
+                    { point: { x: (entity.p1.x + entity.p2.x) / 2, y: entity.p2.y }, type: 'midpoint', index: 5 },
+                    { point: { x: entity.p1.x, y: entity.p2.y }, type: 'corner', index: 6 },
+                    { point: { x: entity.p1.x, y: (entity.p1.y + entity.p2.y) / 2 }, type: 'midpoint', index: 7 }
+                ];
+            case 'polyline': {
+                const grips = [];
+                let idx = 0;
+                for (let i = 0; i < entity.points.length; i++) {
+                    grips.push({ point: { ...entity.points[i] }, type: 'vertex', index: idx++ });
+                    if (i < entity.points.length - 1) {
+                        grips.push({ point: Utils.midpoint(entity.points[i], entity.points[i + 1]), type: 'midpoint', index: idx++ });
+                    }
+                }
+                // Midpoint between last and first if closed
+                if (entity.closed && entity.points.length > 2) {
+                    grips.push({ point: Utils.midpoint(entity.points[entity.points.length - 1], entity.points[0]), type: 'midpoint', index: idx++ });
+                }
+                return grips;
+            }
+            case 'ellipse':
+                return [
+                    { point: { ...entity.center }, type: 'center', index: 0 },
+                    { point: Utils.polarPoint(entity.center, entity.rotation || 0, entity.rx), type: 'axis', index: 1 },
+                    { point: Utils.polarPoint(entity.center, (entity.rotation || 0) + Math.PI / 2, entity.ry), type: 'axis', index: 2 },
+                    { point: Utils.polarPoint(entity.center, (entity.rotation || 0) + Math.PI, entity.rx), type: 'axis', index: 3 },
+                    { point: Utils.polarPoint(entity.center, (entity.rotation || 0) + 3 * Math.PI / 2, entity.ry), type: 'axis', index: 4 }
+                ];
+            case 'text':
+                return [
+                    { point: { ...entity.position }, type: 'insertion', index: 0 }
+                ];
+            case 'point':
+                return [
+                    { point: { ...entity.position }, type: 'position', index: 0 }
+                ];
+            case 'block':
+                return [
+                    { point: { ...(entity.insertPoint || entity.p) }, type: 'insertion', index: 0 }
+                ];
+            case 'dimension': {
+                const dgrips = [];
+                if (entity.p1) dgrips.push({ point: { ...entity.p1 }, type: 'defpoint', index: 0 });
+                if (entity.p2) dgrips.push({ point: { ...entity.p2 }, type: 'defpoint', index: 1 });
+                if (entity.dimLinePos) dgrips.push({ point: { ...entity.dimLinePos }, type: 'dimline', index: 2 });
+                if (entity.center) dgrips.push({ point: { ...entity.center }, type: 'center', index: 0 });
+                return dgrips;
+            }
+            case 'spline': {
+                const sgrips = [];
+                const pts = entity.controlPoints || entity.fitPoints || entity.points || [];
+                pts.forEach((p, i) => {
+                    sgrips.push({ point: { ...p }, type: 'controlpoint', index: i });
+                });
+                return sgrips;
+            }
+            case 'leader': {
+                const lgrips = [];
+                (entity.points || []).forEach((p, i) => {
+                    lgrips.push({ point: { ...p }, type: 'vertex', index: i });
+                });
+                return lgrips;
+            }
+            default:
+                return [];
+        }
+    },
+
+    moveGrip(entity, gripIndex, newPoint) {
+        // Returns updated entity properties based on which grip was moved
+        switch (entity.type) {
+            case 'line':
+                if (gripIndex === 0) return { p1: { ...newPoint } };
+                if (gripIndex === 1) {
+                    // Midpoint drag: move entire line
+                    const oldMid = Utils.midpoint(entity.p1, entity.p2);
+                    const dx = newPoint.x - oldMid.x;
+                    const dy = newPoint.y - oldMid.y;
+                    return {
+                        p1: { x: entity.p1.x + dx, y: entity.p1.y + dy },
+                        p2: { x: entity.p2.x + dx, y: entity.p2.y + dy }
+                    };
+                }
+                if (gripIndex === 2) return { p2: { ...newPoint } };
+                break;
+            case 'circle': {
+                if (gripIndex === 0) return { center: { ...newPoint } };
+                // Quadrant grips change radius
+                const newR = Utils.dist(entity.center, newPoint);
+                return { r: newR };
+            }
+            case 'donut': {
+                if (gripIndex === 0) return { center: { ...newPoint } };
+                const newOuterR = Utils.dist(entity.center, newPoint);
+                const ratio = entity.innerRadius / entity.outerRadius;
+                return { outerRadius: newOuterR, innerRadius: newOuterR * ratio, r: newOuterR };
+            }
+            case 'arc': {
+                if (gripIndex === 0) return { center: { ...newPoint } };
+                if (gripIndex === 1) {
+                    // Start point: change start angle and radius
+                    return {
+                        start: Utils.angle(entity.center, newPoint),
+                        r: Utils.dist(entity.center, newPoint)
+                    };
+                }
+                if (gripIndex === 2) {
+                    // Midpoint: change radius only
+                    return { r: Utils.dist(entity.center, newPoint) };
+                }
+                if (gripIndex === 3) {
+                    return {
+                        end: Utils.angle(entity.center, newPoint),
+                        r: Utils.dist(entity.center, newPoint)
+                    };
+                }
+                break;
+            }
+            case 'rect': {
+                // Corner grips (0,2,4,6) modify corners; midpoint grips (1,3,5,7) move edges
+                switch (gripIndex) {
+                    case 0: return { p1: { ...newPoint } };
+                    case 1: return { p1: { x: entity.p1.x, y: newPoint.y }, p2: { ...entity.p2 } };
+                    case 2: return { p1: { x: entity.p1.x, y: newPoint.y }, p2: { x: newPoint.x, y: entity.p2.y } };
+                    case 3: return { p1: { ...entity.p1 }, p2: { x: newPoint.x, y: entity.p2.y } };
+                    case 4: return { p2: { ...newPoint } };
+                    case 5: return { p1: { ...entity.p1 }, p2: { x: entity.p2.x, y: newPoint.y } };
+                    case 6: return { p1: { x: newPoint.x, y: entity.p1.y }, p2: { x: entity.p2.x, y: newPoint.y } };
+                    case 7: return { p1: { x: newPoint.x, y: entity.p1.y } };
+                }
+                break;
+            }
+            case 'polyline': {
+                const points = [...entity.points.map(p => ({ ...p }))];
+                // Vertex grips have even indices (0, 2, 4...), midpoint grips have odd (1, 3, 5...)
+                // But our grip list alternates: vertex, mid, vertex, mid...
+                // Count through to find which type this is
+                let vertexIdx = 0;
+                let midIdx = 0;
+                let countIdx = 0;
+                const numPts = entity.points.length;
+                const numMids = entity.closed ? numPts : numPts - 1;
+                for (let i = 0; i < numPts; i++) {
+                    if (countIdx === gripIndex) {
+                        // Vertex grip
+                        points[i] = { ...newPoint };
+                        return { points };
+                    }
+                    countIdx++;
+                    if (i < numPts - 1 || entity.closed) {
+                        if (countIdx === gripIndex) {
+                            // Midpoint grip: move both adjacent vertices equally
+                            const nextI = (i + 1) % numPts;
+                            const oldMid = Utils.midpoint(entity.points[i], entity.points[nextI]);
+                            const dx = newPoint.x - oldMid.x;
+                            const dy = newPoint.y - oldMid.y;
+                            points[i] = { x: entity.points[i].x + dx, y: entity.points[i].y + dy };
+                            points[nextI] = { x: entity.points[nextI].x + dx, y: entity.points[nextI].y + dy };
+                            return { points };
+                        }
+                        countIdx++;
+                    }
+                }
+                break;
+            }
+            case 'ellipse': {
+                if (gripIndex === 0) return { center: { ...newPoint } };
+                if (gripIndex === 1 || gripIndex === 3) {
+                    return { rx: Utils.dist(entity.center, newPoint) };
+                }
+                if (gripIndex === 2 || gripIndex === 4) {
+                    return { ry: Utils.dist(entity.center, newPoint) };
+                }
+                break;
+            }
+            case 'text':
+                return { position: { ...newPoint } };
+            case 'point':
+                return { position: { ...newPoint } };
+            case 'block':
+                return { insertPoint: { ...newPoint } };
+            case 'dimension': {
+                if (gripIndex === 0 && entity.p1) return { p1: { ...newPoint } };
+                if (gripIndex === 1 && entity.p2) return { p2: { ...newPoint } };
+                if (gripIndex === 2 && entity.dimLinePos) return { dimLinePos: { ...newPoint } };
+                if (entity.center) return { center: { ...newPoint } };
+                break;
+            }
+            case 'spline': {
+                const pts = entity.controlPoints ? 'controlPoints' : (entity.fitPoints ? 'fitPoints' : 'points');
+                const arr = [...(entity[pts] || []).map(p => ({ ...p }))];
+                if (gripIndex >= 0 && gripIndex < arr.length) {
+                    arr[gripIndex] = { ...newPoint };
+                    return { [pts]: arr };
+                }
+                break;
+            }
+            case 'leader': {
+                const pts = [...(entity.points || []).map(p => ({ ...p }))];
+                if (gripIndex >= 0 && gripIndex < pts.length) {
+                    pts[gripIndex] = { ...newPoint };
+                    return { points: pts };
+                }
+                break;
+            }
+        }
+        return null;
     },
 
     getNearestPoint(point, entity) {
