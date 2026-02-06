@@ -93,7 +93,8 @@ const UI = {
         const desktopTargets = [
             { cmd: 'block', label: 'Block', title: 'Make Block (B)', icon: '\u25A3' },
             { cmd: 'insert', label: 'Insert', title: 'Insert Block (I)', icon: '\u2795' },
-            { cmd: 'hatch', label: 'Hatch', title: 'Hatch (H)', icon: '\u2592' }
+            { cmd: 'hatch', label: 'Hatch', title: 'Hatch (H)', icon: '\u2592' },
+            { cmd: 'hatchedit', label: 'HatchEdit', title: 'Edit Hatch (HE)', icon: '\u2591' }
         ];
         const drawPanel = document.querySelector('.ribbon-content[data-tab="draw"] .ribbon-panel-content');
         if (drawPanel) {
@@ -519,7 +520,8 @@ DRAWING COMMANDS:
   RAY           - Draw rays
   XL, XLINE     - Draw construction lines
   SPL, SPLINE   - Draw splines
-  H, HATCH      - Hatch closed areas
+  H, HATCH      - Hatch closed areas (Pattern/Scale/Angle)
+  HE, HATCHEDIT - Edit existing hatch properties
   IMAGE, IMAGEATTACH - Attach image for tracing
 
 MODIFY COMMANDS:

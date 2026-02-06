@@ -733,6 +733,11 @@ const Renderer = {
         const pattern = entity.patternName || (entity.hatch && entity.hatch.pattern) || 'solid';
         const patternLower = pattern.toLowerCase();
 
+        // Ensure renderLines are generated for non-solid patterns
+        if (patternLower !== 'solid' && (!entity.renderLines || entity.renderLines.length === 0)) {
+            this.ensureHatchRenderLines(entity);
+        }
+
         ctx.save();
 
         // Build clip path from boundary
@@ -744,29 +749,31 @@ const Renderer = {
         ctx.closePath();
         ctx.clip();
 
-        // Compute boundary bounding box for fill rect
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        boundaryPoints.forEach(p => {
-            if (p.x < minX) minX = p.x;
-            if (p.y < minY) minY = p.y;
-            if (p.x > maxX) maxX = p.x;
-            if (p.y > maxY) maxY = p.y;
-        });
-        const pad = Math.max(maxX - minX, maxY - minY) * 0.1;
-
         if (patternLower === 'solid') {
-            // Solid fill
+            // Solid fill — semi-transparent color
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            boundaryPoints.forEach(p => {
+                if (p.x < minX) minX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y > maxY) maxY = p.y;
+            });
+            const pad = Math.max(maxX - minX, maxY - minY) * 0.1;
             ctx.fillStyle = color;
             ctx.globalAlpha = 0.25;
             ctx.fillRect(minX - pad, minY - pad, (maxX - minX) + pad * 2, (maxY - minY) + pad * 2);
-        } else {
-            // Pattern fill using canvas patterns
-            const fillPattern = this.getHatchPattern(patternLower, color);
-            if (fillPattern) {
-                ctx.fillStyle = fillPattern;
-                ctx.globalAlpha = 0.7;
-                ctx.fillRect(minX - pad, minY - pad, (maxX - minX) + pad * 2, (maxY - minY) + pad * 2);
-            }
+        } else if (entity.renderLines && entity.renderLines.length > 0) {
+            // Draw geometric render lines (proper world-space patterns)
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = Math.max(0.5, 1 / zoom);
+            ctx.globalAlpha = 1.0;
+            entity.renderLines.forEach(seg => {
+                if (!seg || !seg.p1 || !seg.p2) return;
+                ctx.moveTo(seg.p1.x, seg.p1.y);
+                ctx.lineTo(seg.p2.x, seg.p2.y);
+            });
+            ctx.stroke();
         }
 
         ctx.restore();
@@ -787,14 +794,6 @@ const Renderer = {
             ctx.setLineDash([]);
             ctx.restore();
         }
-    },
-
-    isLinePattern(pattern) {
-        const linePatterns = [
-            'ansi31', 'ansi32', 'ansi33', 'ansi34', 'ansi35',
-            'ansi36', 'ansi37', 'ansi38', 'diagonal', 'angle', 'cross'
-        ];
-        return linePatterns.includes(pattern);
     },
 
     traceEntityPath(entity, ctx, forceClose = false) {
