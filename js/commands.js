@@ -2931,15 +2931,31 @@ const Commands = {
 
     createHatchEntity(boundaryPoints, clipIds = []) {
         const pattern = CAD.hatchPattern || 'ANSI31';
-        const hatch = new Geometry.Hatch(boundaryPoints, pattern, 1, 0);
-        const renderLines = hatch.generateRenderLines();
+        const patternLower = pattern.toLowerCase();
+
+        // Auto-compute scale based on boundary size for readable hatch lines
+        let scale = 1;
+        if (boundaryPoints && boundaryPoints.length >= 2) {
+            const bbox = Geometry.Hatch.getPointsBoundingBox(boundaryPoints);
+            const extent = Math.max(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY);
+            // Target ~15-25 hatch lines across the shape
+            scale = Math.max(extent / 20, 0.5);
+        }
+
+        // For solid fills, renderLines aren't needed (rendered as filled region)
+        let renderLines = [];
+        if (patternLower !== 'solid') {
+            const hatch = new Geometry.Hatch(boundaryPoints, pattern, scale, 0);
+            renderLines = hatch.generateRenderLines();
+        }
+
         return {
             type: 'hatch',
-            hatch: { pattern },
+            hatch: { pattern: patternLower },
             boundary: boundaryPoints,
-            patternName: pattern,
-            scale: hatch.scale,
-            angle: hatch.angle,
+            patternName: patternLower,
+            scale,
+            angle: 0,
             renderLines,
             clipIds
         };
@@ -3498,6 +3514,32 @@ const Commands = {
                 }
                 CAD.removeEntity(entity.id, true);
                 explodedCount++;
+            } else if (entity.type === 'hatch') {
+                // Explode hatch into individual line segments or boundary polyline
+                const boundary = entity.boundary || entity.points || [];
+                const bPoints = Geometry.Hatch.getBoundaryPoints(boundary);
+                if (bPoints && bPoints.length >= 3) {
+                    CAD.addEntity({
+                        type: 'polyline',
+                        points: [...bPoints],
+                        closed: true,
+                        layer: entity.layer
+                    }, true);
+                }
+                if (entity.renderLines && entity.renderLines.length > 0) {
+                    entity.renderLines.forEach(seg => {
+                        if (seg && seg.p1 && seg.p2) {
+                            CAD.addEntity({
+                                type: 'line',
+                                p1: { ...seg.p1 },
+                                p2: { ...seg.p2 },
+                                layer: entity.layer
+                            }, true);
+                        }
+                    });
+                }
+                CAD.removeEntity(entity.id, true);
+                explodedCount++;
             } else if (entity.type === 'block') {
                 // Explode block reference into individual entities
                 const expandedEntities = CAD.getBlockEntities(entity);
@@ -3568,6 +3610,16 @@ const Commands = {
                     UI.log(`  Scale: ${(entity.scale ?? 1).toFixed(4)}`);
                     UI.log(`  Rotation: ${(entity.rotation ?? 0).toFixed(2)}°`);
                     break;
+                case 'hatch': {
+                    const hPat = entity.patternName || (entity.hatch && entity.hatch.pattern) || 'solid';
+                    const hBound = entity.boundary || entity.points || [];
+                    const hPts = Geometry.Hatch.getBoundaryPoints(hBound);
+                    UI.log(`  Pattern: ${hPat.toUpperCase()}`);
+                    UI.log(`  Scale: ${(entity.scale || 1).toFixed(4)}`);
+                    UI.log(`  Angle: ${(entity.angle || 0).toFixed(2)}°`);
+                    UI.log(`  Boundary Points: ${hPts.length}`);
+                    break;
+                }
                 case 'block':
                     UI.log(`  Block Name: ${entity.blockName}`);
                     UI.log(`  Insertion Point: ${Utils.formatPoint(entity.insertPoint)}`);
