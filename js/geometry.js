@@ -2202,10 +2202,128 @@ class Hatch {
     constructor(boundary = [], patternName = 'ANSI31', scale = 1, angle = 0) {
         this.type = 'hatch';
         this.boundary = boundary;
-        this.patternName = patternName || 'ANSI31';
+        this.patternName = (patternName || 'ANSI31').toLowerCase();
         this.scale = scale || 1;
         this.angle = angle || 0;
         this.renderLines = [];
+    }
+
+    /**
+     * Pattern definitions matching AutoCAD standards.
+     * Each pattern has one or more line families with:
+     *   angle: degrees from horizontal
+     *   spacing: base spacing in drawing units (scaled by this.scale)
+     *   offset: perpendicular offset for dash patterns (0 = continuous)
+     *   dashes: null for continuous, array of [dash, gap, ...] for dashed
+     */
+    static getPatternDefinition(patternName) {
+        const p = (patternName || '').toLowerCase();
+        switch (p) {
+            case 'ansi31':
+            case 'diagonal':
+            case 'angle':
+                // 45° diagonal lines, standard ANSI steel
+                return { families: [{ angle: 45, spacing: 3.175 }] };
+            case 'ansi32':
+                // 45° double diagonal (steel in section), close spacing
+                return { families: [
+                    { angle: 45, spacing: 3.175 },
+                    { angle: 45, spacing: 3.175, phase: 1.5875 }
+                ]};
+            case 'ansi33':
+                // 45° diagonal, wider spacing (brass/bronze)
+                return { families: [{ angle: 45, spacing: 6.35 }] };
+            case 'ansi34':
+                // 45° diagonal thick (plastic/rubber)
+                return { families: [
+                    { angle: 45, spacing: 6.35 },
+                    { angle: 45, spacing: 6.35, phase: 1.0 }
+                ]};
+            case 'ansi35':
+                // 135° reverse diagonal (fire brick)
+                return { families: [{ angle: 135, spacing: 3.175 }] };
+            case 'ansi36':
+                // Horizontal lines (white metal/zinc)
+                return { families: [{ angle: 0, spacing: 3.175 }] };
+            case 'ansi37':
+            case 'cross':
+                // Cross-hatch: 0° + 90°
+                return { families: [
+                    { angle: 45, spacing: 3.175 },
+                    { angle: 135, spacing: 3.175 }
+                ]};
+            case 'ansi38':
+                // Diagonal + horizontal cross
+                return { families: [
+                    { angle: 45, spacing: 3.175 },
+                    { angle: 0, spacing: 3.175 }
+                ]};
+            case 'brick':
+                return { families: [
+                    { angle: 0, spacing: 5 },
+                    { angle: 90, spacing: 10, dashes: [5, 5] }
+                ], complex: true };
+            case 'honey':
+                return { families: [
+                    { angle: 0, spacing: 4.5 },
+                    { angle: 60, spacing: 4.5 },
+                    { angle: 120, spacing: 4.5 }
+                ], complex: true };
+            case 'earth':
+                return { families: [
+                    { angle: 0, spacing: 6, dashes: [3, 2] },
+                    { angle: 45, spacing: 6, dashes: [2, 3] },
+                    { angle: 90, spacing: 6, dashes: [1, 4] }
+                ], complex: true };
+            case 'grass':
+                return { families: [
+                    { angle: 90, spacing: 7, dashes: [3, 4] },
+                    { angle: 45, spacing: 10, dashes: [2, 5] }
+                ], complex: true };
+            case 'steel':
+                return { families: [
+                    { angle: 45, spacing: 3.175 },
+                    { angle: 135, spacing: 12, dashes: [2, 10] }
+                ], complex: true };
+            case 'insul':
+                return { families: [
+                    { angle: 0, spacing: 6 }
+                ], complex: true };
+            case 'net':
+                return { families: [
+                    { angle: 0, spacing: 4 },
+                    { angle: 90, spacing: 4 }
+                ]};
+            case 'net3':
+                return { families: [
+                    { angle: 0, spacing: 4 },
+                    { angle: 60, spacing: 4 },
+                    { angle: 120, spacing: 4 }
+                ]};
+            case 'dash':
+                return { families: [
+                    { angle: 0, spacing: 3.175, dashes: [3, 2] }
+                ]};
+            case 'square':
+                return { families: [
+                    { angle: 0, spacing: 5 },
+                    { angle: 90, spacing: 5 }
+                ]};
+            case 'zigzag':
+                return { families: [
+                    { angle: 45, spacing: 6, dashes: [4, 0] },
+                    { angle: 135, spacing: 6, dashes: [4, 0], phase: 3 }
+                ], complex: true };
+            case 'dots':
+                return { families: [
+                    { angle: 0, spacing: 4, dashes: [0.01, 3.99] },
+                    { angle: 90, spacing: 4, dashes: [0.01, 3.99] }
+                ], complex: true };
+            case 'solid':
+                return { solid: true, families: [] };
+            default:
+                return { families: [{ angle: 45, spacing: 3.175 }] };
+        }
     }
 
     generateRenderLines() {
@@ -2215,34 +2333,69 @@ class Hatch {
             return this.renderLines;
         }
 
-        let spacing = Math.max(this.scale, 0.001);
-        const radians = (typeof Utils !== 'undefined' && Utils.degToRad)
-            ? Utils.degToRad(this.angle)
-            : (this.angle * (Math.PI / 180));
+        const patternDef = Hatch.getPatternDefinition(this.patternName);
+        if (patternDef.solid || !patternDef.families.length) {
+            this.renderLines = [];
+            return this.renderLines;
+        }
 
+        const allSegments = [];
+
+        patternDef.families.forEach(family => {
+            // Effective angle = pattern family angle + user angle
+            const effectiveAngle = (family.angle || 0) + (this.angle || 0);
+            // Effective spacing = family spacing * user scale
+            const effectiveSpacing = (family.spacing || 3.175) * this.scale;
+
+            const segs = Hatch._generateScanlines(
+                boundaryPoints, effectiveAngle, effectiveSpacing,
+                family.dashes, family.phase
+            );
+            segs.forEach(s => allSegments.push(s));
+        });
+
+        this.renderLines = allSegments;
+        return allSegments;
+    }
+
+    /**
+     * Generate scanlines at a given angle through a boundary polygon.
+     * Returns array of {p1, p2} segments clipped to the boundary.
+     */
+    static _generateScanlines(boundaryPoints, angleDeg, spacing, dashes, phaseOffset) {
+        if (!boundaryPoints || boundaryPoints.length < 3) return [];
+
+        const radians = angleDeg * (Math.PI / 180);
         const cos = Math.cos(-radians);
         const sin = Math.sin(-radians);
-        const rotatePoint = (point) => ({
-            x: point.x * cos - point.y * sin,
-            y: point.x * sin + point.y * cos
+        const rotatePoint = (p) => ({
+            x: p.x * cos - p.y * sin,
+            y: p.x * sin + p.y * cos
         });
         const invCos = Math.cos(radians);
         const invSin = Math.sin(radians);
-        const inverseRotatePoint = (point) => ({
-            x: point.x * invCos - point.y * invSin,
-            y: point.x * invSin + point.y * invCos
+        const inverseRotatePoint = (p) => ({
+            x: p.x * invCos - p.y * invSin,
+            y: p.x * invSin + p.y * invCos
         });
 
         const rotated = boundaryPoints.map(rotatePoint);
         const bbox = Hatch.getPointsBoundingBox(rotated);
-        const maxSpacing = Math.max(
-            Math.min(bbox.maxY - bbox.minY, bbox.maxX - bbox.minX),
-            0.001
-        );
-        spacing = Math.min(spacing, maxSpacing);
+
+        const effSpacing = Math.max(spacing, 0.001);
+        const maxDim = Math.max(bbox.maxY - bbox.minY, bbox.maxX - bbox.minX);
+        const clampedSpacing = Math.min(effSpacing, maxDim || 1);
+        // Limit total line count to prevent performance issues
+        const maxLines = 500;
+        const adjustedSpacing = Math.max(clampedSpacing, maxDim / maxLines);
+
+        const startY = bbox.minY + (phaseOffset || 0);
         const segments = [];
 
-        for (let y = bbox.minY; y <= bbox.maxY; y += spacing) {
+        for (let y = startY; y <= bbox.maxY; y += adjustedSpacing) {
+            // Also scan below startY if phase pushed us up
+            if (y < bbox.minY) continue;
+
             const intersections = [];
             for (let i = 0; i < rotated.length; i++) {
                 const a = rotated[i];
@@ -2250,18 +2403,66 @@ class Hatch {
                 if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
                     const t = (y - a.y) / (b.y - a.y);
                     const x = a.x + t * (b.x - a.x);
-                    intersections.push({ x, y });
+                    intersections.push(x);
                 }
             }
-            intersections.sort((p1, p2) => p1.x - p2.x);
+            intersections.sort((a, b) => a - b);
+
             for (let i = 0; i + 1 < intersections.length; i += 2) {
-                const p1 = inverseRotatePoint(intersections[i]);
-                const p2 = inverseRotatePoint(intersections[i + 1]);
-                segments.push({ p1, p2 });
+                const x1 = intersections[i];
+                const x2 = intersections[i + 1];
+
+                if (dashes && dashes.length >= 2) {
+                    // Generate dashed segments
+                    const dashPattern = dashes;
+                    let x = x1;
+                    let dashIdx = 0;
+                    while (x < x2) {
+                        const dashLen = dashPattern[dashIdx % dashPattern.length] * (spacing / 3.175);
+                        const isDash = (dashIdx % 2 === 0);
+                        const segEnd = Math.min(x + dashLen, x2);
+                        if (isDash && segEnd > x) {
+                            segments.push({
+                                p1: inverseRotatePoint({ x: x, y }),
+                                p2: inverseRotatePoint({ x: segEnd, y })
+                            });
+                        }
+                        x += dashLen;
+                        dashIdx++;
+                    }
+                } else {
+                    // Continuous line
+                    segments.push({
+                        p1: inverseRotatePoint({ x: x1, y }),
+                        p2: inverseRotatePoint({ x: x2, y })
+                    });
+                }
             }
         }
 
-        this.renderLines = segments;
+        // Fill below phaseOffset too
+        if (phaseOffset && phaseOffset > 0) {
+            for (let y = startY - adjustedSpacing; y >= bbox.minY; y -= adjustedSpacing) {
+                const intersections = [];
+                for (let i = 0; i < rotated.length; i++) {
+                    const a = rotated[i];
+                    const b = rotated[(i + 1) % rotated.length];
+                    if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
+                        const t = (y - a.y) / (b.y - a.y);
+                        const x = a.x + t * (b.x - a.x);
+                        intersections.push(x);
+                    }
+                }
+                intersections.sort((a, b) => a - b);
+                for (let i = 0; i + 1 < intersections.length; i += 2) {
+                    segments.push({
+                        p1: inverseRotatePoint({ x: intersections[i], y }),
+                        p2: inverseRotatePoint({ x: intersections[i + 1], y })
+                    });
+                }
+            }
+        }
+
         return segments;
     }
 
@@ -2369,13 +2570,15 @@ class Hatch {
         const points = [];
         edges.forEach(edge => {
             if (edge.type === 'arc' && edge.center) {
-                const steps = 24;
                 const radius = edge.radius ?? edge.r ?? 0;
                 const start = edge.start ?? 0;
                 const end = edge.end ?? 0;
                 const ccw = edge.ccw !== false;
                 const total = ccw ? (end - start) : (start - end);
                 const sweep = total >= 0 ? total : (Math.PI * 2 + total);
+                // Adaptive step count based on arc length
+                const arcLen = Math.abs(sweep) * radius;
+                const steps = Math.max(8, Math.min(64, Math.ceil(arcLen / 2)));
                 for (let i = 0; i <= steps; i++) {
                     const angle = start + (ccw ? 1 : -1) * (sweep * (i / steps));
                     points.push({
@@ -2394,6 +2597,9 @@ class Hatch {
     }
 
     static getPointsBoundingBox(points) {
+        if (!points || points.length === 0) {
+            return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+        }
         let minX = points[0].x;
         let minY = points[0].y;
         let maxX = points[0].x;

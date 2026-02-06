@@ -71,6 +71,8 @@ class StateManager {
         this.lineType = 'ByLayer';
         this.lineTypeScale = 1;
         this.hatchPattern = 'solid';
+        this.hatchScale = 1;
+        this.hatchAngle = 0;
 
         // Offset settings
         this.offsetDist = 10;

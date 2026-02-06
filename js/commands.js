@@ -80,6 +80,8 @@ const Commands = {
         'hatch': 'hatch',
         'bh': 'hatch',
         'bhatch': 'hatch',
+        'he': 'hatchedit',
+        'hatchedit': 'hatchedit',
         'leader': 'leader',
         'le': 'leader',
         'ar': 'array',
@@ -698,8 +700,27 @@ const Commands = {
                     return;
                 }
                 UI.log(`HATCH: Click inside a closed area or select a closed object.`, 'prompt');
-                UI.log(`HATCH: Pattern [${this.getHatchPatternOptions()}] <${CAD.hatchPattern}>:`, 'prompt');
+                UI.log(`Pattern=${CAD.hatchPattern.toUpperCase()}, Scale=${CAD.hatchScale}, Angle=${CAD.hatchAngle}°`, 'prompt');
+                UI.log(`Options: [Pattern/Scale/Angle] or click to apply:`, 'prompt');
                 break;
+
+            case 'hatchedit':
+                if (CAD.selectedIds.length === 1) {
+                    const selEnt = CAD.getSelectedEntities()[0];
+                    if (selEnt && (selEnt.type === 'hatch' || selEnt.hatch)) {
+                        CAD.cmdOptions.hatchEditTarget = selEnt;
+                        UI.log(`HATCHEDIT: Pattern=${(selEnt.patternName || selEnt.hatch?.pattern || 'solid').toUpperCase()}, Scale=${selEnt.scale || 1}, Angle=${selEnt.angle || 0}°`, 'prompt');
+                        UI.log(`Options: [Pattern/Scale/Angle/Delete]:`, 'prompt');
+                    } else {
+                        UI.log('HATCHEDIT: Selected entity is not a hatch.', 'error');
+                        this.finishCommand();
+                    }
+                } else {
+                    UI.log('HATCHEDIT: Select a hatch entity to edit:', 'prompt');
+                    CAD.cmdOptions.needSelection = true;
+                }
+                break;
+
             case 'leader':
                 UI.log('LEADER: Specify first point:', 'prompt');
                 break;
@@ -1585,7 +1606,8 @@ const Commands = {
             'block': 'BLOCK (B): Create a named block. Select objects, enter name, specify base point.',
             'insert': 'INSERT (I): Insert a block reference. Enter name, scale, rotation, click placement.',
             'array': 'ARRAY (AR): Create rectangular array. Select objects, enter rows, columns, spacing.',
-            'hatch': 'HATCH (H): Fill closed areas. Click inside a closed boundary.',
+            'hatch': 'HATCH (H): Fill closed areas with patterns. Options: Pattern/Scale/Angle. Click inside boundary to apply.',
+            'hatchedit': 'HATCHEDIT (HE): Edit existing hatch. Change pattern, scale, angle, or delete.',
             'matchprop': 'MATCHPROP (MA): Copy properties (layer, color, linetype) from source to destination objects.',
             'align': 'ALIGN (AL): Align objects using point pairs. Select objects, specify source/dest point pairs.',
             'divide': 'DIVIDE (DIV): Place point markers at equal intervals along an object.',
@@ -1819,6 +1841,18 @@ const Commands = {
             case 'hatch':
                 this.handleHatchClick(point);
                 break;
+
+            case 'hatchedit': {
+                const hitEnt = this.hitTest(point);
+                if (hitEnt && (hitEnt.type === 'hatch' || hitEnt.hatch)) {
+                    CAD.cmdOptions.hatchEditTarget = hitEnt;
+                    UI.log(`HATCHEDIT: Pattern=${(hitEnt.patternName || hitEnt.hatch?.pattern || 'solid').toUpperCase()}, Scale=${hitEnt.scale || 1}, Angle=${hitEnt.angle || 0}°`, 'prompt');
+                    UI.log(`Options: [Pattern/Scale/Angle/Delete]:`, 'prompt');
+                } else {
+                    UI.log('HATCHEDIT: No hatch found at that point.', 'error');
+                }
+                break;
+            }
 
             case 'distance':
                 this.handleDistanceClick(point);
@@ -2930,32 +2964,35 @@ const Commands = {
     },
 
     createHatchEntity(boundaryPoints, clipIds = []) {
-        const pattern = CAD.hatchPattern || 'ANSI31';
-        const patternLower = pattern.toLowerCase();
+        const pattern = (CAD.hatchPattern || 'ansi31').toLowerCase();
+        const userScale = CAD.hatchScale || 1;
+        const userAngle = CAD.hatchAngle || 0;
 
-        // Auto-compute scale based on boundary size for readable hatch lines
-        let scale = 1;
+        // Auto-compute a base scale factor so patterns look good at any geometry size
+        let autoScale = 1;
         if (boundaryPoints && boundaryPoints.length >= 2) {
             const bbox = Geometry.Hatch.getPointsBoundingBox(boundaryPoints);
             const extent = Math.max(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY);
-            // Target ~15-25 hatch lines across the shape
-            scale = Math.max(extent / 20, 0.5);
+            // Base: 1 scale unit = ~3.175 drawing units (AutoCAD ANSI standard)
+            // Adjust so ~15-25 lines appear across the shape
+            autoScale = Math.max(extent / 60, 0.1);
         }
+        const effectiveScale = autoScale * userScale;
 
-        // For solid fills, renderLines aren't needed (rendered as filled region)
+        // Generate render lines for non-solid patterns
         let renderLines = [];
-        if (patternLower !== 'solid') {
-            const hatch = new Geometry.Hatch(boundaryPoints, pattern, scale, 0);
+        if (pattern !== 'solid') {
+            const hatch = new Geometry.Hatch(boundaryPoints, pattern, effectiveScale, userAngle);
             renderLines = hatch.generateRenderLines();
         }
 
         return {
             type: 'hatch',
-            hatch: { pattern: patternLower },
+            hatch: { pattern },
             boundary: boundaryPoints,
-            patternName: patternLower,
-            scale,
-            angle: 0,
+            patternName: pattern,
+            scale: effectiveScale,
+            angle: userAngle,
             renderLines,
             clipIds
         };
@@ -3515,7 +3552,7 @@ const Commands = {
                 CAD.removeEntity(entity.id, true);
                 explodedCount++;
             } else if (entity.type === 'hatch') {
-                // Explode hatch into individual line segments or boundary polyline
+                // Explode hatch into boundary polyline + pattern lines
                 const boundary = entity.boundary || entity.points || [];
                 const bPoints = Geometry.Hatch.getBoundaryPoints(boundary);
                 if (bPoints && bPoints.length >= 3) {
@@ -3526,8 +3563,19 @@ const Commands = {
                         layer: entity.layer
                     }, true);
                 }
-                if (entity.renderLines && entity.renderLines.length > 0) {
-                    entity.renderLines.forEach(seg => {
+                // Regenerate render lines if missing (ensures pattern-correct output)
+                let rLines = entity.renderLines;
+                if ((!rLines || rLines.length === 0) && entity.patternName !== 'solid') {
+                    const hatch = new Geometry.Hatch(
+                        boundary,
+                        entity.patternName || 'ansi31',
+                        entity.scale || 1,
+                        entity.angle || 0
+                    );
+                    rLines = hatch.generateRenderLines();
+                }
+                if (rLines && rLines.length > 0) {
+                    rLines.forEach(seg => {
                         if (seg && seg.p1 && seg.p2) {
                             CAD.addEntity({
                                 type: 'line',
@@ -3537,6 +3585,18 @@ const Commands = {
                             }, true);
                         }
                     });
+                    UI.log(`Hatch exploded into boundary + ${rLines.length} pattern lines.`);
+                } else if (entity.patternName === 'solid') {
+                    // Solid hatch: explode to filled boundary polyline
+                    if (bPoints && bPoints.length >= 3) {
+                        const lastEntity = CAD.entities[CAD.entities.length - 1];
+                        if (lastEntity) {
+                            CAD.updateEntity(lastEntity.id, {
+                                hatch: { pattern: 'solid' }
+                            }, true);
+                        }
+                    }
+                    UI.log('Solid hatch exploded to filled polyline.');
                 }
                 CAD.removeEntity(entity.id, true);
                 explodedCount++;
@@ -7535,31 +7595,174 @@ const Commands = {
         if (state.activeCmd === 'hatch') {
             const trimmed = input.trim();
             if (!trimmed) {
-                UI.log(`HATCH: Pattern unchanged (${CAD.hatchPattern.toUpperCase()}). Click inside a closed area or select a closed object.`, 'prompt');
+                UI.log(`Click inside a closed area or select a closed object.`, 'prompt');
                 return true;
             }
-            const pattern = trimmed.toLowerCase();
-            const shortcuts = {
-                s: 'solid',
-                d: 'diagonal',
-                c: 'cross',
-                o: 'dots',
-                a: 'angle'
-            };
+            const lower = trimmed.toLowerCase();
+            const patternShortcuts = { s: 'solid', d: 'diagonal', c: 'cross', o: 'dots', a: 'angle' };
 
-            if (pattern === 'list') {
+            // Waiting for sub-option input
+            if (CAD.cmdOptions.waitingForHatchScale) {
+                const val = parseFloat(trimmed);
+                if (isNaN(val) || val <= 0) {
+                    UI.log('HATCH: Invalid scale. Enter a positive number.', 'error');
+                } else {
+                    CAD.hatchScale = val;
+                    UI.log(`HATCH: Scale set to ${CAD.hatchScale}.`);
+                }
+                CAD.cmdOptions.waitingForHatchScale = false;
+                UI.log(`Pattern=${CAD.hatchPattern.toUpperCase()}, Scale=${CAD.hatchScale}, Angle=${CAD.hatchAngle}°. Click to apply or [Pattern/Scale/Angle]:`, 'prompt');
+                return true;
+            }
+            if (CAD.cmdOptions.waitingForHatchAngle) {
+                const val = parseFloat(trimmed);
+                if (isNaN(val)) {
+                    UI.log('HATCH: Invalid angle. Enter a number in degrees.', 'error');
+                } else {
+                    CAD.hatchAngle = val;
+                    UI.log(`HATCH: Angle set to ${CAD.hatchAngle}°.`);
+                }
+                CAD.cmdOptions.waitingForHatchAngle = false;
+                UI.log(`Pattern=${CAD.hatchPattern.toUpperCase()}, Scale=${CAD.hatchScale}, Angle=${CAD.hatchAngle}°. Click to apply or [Pattern/Scale/Angle]:`, 'prompt');
+                return true;
+            }
+            if (CAD.cmdOptions.waitingForHatchPattern) {
+                if (lower === 'list') {
+                    UI.log(`HATCH patterns: ${this.getHatchPatternOptions()}`, 'prompt');
+                    return true;
+                }
+                const cleaned = lower.replace(/[\s_-]+/g, '');
+                const resolved = patternShortcuts[cleaned] || cleaned;
+                this.setHatchPattern(resolved);
+                CAD.cmdOptions.waitingForHatchPattern = false;
+                UI.log(`Pattern=${CAD.hatchPattern.toUpperCase()}, Scale=${CAD.hatchScale}, Angle=${CAD.hatchAngle}°. Click to apply or [Pattern/Scale/Angle]:`, 'prompt');
+                return true;
+            }
+
+            // Top-level options
+            if (lower === 'p' || lower === 'pattern') {
+                CAD.cmdOptions.waitingForHatchPattern = true;
+                UI.log(`HATCH: Enter pattern name or [List] <${CAD.hatchPattern}>:`, 'prompt');
+                return true;
+            }
+            if (lower === 'sc' || lower === 'scale') {
+                CAD.cmdOptions.waitingForHatchScale = true;
+                UI.log(`HATCH: Enter scale factor <${CAD.hatchScale}>:`, 'prompt');
+                return true;
+            }
+            if (lower === 'an' || lower === 'angle') {
+                CAD.cmdOptions.waitingForHatchAngle = true;
+                UI.log(`HATCH: Enter angle in degrees <${CAD.hatchAngle}>:`, 'prompt');
+                return true;
+            }
+            if (lower === 'list') {
                 UI.log(`HATCH patterns: ${this.getHatchPatternOptions()}`, 'prompt');
                 return true;
             }
 
-            if (/^ansi\d+\s*-\s*\d+$/.test(pattern)) {
-                UI.log('HATCH: Specify a single ANSI pattern (ANSI31 through ANSI38).', 'error');
+            // Direct pattern entry (backward compat)
+            const cleaned = lower.replace(/[\s_-]+/g, '');
+            const resolved = patternShortcuts[cleaned] || cleaned;
+            if (this.hatchPatterns.includes(resolved) || this.hatchPatternAliases[resolved]) {
+                this.setHatchPattern(resolved);
+                UI.log(`Pattern=${CAD.hatchPattern.toUpperCase()}, Scale=${CAD.hatchScale}, Angle=${CAD.hatchAngle}°. Click to apply or [Pattern/Scale/Angle]:`, 'prompt');
+            } else {
+                UI.log(`HATCH: Unknown option "${trimmed}". Try Pattern, Scale, Angle, or List.`, 'error');
+            }
+            return true;
+        }
+
+        // HATCHEDIT command input
+        if (state.activeCmd === 'hatchedit') {
+            const lower = input.trim().toLowerCase();
+            const target = CAD.cmdOptions.hatchEditTarget;
+
+            if (!target) {
+                // Waiting for selection
+                return false;
+            }
+
+            if (CAD.cmdOptions.waitingForHEScale) {
+                const val = parseFloat(input.trim());
+                if (isNaN(val) || val <= 0) {
+                    UI.log('HATCHEDIT: Invalid scale.', 'error');
+                } else {
+                    CAD.saveUndoState('HatchEdit Scale');
+                    CAD.updateEntity(target.id, { scale: val, renderLines: [] }, true);
+                    UI.log(`HATCHEDIT: Scale set to ${val}.`);
+                    Renderer.draw();
+                }
+                CAD.cmdOptions.waitingForHEScale = false;
+                UI.log('HATCHEDIT: [Pattern/Scale/Angle/Delete] or Enter to finish:', 'prompt');
+                return true;
+            }
+            if (CAD.cmdOptions.waitingForHEAngle) {
+                const val = parseFloat(input.trim());
+                if (isNaN(val)) {
+                    UI.log('HATCHEDIT: Invalid angle.', 'error');
+                } else {
+                    CAD.saveUndoState('HatchEdit Angle');
+                    CAD.updateEntity(target.id, { angle: val, renderLines: [] }, true);
+                    UI.log(`HATCHEDIT: Angle set to ${val}°.`);
+                    Renderer.draw();
+                }
+                CAD.cmdOptions.waitingForHEAngle = false;
+                UI.log('HATCHEDIT: [Pattern/Scale/Angle/Delete] or Enter to finish:', 'prompt');
+                return true;
+            }
+            if (CAD.cmdOptions.waitingForHEPattern) {
+                if (lower === 'list') {
+                    UI.log(`Patterns: ${this.getHatchPatternOptions()}`, 'prompt');
+                    return true;
+                }
+                const cleaned = lower.replace(/[\s_-]+/g, '');
+                const aliases = this.hatchPatternAliases;
+                const resolved = aliases[cleaned] || cleaned;
+                if (this.hatchPatterns.includes(resolved)) {
+                    CAD.saveUndoState('HatchEdit Pattern');
+                    CAD.updateEntity(target.id, {
+                        patternName: resolved,
+                        hatch: { pattern: resolved },
+                        renderLines: []
+                    }, true);
+                    UI.log(`HATCHEDIT: Pattern set to ${resolved.toUpperCase()}.`);
+                    Renderer.draw();
+                } else {
+                    UI.log(`HATCHEDIT: Unknown pattern "${input.trim()}".`, 'error');
+                }
+                CAD.cmdOptions.waitingForHEPattern = false;
+                UI.log('HATCHEDIT: [Pattern/Scale/Angle/Delete] or Enter to finish:', 'prompt');
                 return true;
             }
 
-            const cleaned = pattern.replace(/[\s_-]+/g, '');
-            const resolved = shortcuts[cleaned] || cleaned;
-            this.setHatchPattern(resolved);
+            if (!lower || lower === '') {
+                this.finishCommand();
+                return true;
+            }
+            if (lower === 'p' || lower === 'pattern') {
+                CAD.cmdOptions.waitingForHEPattern = true;
+                UI.log(`HATCHEDIT: Enter pattern name or [List] <${target.patternName || 'solid'}>:`, 'prompt');
+                return true;
+            }
+            if (lower === 'sc' || lower === 'scale') {
+                CAD.cmdOptions.waitingForHEScale = true;
+                UI.log(`HATCHEDIT: Enter scale factor <${target.scale || 1}>:`, 'prompt');
+                return true;
+            }
+            if (lower === 'an' || lower === 'angle') {
+                CAD.cmdOptions.waitingForHEAngle = true;
+                UI.log(`HATCHEDIT: Enter angle in degrees <${target.angle || 0}>:`, 'prompt');
+                return true;
+            }
+            if (lower === 'd' || lower === 'delete') {
+                CAD.saveUndoState('HatchEdit Delete');
+                CAD.removeEntity(target.id);
+                UI.log('HATCHEDIT: Hatch deleted.');
+                Renderer.draw();
+                this.finishCommand();
+                return true;
+            }
+            UI.log('HATCHEDIT: [Pattern/Scale/Angle/Delete] or Enter to finish:', 'prompt');
             return true;
         }
 

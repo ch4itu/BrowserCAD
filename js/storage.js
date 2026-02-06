@@ -607,6 +607,12 @@ const Storage = {
         dxf += '2\n' + dxfPatternName + '\n';
         dxf += '70\n' + (isSolid ? 1 : 0) + '\n'; // Solid fill flag
         dxf += '71\n0\n'; // Non-associative
+        dxf += '75\n0\n'; // Hatch style
+        dxf += '76\n1\n'; // Pattern type: predefined
+        if (!isSolid) {
+            dxf += '52\n' + (entity.angle || 0) + '\n'; // Pattern angle
+            dxf += '41\n' + (entity.scale || 1) + '\n'; // Pattern scale
+        }
         dxf += '91\n1\n'; // 1 boundary path
 
         if (entity.type === 'circle') {
@@ -704,60 +710,119 @@ const Storage = {
      */
     _getDXFPatternDef(pattern) {
         let dxf = '';
-        dxf += '75\n0\n'; // Hatch style: normal
-        dxf += '76\n1\n'; // Pattern type: predefined
+        // Helper: write one DXF pattern line definition
+        // 53=angle, 43=baseX, 44=baseY, 45=deltaX, 46=deltaY, 79=num dashes, 49=dash lengths
+        const line = (angle, deltaX, deltaY, dashes) => {
+            let s = '53\n' + angle + '\n43\n0.0\n44\n0.0\n45\n' + deltaX + '\n46\n' + deltaY + '\n';
+            if (dashes && dashes.length > 0) {
+                s += '79\n' + dashes.length + '\n';
+                dashes.forEach(d => { s += '49\n' + d + '\n'; });
+            } else {
+                s += '79\n0\n';
+            }
+            return s;
+        };
 
         switch (pattern) {
             case 'diagonal':
+            case 'angle':
             case 'ansi31':
-                dxf += '52\n0.0\n41\n3.175\n';  // Pattern angle=0, scale
-                dxf += '78\n1\n';       // 1 pattern line
-                dxf += '53\n45.0\n';    // Line angle 45 deg
-                dxf += '43\n0.0\n44\n0.0\n45\n-1.0\n46\n1.0\n79\n0\n';
+                dxf += '78\n1\n';
+                dxf += line(45, -1, 1);
+                break;
+            case 'ansi32':
+                dxf += '78\n2\n';
+                dxf += line(45, -1, 1);
+                dxf += line(45, -1, 1); // second parallel family, offset
+                break;
+            case 'ansi33':
+                dxf += '78\n1\n';
+                dxf += line(45, -2, 2);
+                break;
+            case 'ansi34':
+                dxf += '78\n2\n';
+                dxf += line(45, -2, 2);
+                dxf += line(45, -2, 2);
+                break;
+            case 'ansi35':
+                dxf += '78\n1\n';
+                dxf += line(135, 1, 1);
+                break;
+            case 'ansi36':
+                dxf += '78\n1\n';
+                dxf += line(0, 0, 1);
                 break;
             case 'cross':
             case 'ansi37':
-                dxf += '52\n0.0\n41\n3.175\n';
-                dxf += '78\n2\n';       // 2 pattern lines
-                dxf += '53\n45.0\n43\n0.0\n44\n0.0\n45\n-1.0\n46\n1.0\n79\n0\n';
-                dxf += '53\n135.0\n43\n0.0\n44\n0.0\n45\n-1.0\n46\n1.0\n79\n0\n';
+                dxf += '78\n2\n';
+                dxf += line(45, -1, 1);
+                dxf += line(135, 1, 1);
+                break;
+            case 'ansi38':
+                dxf += '78\n2\n';
+                dxf += line(45, -1, 1);
+                dxf += line(0, 0, 1);
                 break;
             case 'dots':
-                dxf += '52\n0.0\n41\n3.175\n';
                 dxf += '78\n2\n';
-                dxf += '53\n0.0\n43\n0.0\n44\n0.0\n45\n0.0\n46\n3.175\n79\n2\n';
-                dxf += '49\n0.0\n49\n-3.175\n';
-                dxf += '53\n90.0\n43\n0.0\n44\n0.0\n45\n0.0\n46\n3.175\n79\n2\n';
-                dxf += '49\n0.0\n49\n-3.175\n';
-                break;
-            case 'ansi32':
-                dxf += '52\n0.0\n41\n3.175\n';
-                dxf += '78\n2\n';
-                dxf += '53\n45.0\n43\n0.0\n44\n0.0\n45\n-1.0\n46\n1.0\n79\n0\n';
-                dxf += '53\n45.0\n43\n0.5\n44\n0.5\n45\n-1.0\n46\n1.0\n79\n0\n';
+                dxf += line(0, 0, 3.175, [0, -3.175]);
+                dxf += line(90, 0, 3.175, [0, -3.175]);
                 break;
             case 'brick':
-                dxf += '52\n0.0\n41\n6.35\n';
                 dxf += '78\n2\n';
-                dxf += '53\n0.0\n43\n0.0\n44\n0.0\n45\n0.0\n46\n6.35\n79\n0\n';
-                dxf += '53\n90.0\n43\n0.0\n44\n0.0\n45\n0.0\n46\n6.35\n79\n2\n';
-                dxf += '49\n3.175\n49\n-3.175\n';
+                dxf += line(0, 0, 6.35);
+                dxf += line(90, 0, 6.35, [3.175, -3.175]);
                 break;
             case 'honey':
-                dxf += '52\n0.0\n41\n3.175\n';
                 dxf += '78\n3\n';
-                dxf += '53\n0.0\n43\n0.0\n44\n0.0\n45\n5.5\n46\n3.175\n79\n2\n';
-                dxf += '49\n3.175\n49\n-2.325\n';
-                dxf += '53\n120.0\n43\n0.0\n44\n0.0\n45\n5.5\n46\n3.175\n79\n2\n';
-                dxf += '49\n3.175\n49\n-2.325\n';
-                dxf += '53\n60.0\n43\n0.0\n44\n0.0\n45\n5.5\n46\n3.175\n79\n2\n';
-                dxf += '49\n3.175\n49\n-2.325\n';
+                dxf += line(0, 5.5, 3.175, [3.175, -2.325]);
+                dxf += line(120, 5.5, 3.175, [3.175, -2.325]);
+                dxf += line(60, 5.5, 3.175, [3.175, -2.325]);
+                break;
+            case 'net':
+            case 'square':
+                dxf += '78\n2\n';
+                dxf += line(0, 0, 4);
+                dxf += line(90, 0, 4);
+                break;
+            case 'net3':
+                dxf += '78\n3\n';
+                dxf += line(0, 0, 4);
+                dxf += line(60, 0, 4);
+                dxf += line(120, 0, 4);
+                break;
+            case 'dash':
+                dxf += '78\n1\n';
+                dxf += line(0, 0, 3.175, [3, -2]);
+                break;
+            case 'earth':
+                dxf += '78\n3\n';
+                dxf += line(0, 0, 6, [3, -2]);
+                dxf += line(45, 0, 6, [2, -3]);
+                dxf += line(90, 0, 6, [1, -4]);
+                break;
+            case 'grass':
+                dxf += '78\n2\n';
+                dxf += line(90, 0, 7, [3, -4]);
+                dxf += line(45, 0, 10, [2, -5]);
+                break;
+            case 'steel':
+                dxf += '78\n2\n';
+                dxf += line(45, -1, 1);
+                dxf += line(135, 0, 12, [2, -10]);
+                break;
+            case 'insul':
+                dxf += '78\n1\n';
+                dxf += line(0, 0, 6);
+                break;
+            case 'zigzag':
+                dxf += '78\n2\n';
+                dxf += line(45, 0, 6, [4, -4]);
+                dxf += line(135, 0, 6, [4, -4]);
                 break;
             default:
-                // Generic diagonal hatch fallback
-                dxf += '52\n0.0\n41\n3.175\n';
                 dxf += '78\n1\n';
-                dxf += '53\n45.0\n43\n0.0\n44\n0.0\n45\n-1.0\n46\n1.0\n79\n0\n';
+                dxf += line(45, -1, 1);
         }
 
         return dxf;
@@ -819,6 +884,9 @@ const Storage = {
         const isSolid = pattern === 'solid';
         const dxfPatternName = this._getDXFPatternName(pattern);
 
+        const hatchAngle = entity.angle || 0;
+        const hatchScale = entity.scale || 1;
+
         dxf += '0\nHATCH\n';
         dxf += '8\n' + (entity.layer || '0') + '\n';
         dxf += '420\n' + colorInt + '\n';
@@ -827,6 +895,12 @@ const Storage = {
         dxf += '2\n' + dxfPatternName + '\n'; // Pattern name
         dxf += '70\n' + (isSolid ? 1 : 0) + '\n'; // Solid fill flag
         dxf += '71\n0\n'; // Non-associative
+        dxf += '75\n0\n'; // Hatch style (0=Normal)
+        dxf += '76\n1\n'; // Hatch pattern type (1=Predefined)
+        if (!isSolid) {
+            dxf += '52\n' + hatchAngle + '\n'; // Pattern angle
+            dxf += '41\n' + hatchScale + '\n'; // Pattern scale
+        }
         dxf += '91\n' + boundaryEntities.length + '\n'; // Number of boundary paths
 
         boundaryEntities.forEach(be => {
@@ -1250,6 +1324,45 @@ const Storage = {
 
             case 'text':
                 return `<text x="${entity.position.x}" y="${entity.position.y}" fill="${color}" font-size="${entity.height}" font-family="Arial">${entity.text}</text>\n`;
+
+            case 'hatch': {
+                const boundary = entity.boundary || entity.points || [];
+                const bPts = (typeof Geometry !== 'undefined' && Geometry.Hatch)
+                    ? Geometry.Hatch.getBoundaryPoints(boundary) : boundary;
+                if (!bPts || bPts.length < 3) return '';
+                const patName = (entity.patternName || entity.hatch?.pattern || 'solid').toLowerCase();
+                let hatchSvg = '<g class="hatch">\n';
+
+                if (patName === 'solid') {
+                    // Solid fill
+                    const pts = bPts.map(p => `${p.x},${p.y}`).join(' ');
+                    hatchSvg += `<polygon points="${pts}" fill="${color}" fill-opacity="0.25" stroke="none"/>\n`;
+                } else {
+                    // Clip path + render lines
+                    const clipId = 'hatch-clip-' + (entity.id || Math.random().toString(36).slice(2));
+                    const pts = bPts.map(p => `${p.x},${p.y}`).join(' ');
+                    hatchSvg += `<defs><clipPath id="${clipId}"><polygon points="${pts}"/></clipPath></defs>\n`;
+                    hatchSvg += `<g clip-path="url(#${clipId})">\n`;
+                    // Ensure render lines exist
+                    let rLines = entity.renderLines;
+                    if (!rLines || rLines.length === 0) {
+                        if (typeof Geometry !== 'undefined' && Geometry.Hatch) {
+                            const h = new Geometry.Hatch(boundary, patName, entity.scale || 1, entity.angle || 0);
+                            rLines = h.generateRenderLines();
+                        }
+                    }
+                    if (rLines) {
+                        rLines.forEach(seg => {
+                            if (seg && seg.p1 && seg.p2) {
+                                hatchSvg += `<line x1="${seg.p1.x}" y1="${seg.p1.y}" x2="${seg.p2.x}" y2="${seg.p2.y}" stroke="${color}" stroke-width="0.5"/>\n`;
+                            }
+                        });
+                    }
+                    hatchSvg += '</g>\n';
+                }
+                hatchSvg += '</g>\n';
+                return hatchSvg;
+            }
 
             case 'block':
                 // Expand block and render each entity
@@ -2407,26 +2520,54 @@ const Storage = {
     parseDXFHatch(lines, startIndex) {
         const { data, nextIndex } = this.readDXFEntity(lines, startIndex);
 
-        const boundaryPoints = this.getDXFHatchPolyline(data);
         const patternName = (this.getDXFValue(data, 2) || 'solid').toLowerCase();
         const isSolid = parseInt(this.getDXFValue(data, 70)) === 1 || patternName === 'solid';
+        const hatchAngle = parseFloat(this.getDXFValue(data, 52)) || 0;
+        const hatchScale = parseFloat(this.getDXFValue(data, 41)) || 1;
+        const resolvedPattern = isSolid ? 'solid' : patternName;
 
+        // Try polyline boundary first
+        const boundaryPoints = this.getDXFHatchPolyline(data);
         if (boundaryPoints.length >= 3) {
             const entity = {
-                type: 'polyline',
-                points: boundaryPoints,
-                closed: true,
-                hatch: { pattern: isSolid ? 'solid' : patternName },
-                noStroke: true
+                type: 'hatch',
+                hatch: { pattern: resolvedPattern },
+                boundary: boundaryPoints,
+                patternName: resolvedPattern,
+                scale: hatchScale,
+                angle: hatchAngle,
+                renderLines: [],
+                clipIds: []
             };
             this.applyDXFEntityStyle(entity, data);
             return { entity, nextIndex };
         }
 
-        const circleEntity = this.getDXFHatchCircle(data, patternName, isSolid);
-        if (circleEntity) {
-            this.applyDXFEntityStyle(circleEntity, data);
-            return { entity: circleEntity, nextIndex };
+        // Try circular boundary
+        const circleData = this.getDXFHatchCircle(data, patternName, isSolid);
+        if (circleData) {
+            // Convert circle to boundary points for proper hatch entity
+            const steps = 36;
+            const cx = circleData.center.x;
+            const cy = circleData.center.y;
+            const r = circleData.r;
+            const circlePts = [];
+            for (let i = 0; i < steps; i++) {
+                const a = (Math.PI * 2 * i) / steps;
+                circlePts.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
+            }
+            const entity = {
+                type: 'hatch',
+                hatch: { pattern: resolvedPattern },
+                boundary: circlePts,
+                patternName: resolvedPattern,
+                scale: hatchScale,
+                angle: hatchAngle,
+                renderLines: [],
+                clipIds: []
+            };
+            this.applyDXFEntityStyle(entity, data);
+            return { entity, nextIndex };
         }
 
         return { entity: null, nextIndex };
