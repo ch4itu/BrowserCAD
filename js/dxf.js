@@ -1,5 +1,12 @@
 /* ============================================
    BrowserCAD - DXF Parser/Exporter
+   ============================================
+   Coordinate convention:
+   - DXF uses Y-up coordinate system
+   - BrowserCAD internal uses Y-down (canvas)
+   - This module works in DXF space for parsing (returns raw DXF coords)
+   - mapDxfEntityToCad in storage.js handles Y-flip + angle conversion
+   - Export functions handle Y-flip + angle conversion for writing
    ============================================ */
 
 const DXF = (() => {
@@ -7,6 +14,9 @@ const DXF = (() => {
         $ACADVER: 'AC1015',
         $INSUNITS: 4
     };
+
+    const DEG2RAD = Math.PI / 180;
+    const RAD2DEG = 180 / Math.PI;
 
     const parseNumber = (value, fallback = 0) => {
         const parsed = parseFloat(value);
@@ -21,6 +31,24 @@ const DXF = (() => {
     const formatNumber = (value) => {
         const num = Number.isFinite(value) ? value : 0;
         return num.toFixed(6);
+    };
+
+    // Convert 24-bit RGB integer to #RRGGBB hex string
+    const intToHex = (intColor) => {
+        if (!intColor && intColor !== 0) return null;
+        const n = parseInt(intColor, 10);
+        if (!Number.isFinite(n) || n < 0) return null;
+        const r = (n >> 16) & 0xFF;
+        const g = (n >> 8) & 0xFF;
+        const b = n & 0xFF;
+        return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+    };
+
+    // Convert #RRGGBB hex to 24-bit RGB integer
+    const hexToInt = (hex) => {
+        if (!hex || typeof hex !== 'string') return 0;
+        hex = hex.replace('#', '');
+        return parseInt(hex, 16) || 0;
     };
 
     const readPairs = (lines) => {
@@ -42,6 +70,10 @@ const DXF = (() => {
         };
         return { next, peek };
     };
+
+    // ==========================================
+    // PARSING
+    // ==========================================
 
     const parseHeader = (reader, data) => {
         while (reader.peek()) {
@@ -73,6 +105,16 @@ const DXF = (() => {
                         x: parseNumber(values[10]),
                         y: parseNumber(values[20])
                     };
+                } else if (name === '$CLAYER' && values[8]) {
+                    data.header.$CLAYER = values[8];
+                } else if (name === '$PDMODE' && values[70]) {
+                    data.header.$PDMODE = parseIntValue(values[70]);
+                } else if (name === '$PDSIZE' && values[40]) {
+                    data.header.$PDSIZE = parseNumber(values[40]);
+                } else if (name === '$DIMSCALE' && values[40]) {
+                    data.header.$DIMSCALE = parseNumber(values[40]);
+                } else if (name === '$DIMTXT' && values[40]) {
+                    data.header.$DIMTXT = parseNumber(values[40]);
                 }
             }
         }
@@ -101,22 +143,78 @@ const DXF = (() => {
                 }
                 const name = layerTags[2] || '0';
                 const flags = parseIntValue(layerTags[70]);
-                const color = Math.abs(parseIntValue(layerTags[62], 7));
-                data.layers[name] = {
+                const rawColor = parseIntValue(layerTags[62], 7);
+                const color = Math.abs(rawColor);
+                const layerObj = {
                     name,
                     color,
-                    visible: color >= 0,
+                    visible: rawColor >= 0,
                     frozen: (flags & 1) === 1,
                     locked: (flags & 4) === 4
                 };
+                // Linetype (code 6)
+                if (layerTags[6]) {
+                    layerObj.lineType = layerTags[6];
+                }
+                // Lineweight (code 370) - in hundredths of mm
+                if (layerTags[370] !== undefined) {
+                    layerObj.lineWeight = parseIntValue(layerTags[370]);
+                }
+                // True color (code 420)
+                if (layerTags[420]) {
+                    layerObj.trueColor = intToHex(layerTags[420]);
+                }
+                data.layers[name] = layerObj;
+            } else if (pair.code === 0 && currentTable === 'LTYPE' && pair.value === 'LTYPE') {
+                const ltypeTags = { dashes: [] };
+                while (reader.peek() && reader.peek().code !== 0) {
+                    const tag = reader.next();
+                    if (tag.code === 2) ltypeTags.name = tag.value;
+                    else if (tag.code === 3) ltypeTags.description = tag.value;
+                    else if (tag.code === 73) ltypeTags.numDashes = parseIntValue(tag.value);
+                    else if (tag.code === 49) ltypeTags.dashes.push(parseNumber(tag.value));
+                    else if (tag.code === 40) ltypeTags.patternLength = parseNumber(tag.value);
+                }
+                if (ltypeTags.name) {
+                    if (!data.linetypes) data.linetypes = {};
+                    data.linetypes[ltypeTags.name.toUpperCase()] = ltypeTags;
+                }
+            } else if (pair.code === 0 && currentTable === 'DIMSTYLE' && pair.value === 'DIMSTYLE') {
+                const dimTags = {};
+                while (reader.peek() && reader.peek().code !== 0) {
+                    const tag = reader.next();
+                    dimTags[tag.code] = tag.value;
+                }
+                if (dimTags[2]) {
+                    if (!data.dimstyles) data.dimstyles = {};
+                    data.dimstyles[dimTags[2]] = {
+                        name: dimTags[2],
+                        dimscale: parseNumber(dimTags[40], 1),
+                        dimtxt: parseNumber(dimTags[140], 2.5),
+                        dimasz: parseNumber(dimTags[41], 2.5)
+                    };
+                }
+            } else if (pair.code === 0 && currentTable === 'STYLE' && pair.value === 'STYLE') {
+                const styleTags = {};
+                while (reader.peek() && reader.peek().code !== 0) {
+                    const tag = reader.next();
+                    styleTags[tag.code] = tag.value;
+                }
+                if (styleTags[2]) {
+                    if (!data.textstyles) data.textstyles = {};
+                    data.textstyles[styleTags[2]] = {
+                        name: styleTags[2],
+                        height: parseNumber(styleTags[40]),
+                        widthFactor: parseNumber(styleTags[41], 1),
+                        font: styleTags[3] || ''
+                    };
+                }
             }
         }
     };
 
     const parseLwPolyline = (tags) => {
         const points = [];
-        const bulges = [];
-        const vertexCount = parseIntValue(tags[90], 0);
         let current = null;
         tags.list.forEach(tag => {
             if (tag.code === 10) {
@@ -131,6 +229,7 @@ const DXF = (() => {
             }
         });
         if (current) points.push(current);
+        const vertexCount = parseIntValue(tags[90], 0);
         if (vertexCount && points.length < vertexCount) {
             while (points.length < vertexCount) {
                 points.push({ x: 0, y: 0, bulge: 0 });
@@ -154,15 +253,40 @@ const DXF = (() => {
         return tags;
     };
 
+    // Extract common style info from entity tags
+    const getEntityStyle = (tags) => {
+        const style = {};
+        // Layer (code 8 - already extracted)
+        // Color: ACI color (code 62), True color (code 420)
+        if (tags[420]) {
+            style.trueColor = intToHex(tags[420]);
+        }
+        if (tags[62]) {
+            style.aciColor = parseIntValue(tags[62]);
+        }
+        // Linetype (code 6)
+        if (tags[6]) {
+            style.lineType = tags[6];
+        }
+        // Lineweight (code 370)
+        if (tags[370] !== undefined) {
+            style.lineWeight = parseIntValue(tags[370]);
+        }
+        return style;
+    };
+
+    // All values returned in DXF coordinate space (Y-up, angles in degrees)
     const parseEntity = (type, reader) => {
         const tags = parseEntityTags(reader);
         const layer = tags[8] || '0';
+        const style = getEntityStyle(tags);
+
         switch (type) {
             case 'LINE':
                 return {
                     type: 'line',
                     layer,
-                    // 10/20/30 = start X/Y/Z, 11/21/31 = end X/Y/Z
+                    ...style,
                     p1: { x: parseNumber(tags[10]), y: parseNumber(tags[20]), z: parseNumber(tags[30]) },
                     p2: { x: parseNumber(tags[11]), y: parseNumber(tags[21]), z: parseNumber(tags[31]) }
                 };
@@ -170,7 +294,7 @@ const DXF = (() => {
                 return {
                     type: 'circle',
                     layer,
-                    // 10/20/30 = center X/Y/Z, 40 = radius
+                    ...style,
                     center: { x: parseNumber(tags[10]), y: parseNumber(tags[20]), z: parseNumber(tags[30]) },
                     r: parseNumber(tags[40])
                 };
@@ -178,19 +302,34 @@ const DXF = (() => {
                 return {
                     type: 'arc',
                     layer,
-                    // 10/20/30 = center X/Y/Z, 40 = radius, 50/51 = start/end angles (degrees)
+                    ...style,
                     center: { x: parseNumber(tags[10]), y: parseNumber(tags[20]), z: parseNumber(tags[30]) },
                     r: parseNumber(tags[40]),
-                    start: parseNumber(tags[50]) * (Math.PI / 180),
-                    end: parseNumber(tags[51]) * (Math.PI / 180)
+                    // Return angles in DEGREES (raw DXF values)
+                    // mapDxfEntityToCad handles deg→rad conversion + Y-flip swap
+                    start: parseNumber(tags[50]),
+                    end: parseNumber(tags[51])
                 };
             case 'LWPOLYLINE': {
                 const poly = parseLwPolyline(tags);
                 return {
                     type: 'polyline',
                     layer,
+                    ...style,
                     points: poly.points,
                     closed: poly.closed
+                };
+            }
+            case 'POLYLINE': {
+                // Old-style POLYLINE with VERTEX entities - just parse the header tags
+                // The actual vertices are parsed in parseEntities
+                return {
+                    type: 'polyline_header',
+                    layer,
+                    ...style,
+                    flags: parseIntValue(tags[70]),
+                    points: [],
+                    closed: (parseIntValue(tags[70]) & 1) === 1
                 };
             }
             case 'TEXT':
@@ -204,11 +343,157 @@ const DXF = (() => {
                 return {
                     type: type.toLowerCase(),
                     layer,
-                    // 1/3 = text string, 10/20/30 = insertion point, 40 = height, 50 = rotation
+                    ...style,
                     text: textChunks.join('') || '',
                     position: { x: parseNumber(tags[10]), y: parseNumber(tags[20]), z: parseNumber(tags[30]) },
                     height: parseNumber(tags[40], 10),
-                    rotation: parseNumber(tags[50], 0) * (Math.PI / 180)
+                    // Rotation in DEGREES (raw DXF value)
+                    rotation: parseNumber(tags[50], 0),
+                    // MTEXT width (code 41)
+                    width: parseNumber(tags[41], 0)
+                };
+            }
+            case 'POINT':
+                return {
+                    type: 'point',
+                    layer,
+                    ...style,
+                    point: { x: parseNumber(tags[10]), y: parseNumber(tags[20]), z: parseNumber(tags[30]) }
+                };
+            case 'ELLIPSE': {
+                // DXF ELLIPSE: center (10/20), major axis endpoint relative to center (11/21),
+                // ratio minor/major (40), start param (41), end param (42)
+                const majorX = parseNumber(tags[11]);
+                const majorY = parseNumber(tags[21]);
+                const ratio = parseNumber(tags[40], 1);
+                const majorRadius = Math.sqrt(majorX * majorX + majorY * majorY);
+                const minorRadius = majorRadius * ratio;
+                // Rotation is derived from the major axis direction
+                const rotation = Math.atan2(majorY, majorX);
+                return {
+                    type: 'ellipse',
+                    layer,
+                    ...style,
+                    center: { x: parseNumber(tags[10]), y: parseNumber(tags[20]), z: parseNumber(tags[30]) },
+                    rx: majorRadius,
+                    ry: minorRadius,
+                    // Rotation in RADIANS (derived from geometry, not a raw DXF angle)
+                    rotation: rotation,
+                    startParam: parseNumber(tags[41], 0),
+                    endParam: parseNumber(tags[42], Math.PI * 2)
+                };
+            }
+            case 'SPLINE': {
+                // Parse control points and fit points
+                const controlPoints = [];
+                const fitPoints = [];
+                const knots = [];
+                let readingControl = false;
+                let readingFit = false;
+                let cpCurrent = null;
+                let fpCurrent = null;
+                tags.list.forEach(tag => {
+                    if (tag.code === 10) {
+                        if (cpCurrent) controlPoints.push(cpCurrent);
+                        cpCurrent = { x: parseNumber(tag.value), y: 0 };
+                        readingControl = true;
+                        readingFit = false;
+                    } else if (tag.code === 20 && cpCurrent && readingControl) {
+                        cpCurrent.y = parseNumber(tag.value);
+                    } else if (tag.code === 11) {
+                        if (fpCurrent) fitPoints.push(fpCurrent);
+                        fpCurrent = { x: parseNumber(tag.value), y: 0 };
+                        readingFit = true;
+                        readingControl = false;
+                    } else if (tag.code === 21 && fpCurrent && readingFit) {
+                        fpCurrent.y = parseNumber(tag.value);
+                    } else if (tag.code === 40) {
+                        knots.push(parseNumber(tag.value));
+                    }
+                });
+                if (cpCurrent) controlPoints.push(cpCurrent);
+                if (fpCurrent) fitPoints.push(fpCurrent);
+                // Prefer fit points for smoother curves
+                const points = fitPoints.length >= 2 ? fitPoints : controlPoints;
+                const flags = parseIntValue(tags[70]);
+                return {
+                    type: 'spline',
+                    layer,
+                    ...style,
+                    points: points,
+                    controlPoints: controlPoints,
+                    fitPoints: fitPoints,
+                    knots: knots,
+                    degree: parseIntValue(tags[71], 3),
+                    closed: (flags & 1) !== 0,
+                    flags: flags
+                };
+            }
+            case 'LEADER': {
+                const leaderPoints = [];
+                let lpCurrent = null;
+                tags.list.forEach(tag => {
+                    if (tag.code === 10) {
+                        if (lpCurrent) leaderPoints.push(lpCurrent);
+                        lpCurrent = { x: parseNumber(tag.value), y: 0 };
+                    } else if (tag.code === 20 && lpCurrent) {
+                        lpCurrent.y = parseNumber(tag.value);
+                    }
+                });
+                if (lpCurrent) leaderPoints.push(lpCurrent);
+                if (leaderPoints.length < 2) return null;
+                return {
+                    type: 'leader',
+                    layer,
+                    ...style,
+                    points: leaderPoints,
+                    text: tags[3] || '',
+                    height: parseNumber(tags[40], 0)
+                };
+            }
+            case 'SOLID':
+            case '3DFACE': {
+                // 4 corner points: 10/20, 11/21, 12/22, 13/23
+                const solidPoints = [];
+                for (const [xCode, yCode] of [[10,20],[11,21],[12,22],[13,23]]) {
+                    if (tags[xCode] !== undefined) {
+                        solidPoints.push({
+                            x: parseNumber(tags[xCode]),
+                            y: parseNumber(tags[yCode])
+                        });
+                    }
+                }
+                if (solidPoints.length < 3) return null;
+                return {
+                    type: 'solid',
+                    layer,
+                    ...style,
+                    points: solidPoints
+                };
+            }
+            case 'DIMENSION': {
+                const dimType = parseIntValue(tags[70]) & 0x07; // Low 3 bits = dim type
+                return {
+                    type: 'dimension',
+                    layer,
+                    ...style,
+                    dimType: dimType,
+                    // Definition point (10/20)
+                    defPoint: { x: parseNumber(tags[10]), y: parseNumber(tags[20]) },
+                    // Middle point of dimension text (11/21)
+                    textMid: { x: parseNumber(tags[11]), y: parseNumber(tags[21]) },
+                    // First extension line origin (13/23)
+                    ext1: { x: parseNumber(tags[13]), y: parseNumber(tags[23]) },
+                    // Second extension line origin (14/24)
+                    ext2: { x: parseNumber(tags[14]), y: parseNumber(tags[24]) },
+                    // Rotation angle for linear dims (code 50)
+                    rotation: parseNumber(tags[50]),
+                    // Dimension text override (code 1)
+                    text: tags[1] || '',
+                    // Block name for rendered graphics (code 2)
+                    blockName: tags[2] || '',
+                    // Dimension style (code 3)
+                    dimStyle: tags[3] || 'STANDARD'
                 };
             }
             case 'INSERT': {
@@ -217,17 +502,17 @@ const DXF = (() => {
                 return {
                     type: 'insert',
                     layer,
-                    // 2 = block name, 10/20/30 = insertion point, 41/42 = scale, 50 = rotation
+                    ...style,
                     blockName: tags[2] || '',
-                    insertPoint: { x: parseNumber(tags[10]), y: parseNumber(tags[20]), z: parseNumber(tags[30]) },
+                    p: { x: parseNumber(tags[10]), y: parseNumber(tags[20]), z: parseNumber(tags[30]) },
                     scale: { x: scaleX || 1, y: scaleY || 1 },
-                    rotation: parseNumber(tags[50], 0) * (Math.PI / 180)
+                    // Rotation in DEGREES (raw DXF value)
+                    rotation: parseNumber(tags[50], 0)
                 };
             }
             case 'HATCH': {
                 const edges = [];
                 let loopCount = 0;
-                let edgeCount = 0;
                 let solid = 0;
                 for (let i = 0; i < tags.list.length; i++) {
                     const tag = tags.list[i];
@@ -238,7 +523,7 @@ const DXF = (() => {
                         solid = parseIntValue(tag.value, 0);
                     }
                     if (tag.code === 93) {
-                        edgeCount = parseIntValue(tag.value, 0);
+                        let edgeCount = parseIntValue(tag.value, 0);
                         let edgesParsed = 0;
                         for (let j = i + 1; j < tags.list.length && edgesParsed < edgeCount; j++) {
                             const edgeTag = tags.list[j];
@@ -248,7 +533,7 @@ const DXF = (() => {
                                     const edge = { type: 'line', start: { x: 0, y: 0 }, end: { x: 0, y: 0 } };
                                     for (let k = j + 1; k < tags.list.length; k++) {
                                         const dataTag = tags.list[k];
-                                        if (dataTag.code === 72) {
+                                        if (dataTag.code === 72 || dataTag.code === 97 || dataTag.code === 75) {
                                             j = k - 1;
                                             break;
                                         }
@@ -263,15 +548,16 @@ const DXF = (() => {
                                     const edge = { type: 'arc', center: { x: 0, y: 0 }, radius: 0, start: 0, end: 0, ccw: true };
                                     for (let k = j + 1; k < tags.list.length; k++) {
                                         const dataTag = tags.list[k];
-                                        if (dataTag.code === 72) {
+                                        if (dataTag.code === 72 || dataTag.code === 97 || dataTag.code === 75) {
                                             j = k - 1;
                                             break;
                                         }
                                         if (dataTag.code === 10) edge.center.x = parseNumber(dataTag.value);
                                         if (dataTag.code === 20) edge.center.y = parseNumber(dataTag.value);
                                         if (dataTag.code === 40) edge.radius = parseNumber(dataTag.value);
-                                        if (dataTag.code === 50) edge.start = parseNumber(dataTag.value) * (Math.PI / 180);
-                                        if (dataTag.code === 51) edge.end = parseNumber(dataTag.value) * (Math.PI / 180);
+                                        // Hatch edge arc angles in DEGREES
+                                        if (dataTag.code === 50) edge.start = parseNumber(dataTag.value);
+                                        if (dataTag.code === 51) edge.end = parseNumber(dataTag.value);
                                         if (dataTag.code === 73) edge.ccw = parseIntValue(dataTag.value, 1) === 1;
                                     }
                                     edges.push(edge);
@@ -281,16 +567,49 @@ const DXF = (() => {
                         }
                     }
                 }
+
+                // Also try to extract polyline boundary (code 10/20 pairs in sequence)
+                const boundaryPoints = [];
+                let hasBoundaryFlag = false;
+                for (let i = 0; i < tags.list.length; i++) {
+                    if (tags.list[i].code === 92) {
+                        const bType = parseIntValue(tags.list[i].value);
+                        if ((bType & 2) !== 0) hasBoundaryFlag = true; // polyline boundary
+                    }
+                }
+                if (hasBoundaryFlag || edges.length === 0) {
+                    // Collect all 10/20 pairs that are boundary vertices
+                    let inBoundary = false;
+                    for (let i = 0; i < tags.list.length; i++) {
+                        const t = tags.list[i];
+                        if (t.code === 92) {
+                            inBoundary = true;
+                            continue;
+                        }
+                        if (t.code === 75 || t.code === 76 || t.code === 97) {
+                            inBoundary = false;
+                        }
+                        if (inBoundary && t.code === 10) {
+                            const pt = { x: parseNumber(t.value), y: 0 };
+                            if (i + 1 < tags.list.length && tags.list[i + 1].code === 20) {
+                                pt.y = parseNumber(tags.list[i + 1].value);
+                            }
+                            boundaryPoints.push(pt);
+                        }
+                    }
+                }
+
                 return {
                     type: 'hatch',
                     layer,
-                    // 2 = pattern name, 91 = loop count, 41 = scale, 52 = angle
+                    ...style,
                     pattern: tags[2] || 'ANSI31',
                     loopCount,
                     solid,
                     scale: parseNumber(tags[41], 1),
                     angle: parseNumber(tags[52], 0),
-                    boundary: edges
+                    boundary: edges.length > 0 ? edges : undefined,
+                    boundaryPoints: boundaryPoints.length >= 3 ? boundaryPoints : undefined
                 };
             }
             default:
@@ -315,17 +634,41 @@ const DXF = (() => {
                     z: parseNumber(blockTags[30])
                 };
                 const entities = [];
+                let polylineHeader = null;
                 while (reader.peek()) {
                     const inner = reader.peek();
                     if (inner.code === 0 && inner.value === 'ENDBLK') {
                         reader.next();
+                        // consume ENDBLK tags
+                        while (reader.peek() && reader.peek().code !== 0) reader.next();
                         break;
                     }
                     if (inner.code === 0) {
                         const entityType = reader.next().value;
-                        const entity = parseEntity(entityType, reader);
-                        if (entity) {
-                            entities.push(entity);
+                        if (entityType === 'VERTEX' && polylineHeader) {
+                            const vtags = parseEntityTags(reader);
+                            const vx = parseNumber(vtags[10]);
+                            const vy = parseNumber(vtags[20]);
+                            polylineHeader.points.push({ x: vx, y: vy, bulge: parseNumber(vtags[42]) });
+                        } else if (entityType === 'SEQEND' && polylineHeader) {
+                            parseEntityTags(reader); // consume SEQEND tags
+                            entities.push(polylineHeader);
+                            polylineHeader = null;
+                        } else {
+                            const entity = parseEntity(entityType, reader);
+                            if (entity) {
+                                if (entity.type === 'polyline_header') {
+                                    polylineHeader = {
+                                        type: 'polyline',
+                                        layer: entity.layer,
+                                        points: [],
+                                        closed: entity.closed,
+                                        ...getEntityStyle({ list: [] })
+                                    };
+                                } else {
+                                    entities.push(entity);
+                                }
+                            }
                         }
                     } else {
                         reader.next();
@@ -343,6 +686,7 @@ const DXF = (() => {
     };
 
     const parseEntities = (reader, data) => {
+        let polylineHeader = null;
         while (reader.peek()) {
             const peek = reader.peek();
             if (peek.code === 0 && peek.value === 'ENDSEC') {
@@ -351,9 +695,33 @@ const DXF = (() => {
             }
             if (peek.code === 0) {
                 const type = reader.next().value;
-                const entity = parseEntity(type, reader);
-                if (entity) {
-                    data.entities.push(entity);
+                // Handle old-style POLYLINE/VERTEX/SEQEND
+                if (type === 'VERTEX' && polylineHeader) {
+                    const vtags = parseEntityTags(reader);
+                    const vx = parseNumber(vtags[10]);
+                    const vy = parseNumber(vtags[20]);
+                    polylineHeader.points.push({ x: vx, y: vy, bulge: parseNumber(vtags[42]) });
+                } else if (type === 'SEQEND' && polylineHeader) {
+                    parseEntityTags(reader); // consume SEQEND tags
+                    data.entities.push(polylineHeader);
+                    polylineHeader = null;
+                } else {
+                    const entity = parseEntity(type, reader);
+                    if (entity) {
+                        if (entity.type === 'polyline_header') {
+                            polylineHeader = {
+                                type: 'polyline',
+                                layer: entity.layer,
+                                points: [],
+                                closed: entity.closed
+                            };
+                            if (entity.lineType) polylineHeader.lineType = entity.lineType;
+                            if (entity.trueColor) polylineHeader.trueColor = entity.trueColor;
+                            if (entity.aciColor) polylineHeader.aciColor = entity.aciColor;
+                        } else {
+                            data.entities.push(entity);
+                        }
+                    }
                 }
             } else {
                 reader.next();
@@ -401,8 +769,47 @@ const DXF = (() => {
         return data;
     };
 
-    const writeTables = (out, layers = []) => {
+    // ==========================================
+    // EXPORT - All write functions convert from
+    // CAD internal (Y-down, radians) to DXF (Y-up, degrees)
+    // ==========================================
+
+    const writeColor = (out, entity) => {
+        // Write ACI color (code 62) and/or true color (code 420)
+        const color = entity.color;
+        if (color && typeof color === 'string' && color.startsWith('#')) {
+            out.push('420', String(hexToInt(color)));
+        }
+    };
+
+    const writeLinetype = (out, entity) => {
+        if (entity.lineType && entity.lineType !== 'continuous') {
+            out.push('6', entity.lineType.toUpperCase());
+        }
+    };
+
+    const writeCommonStyle = (out, entity) => {
+        writeColor(out, entity);
+        writeLinetype(out, entity);
+    };
+
+    const writeTables = (out, layers = [], state = null) => {
         out.push('0', 'SECTION', '2', 'TABLES');
+
+        // LTYPE table - write standard linetypes
+        out.push('0', 'TABLE', '2', 'LTYPE', '70', '4');
+        // ByBlock
+        out.push('0', 'LTYPE', '2', 'BYBLOCK', '70', '0', '3', '', '72', '65', '73', '0', '40', '0.0');
+        // ByLayer
+        out.push('0', 'LTYPE', '2', 'BYLAYER', '70', '0', '3', '', '72', '65', '73', '0', '40', '0.0');
+        // Continuous
+        out.push('0', 'LTYPE', '2', 'CONTINUOUS', '70', '0', '3', 'Solid line', '72', '65', '73', '0', '40', '0.0');
+        // Dashed
+        out.push('0', 'LTYPE', '2', 'DASHED', '70', '0', '3', '__ __ __ __', '72', '65', '73', '2', '40', '0.75');
+        out.push('49', '0.5', '74', '0', '49', '-0.25', '74', '0');
+        out.push('0', 'ENDTAB');
+
+        // LAYER table
         out.push('0', 'TABLE', '2', 'LAYER', '70', String(layers.length || 1));
         const layerList = layers.length ? layers : [{ name: '0', color: 7, visible: true, frozen: false, locked: false }];
         layerList.forEach(layer => {
@@ -411,37 +818,60 @@ const DXF = (() => {
             out.push('0', 'LAYER');
             out.push('2', layer.name || '0');
             out.push('70', String(flags));
-            out.push('62', String(color));
-            out.push('6', 'CONTINUOUS');
+            out.push('62', String(layer.visible === false ? -Math.abs(color) : color));
+            out.push('6', layer.lineType || 'CONTINUOUS');
+            if (layer.lineWeight !== undefined && layer.lineWeight !== 'Default') {
+                const lw = typeof layer.lineWeight === 'number' ? layer.lineWeight : -1;
+                out.push('370', String(lw));
+            }
         });
         out.push('0', 'ENDTAB');
+
+        // STYLE table (text styles)
+        out.push('0', 'TABLE', '2', 'STYLE', '70', '1');
+        out.push('0', 'STYLE', '2', 'STANDARD', '70', '0', '40', '0.0', '41', '1.0', '3', 'txt');
+        out.push('0', 'ENDTAB');
+
+        // DIMSTYLE table
+        out.push('0', 'TABLE', '2', 'DIMSTYLE', '70', '1');
+        out.push('0', 'DIMSTYLE', '2', 'STANDARD', '70', '0');
+        out.push('40', '1.0');   // DIMSCALE
+        out.push('140', '2.5');  // DIMTXT
+        out.push('41', '2.5');   // DIMASZ (arrow size)
+        out.push('0', 'ENDTAB');
+
         out.push('0', 'ENDSEC');
     };
+
+    // Y-flip helper: negate Y for export
+    const fy = (y) => -(y || 0);
 
     const writeEntityLine = (out, entity) => {
         out.push('0', 'LINE');
         out.push('8', entity.layer || '0');
-        // 10/20/30 = start X/Y/Z, 11/21/31 = end X/Y/Z
-        out.push('10', formatNumber(entity.p1?.x), '20', formatNumber(entity.p1?.y), '30', formatNumber(entity.p1?.z || 0));
-        out.push('11', formatNumber(entity.p2?.x), '21', formatNumber(entity.p2?.y), '31', formatNumber(entity.p2?.z || 0));
+        writeCommonStyle(out, entity);
+        out.push('10', formatNumber(entity.p1?.x), '20', formatNumber(fy(entity.p1?.y)), '30', formatNumber(entity.p1?.z || 0));
+        out.push('11', formatNumber(entity.p2?.x), '21', formatNumber(fy(entity.p2?.y)), '31', formatNumber(entity.p2?.z || 0));
     };
 
     const writeEntityCircle = (out, entity) => {
         out.push('0', 'CIRCLE');
         out.push('8', entity.layer || '0');
-        // 10/20/30 = center X/Y/Z, 40 = radius
-        out.push('10', formatNumber(entity.center?.x), '20', formatNumber(entity.center?.y), '30', formatNumber(entity.center?.z || 0));
+        writeCommonStyle(out, entity);
+        out.push('10', formatNumber(entity.center?.x), '20', formatNumber(fy(entity.center?.y)), '30', formatNumber(entity.center?.z || 0));
         out.push('40', formatNumber(entity.r || 0));
     };
 
     const writeEntityArc = (out, entity) => {
         out.push('0', 'ARC');
         out.push('8', entity.layer || '0');
-        // 10/20/30 = center X/Y/Z, 40 = radius, 50/51 = start/end angles
-        out.push('10', formatNumber(entity.center?.x), '20', formatNumber(entity.center?.y), '30', formatNumber(entity.center?.z || 0));
+        writeCommonStyle(out, entity);
+        out.push('10', formatNumber(entity.center?.x), '20', formatNumber(fy(entity.center?.y)), '30', formatNumber(entity.center?.z || 0));
         out.push('40', formatNumber(entity.r || 0));
-        out.push('50', formatNumber((entity.start || 0) * (180 / Math.PI)));
-        out.push('51', formatNumber((entity.end || 0) * (180 / Math.PI)));
+        // Convert internal radians to DXF degrees with Y-flip:
+        // Swap start/end and negate to reverse the Y-flip transformation
+        out.push('50', formatNumber(-(entity.end || 0) * RAD2DEG));
+        out.push('51', formatNumber(-(entity.start || 0) * RAD2DEG));
     };
 
     const writeEntityLwPolyline = (out, entity) => {
@@ -449,18 +879,18 @@ const DXF = (() => {
         const closedFlag = entity.closed ? 1 : 0;
         out.push('0', 'LWPOLYLINE');
         out.push('8', entity.layer || '0');
-        // 90 = vertex count, 70 = closed flag
+        writeCommonStyle(out, entity);
         out.push('90', String(points.length));
         out.push('70', String(closedFlag));
         points.forEach(point => {
-            // 10/20/30 = vertex X/Y/Z, 42 = bulge
             out.push('10', formatNumber(point.x));
-            out.push('20', formatNumber(point.y));
+            out.push('20', formatNumber(fy(point.y)));
             if (point.z !== undefined) {
                 out.push('30', formatNumber(point.z));
             }
             if (point.bulge) {
-                out.push('42', formatNumber(point.bulge));
+                // Negate bulge to compensate for Y-flip
+                out.push('42', formatNumber(-point.bulge));
             }
         });
     };
@@ -468,25 +898,112 @@ const DXF = (() => {
     const writeEntityText = (out, entity, isMText = false) => {
         out.push('0', isMText ? 'MTEXT' : 'TEXT');
         out.push('8', entity.layer || '0');
-        // 10/20/30 = insertion X/Y/Z, 40 = height, 1 = text, 50 = rotation
+        writeCommonStyle(out, entity);
         const pos = entity.position || { x: 0, y: 0 };
-        out.push('10', formatNumber(pos.x), '20', formatNumber(pos.y), '30', formatNumber(pos.z || 0));
+        out.push('10', formatNumber(pos.x), '20', formatNumber(fy(pos.y)), '30', formatNumber(pos.z || 0));
         out.push('40', formatNumber(entity.height || 0));
         out.push('1', entity.text || '');
         if (entity.rotation) {
-            out.push('50', formatNumber(entity.rotation * (180 / Math.PI)));
+            // Negate rotation for Y-flip (internal CCW in Y-down → CCW in Y-up)
+            out.push('50', formatNumber(-(entity.rotation || 0) * RAD2DEG));
         }
+        if (isMText && entity.width) {
+            out.push('41', formatNumber(entity.width));
+        }
+    };
+
+    const writeEntityPoint = (out, entity) => {
+        out.push('0', 'POINT');
+        out.push('8', entity.layer || '0');
+        writeCommonStyle(out, entity);
+        const pos = entity.position || { x: 0, y: 0 };
+        out.push('10', formatNumber(pos.x), '20', formatNumber(fy(pos.y)), '30', '0.0');
+    };
+
+    const writeEntityEllipse = (out, entity) => {
+        out.push('0', 'ELLIPSE');
+        out.push('8', entity.layer || '0');
+        writeCommonStyle(out, entity);
+        out.push('10', formatNumber(entity.center?.x), '20', formatNumber(fy(entity.center?.y)), '30', '0.0');
+        // Major axis endpoint relative to center
+        const rx = entity.rx || 0;
+        const ry = entity.ry || 0;
+        const rot = -(entity.rotation || 0); // Negate for Y-flip
+        const majorX = rx * Math.cos(rot);
+        const majorY = rx * Math.sin(rot);
+        out.push('11', formatNumber(majorX), '21', formatNumber(majorY), '31', '0.0');
+        // Ratio of minor to major
+        const ratio = rx > 0 ? ry / rx : 1;
+        out.push('40', formatNumber(ratio));
+        out.push('41', '0.0');                          // start parameter
+        out.push('42', formatNumber(Math.PI * 2));      // end parameter (full ellipse)
+    };
+
+    const writeEntitySpline = (out, entity) => {
+        const points = entity.points || [];
+        if (points.length < 2) return;
+        const isSpline = entity.isSpline;
+        const degree = 3;
+        const closed = entity.closed ? 1 : 0;
+
+        out.push('0', 'SPLINE');
+        out.push('8', entity.layer || '0');
+        writeCommonStyle(out, entity);
+        out.push('70', String(closed ? 11 : 8)); // flags: 8=planar, 1=closed, 2=periodic
+        out.push('71', String(degree));
+
+        // Use points as fit points
+        const numFit = points.length;
+        // For fit point spline, generate clamped knots
+        const numKnots = numFit + degree + 1;
+        out.push('72', String(numKnots));
+        out.push('73', '0'); // 0 control points (fit point spline)
+        out.push('74', String(numFit));
+
+        // Knot values - clamped uniform
+        for (let i = 0; i < degree + 1; i++) {
+            out.push('40', '0.0');
+        }
+        for (let i = 1; i < numFit - degree; i++) {
+            out.push('40', formatNumber(i));
+        }
+        for (let i = 0; i < degree + 1; i++) {
+            out.push('40', formatNumber(Math.max(1, numFit - degree)));
+        }
+
+        // Fit points (code 11/21/31)
+        points.forEach(pt => {
+            out.push('11', formatNumber(pt.x), '21', formatNumber(fy(pt.y)), '31', '0.0');
+        });
+    };
+
+    const writeEntityLeader = (out, entity) => {
+        const points = entity.points || [];
+        if (points.length < 2) return;
+        out.push('0', 'LEADER');
+        out.push('8', entity.layer || '0');
+        writeCommonStyle(out, entity);
+        out.push('3', 'STANDARD'); // dimension style name
+        out.push('71', '1');  // arrowhead flag
+        out.push('72', '0');  // leader path type (straight)
+        out.push('73', '0');  // leader creation flag
+        out.push('76', String(points.length));
+        points.forEach(pt => {
+            out.push('10', formatNumber(pt.x), '20', formatNumber(fy(pt.y)), '30', '0.0');
+        });
     };
 
     const writeEntityInsert = (out, entity) => {
         const insertPoint = entity.insertPoint || { x: entity.x || 0, y: entity.y || 0, z: 0 };
         const scale = entity.scale || { x: entity.scaleX ?? 1, y: entity.scaleY ?? 1 };
         const rotation = entity.rotation || 0;
-        const rotationDeg = rotation * (180 / Math.PI);
+        // Negate rotation for Y-flip
+        const rotationDeg = -rotation * RAD2DEG;
         out.push('0', 'INSERT');
         out.push('8', entity.layer || '0');
+        writeCommonStyle(out, entity);
         out.push('2', entity.blockName || '');
-        out.push('10', formatNumber(insertPoint.x), '20', formatNumber(insertPoint.y), '30', formatNumber(insertPoint.z || 0));
+        out.push('10', formatNumber(insertPoint.x), '20', formatNumber(fy(insertPoint.y)), '30', formatNumber(insertPoint.z || 0));
         out.push('41', formatNumber(scale.x ?? 1));
         out.push('42', formatNumber(scale.y ?? 1));
         out.push('50', formatNumber(rotationDeg));
@@ -499,14 +1016,14 @@ const DXF = (() => {
                 return entity.boundary;
             }
             if (entity.boundary[0].x !== undefined) {
-                return Geometry?.Hatch?.getBoundaryEdges
+                return typeof Geometry !== 'undefined' && Geometry?.Hatch?.getBoundaryEdges
                     ? Geometry.Hatch.getBoundaryEdges(entity.boundary)
                     : [];
             }
         }
         if (entity.clipIds && state?.getEntity) {
             const clip = state.getEntity(entity.clipIds[0]);
-            if (clip?.points && Geometry?.Hatch?.getBoundaryEdges) {
+            if (clip?.points && typeof Geometry !== 'undefined' && Geometry?.Hatch?.getBoundaryEdges) {
                 return Geometry.Hatch.getBoundaryEdges(clip.points);
             }
         }
@@ -522,6 +1039,8 @@ const DXF = (() => {
         const angle = entity.angle || 0;
         const isSolid = entity.solid === 1 || rawPattern.toLowerCase() === 'solid';
         out.push('0', 'HATCH');
+        out.push('8', entity.layer || '0');
+        writeCommonStyle(out, entity);
         out.push('100', 'AcDbEntity');
         out.push('100', 'AcDbHatch');
         out.push('10', '0.0');
@@ -540,19 +1059,22 @@ const DXF = (() => {
             if (edge.type === 'arc') {
                 out.push('72', '2');
                 out.push('10', formatNumber(edge.center.x));
-                out.push('20', formatNumber(edge.center.y));
+                out.push('20', formatNumber(fy(edge.center.y)));
                 out.push('40', formatNumber(edge.radius ?? edge.r ?? 0));
-                out.push('50', formatNumber(edge.start || 0));
-                out.push('51', formatNumber(edge.end || 0));
+                // Edge angles are in internal radians, convert to DXF degrees with Y-flip
+                const startDeg = -(edge.end || 0) * RAD2DEG;
+                const endDeg = -(edge.start || 0) * RAD2DEG;
+                out.push('50', formatNumber(startDeg));
+                out.push('51', formatNumber(endDeg));
                 out.push('73', '1');
             } else {
                 out.push('72', '1');
                 const start = edge.start || edge.p1;
                 const end = edge.end || edge.p2;
                 out.push('10', formatNumber(start.x));
-                out.push('20', formatNumber(start.y));
+                out.push('20', formatNumber(fy(start.y)));
                 out.push('11', formatNumber(end.x));
-                out.push('21', formatNumber(end.y));
+                out.push('21', formatNumber(fy(end.y)));
             }
         });
         out.push('75', '0');
@@ -563,14 +1085,112 @@ const DXF = (() => {
         out.push('78', '0');
     };
 
+    const writeEntityDimension = (out, entity) => {
+        // Export dimension as lines + text (decomposed)
+        // This ensures broad compatibility
+        const layer = entity.layer || '0';
+
+        if (entity.dimType === 'linear' || entity.dimType === 'aligned') {
+            const p1 = entity.p1 || entity.start;
+            const p2 = entity.p2 || entity.end;
+            if (!p1 || !p2) return;
+
+            // Extension lines
+            out.push('0', 'LINE');
+            out.push('8', layer);
+            writeCommonStyle(out, entity);
+            out.push('10', formatNumber(p1.x), '20', formatNumber(fy(p1.y)), '30', '0.0');
+            const dimLineY = entity.dimLineY != null ? entity.dimLineY : (Math.min(p1.y, p2.y) - 20);
+            out.push('11', formatNumber(p1.x), '21', formatNumber(fy(dimLineY)), '31', '0.0');
+
+            out.push('0', 'LINE');
+            out.push('8', layer);
+            out.push('10', formatNumber(p2.x), '20', formatNumber(fy(p2.y)), '30', '0.0');
+            out.push('11', formatNumber(p2.x), '21', formatNumber(fy(dimLineY)), '31', '0.0');
+
+            // Dimension line
+            out.push('0', 'LINE');
+            out.push('8', layer);
+            out.push('10', formatNumber(p1.x), '20', formatNumber(fy(dimLineY)), '30', '0.0');
+            out.push('11', formatNumber(p2.x), '21', formatNumber(fy(dimLineY)), '31', '0.0');
+
+            // Text
+            if (entity.text) {
+                const midX = (p1.x + p2.x) / 2;
+                const textH = entity.textHeight || 2.5;
+                out.push('0', 'TEXT');
+                out.push('8', layer);
+                out.push('10', formatNumber(midX), '20', formatNumber(fy(dimLineY - textH * 1.5)), '30', '0.0');
+                out.push('40', formatNumber(textH));
+                out.push('1', entity.text);
+            }
+        } else if (entity.dimType === 'radius' || entity.dimType === 'diameter') {
+            const center = entity.center;
+            const textPos = entity.textPosition || entity.position;
+            if (!center || !textPos) return;
+
+            out.push('0', 'LINE');
+            out.push('8', layer);
+            writeCommonStyle(out, entity);
+            out.push('10', formatNumber(center.x), '20', formatNumber(fy(center.y)), '30', '0.0');
+            out.push('11', formatNumber(textPos.x), '21', formatNumber(fy(textPos.y)), '31', '0.0');
+
+            if (entity.text) {
+                const textH = entity.textHeight || 2.5;
+                out.push('0', 'TEXT');
+                out.push('8', layer);
+                out.push('10', formatNumber(textPos.x), '20', formatNumber(fy(textPos.y)), '30', '0.0');
+                out.push('40', formatNumber(textH));
+                out.push('1', entity.text);
+            }
+        } else if (entity.dimType === 'angular' || entity.dimType === 'arclength') {
+            const center = entity.center;
+            if (!center) return;
+            const r = entity.radius || 0;
+            const startA = entity.startAngle || 0;
+            const endA = entity.endAngle || 0;
+            const textH = entity.textHeight || 2.5;
+            const dimR = r + 15;
+
+            out.push('0', 'ARC');
+            out.push('8', layer);
+            writeCommonStyle(out, entity);
+            out.push('10', formatNumber(center.x), '20', formatNumber(fy(center.y)), '30', '0.0');
+            out.push('40', formatNumber(dimR));
+            out.push('50', formatNumber(-(endA || 0) * RAD2DEG));
+            out.push('51', formatNumber(-(startA || 0) * RAD2DEG));
+
+            if (entity.text) {
+                let sweep = endA - startA;
+                if (sweep < 0) sweep += 2 * Math.PI;
+                const midAngle = startA + sweep / 2;
+                const textR = dimR + textH;
+                out.push('0', 'TEXT');
+                out.push('8', layer);
+                out.push('10', formatNumber(center.x + textR * Math.cos(midAngle)));
+                out.push('20', formatNumber(fy(center.y + textR * Math.sin(midAngle))));
+                out.push('30', '0.0');
+                out.push('40', formatNumber(textH));
+                out.push('1', entity.text);
+            }
+        }
+    };
+
     const writeBlocksSection = (out, blocks = {}, state = null) => {
         out.push('0', 'SECTION', '2', 'BLOCKS');
+        // Required *MODEL_SPACE and *PAPER_SPACE blocks
+        out.push('0', 'BLOCK', '2', '*MODEL_SPACE', '70', '0', '10', '0.0', '20', '0.0', '30', '0.0', '3', '*MODEL_SPACE', '1', '');
+        out.push('0', 'ENDBLK');
+        out.push('0', 'BLOCK', '2', '*PAPER_SPACE', '70', '0', '10', '0.0', '20', '0.0', '30', '0.0', '3', '*PAPER_SPACE', '1', '');
+        out.push('0', 'ENDBLK');
+
         Object.values(blocks).forEach(block => {
+            if (block.name === '*MODEL_SPACE' || block.name === '*PAPER_SPACE') return;
             const basePoint = block.basePoint || block.origin || { x: 0, y: 0, z: 0 };
             out.push('0', 'BLOCK');
             out.push('2', block.name || 'BLOCK');
             out.push('70', '0');
-            out.push('10', formatNumber(basePoint.x), '20', formatNumber(basePoint.y), '30', formatNumber(basePoint.z || 0));
+            out.push('10', formatNumber(basePoint.x), '20', formatNumber(fy(basePoint.y)), '30', formatNumber(basePoint.z || 0));
             out.push('3', block.name || 'BLOCK');
             out.push('1', '');
             (block.entities || []).forEach(entity => {
@@ -594,7 +1214,11 @@ const DXF = (() => {
                 break;
             case 'lwpolyline':
             case 'polyline':
-                writeEntityLwPolyline(out, entity);
+                if (entity.isSpline && entity.points?.length >= 2) {
+                    writeEntitySpline(out, entity);
+                } else {
+                    writeEntityLwPolyline(out, entity);
+                }
                 break;
             case 'text':
                 writeEntityText(out, entity, false);
@@ -602,12 +1226,40 @@ const DXF = (() => {
             case 'mtext':
                 writeEntityText(out, entity, true);
                 break;
+            case 'point':
+                writeEntityPoint(out, entity);
+                break;
+            case 'ellipse':
+                writeEntityEllipse(out, entity);
+                break;
             case 'insert':
             case 'block':
                 writeEntityInsert(out, entity);
                 break;
             case 'hatch':
                 writeEntityHatch(out, entity, state);
+                break;
+            case 'leader':
+                writeEntityLeader(out, entity);
+                break;
+            case 'dimension':
+                writeEntityDimension(out, entity);
+                break;
+            case 'rect':
+                // Export rect as closed LWPOLYLINE
+                writeEntityLwPolyline(out, {
+                    type: 'polyline',
+                    layer: entity.layer,
+                    color: entity.color,
+                    lineType: entity.lineType,
+                    closed: true,
+                    points: [
+                        { x: entity.p1.x, y: entity.p1.y },
+                        { x: entity.p2.x, y: entity.p1.y },
+                        { x: entity.p2.x, y: entity.p2.y },
+                        { x: entity.p1.x, y: entity.p2.y }
+                    ]
+                });
                 break;
             default:
                 break;
@@ -625,11 +1277,23 @@ const DXF = (() => {
             ? { entities: stateOrEntities, layers, blocks: {} }
             : (stateOrEntities || { entities: [], layers: [], blocks: {} });
         const out = [];
+
+        // Header section with additional variables
         out.push('0', 'SECTION', '2', 'HEADER');
-        out.push('9', '$ACADVER', '1', DEFAULT_HEADER.$ACADVER);
+        out.push('9', '$ACADVER', '1', 'AC1015');
         out.push('9', '$INSUNITS', '70', String(DEFAULT_HEADER.$INSUNITS));
+        out.push('9', '$MEASUREMENT', '70', '1');   // Metric
+        out.push('9', '$LUNITS', '70', '2');         // Decimal units
+        out.push('9', '$LUPREC', '70', '4');         // 4 decimal places
+        out.push('9', '$AUNITS', '70', '0');         // Decimal degrees
+        out.push('9', '$AUPREC', '70', '2');         // 2 decimal places for angles
+        // Current layer
+        if (state.currentLayer) {
+            out.push('9', '$CLAYER', '8', state.currentLayer);
+        }
         out.push('0', 'ENDSEC');
-        writeTables(out, state.layers || []);
+
+        writeTables(out, state.layers || [], state);
         writeBlocksSection(out, state.blocks || {}, state);
         writeEntitiesSection(out, state.entities || [], state);
         out.push('0', 'EOF');

@@ -1494,12 +1494,12 @@ const Storage = {
         if (!data) return { layers: [], blocks: {}, entities: [] };
         const layers = Object.values(data.layers || {}).map(layer => ({
             name: layer.name,
-            color: this.aciToHex(layer.color ?? 7),
+            color: layer.trueColor || this.aciToHex(layer.color ?? 7),
             visible: layer.visible !== false,
             frozen: layer.frozen || false,
             locked: layer.locked || false,
-            lineType: 'Continuous',
-            lineWeight: 'Default'
+            lineType: layer.lineType || 'Continuous',
+            lineWeight: layer.lineWeight !== undefined ? String(layer.lineWeight) : 'Default'
         }));
 
         const blocks = {};
@@ -1528,6 +1528,8 @@ const Storage = {
                 return {
                     type: 'line',
                     layer: entity.layer || '0',
+                    color: entity.trueColor || undefined,
+                    lineType: entity.lineType ? entity.lineType.toLowerCase() : undefined,
                     p1: this.fromDxfPoint(entity.p1),
                     p2: this.fromDxfPoint(entity.p2)
                 };
@@ -1535,6 +1537,8 @@ const Storage = {
                 return {
                     type: 'circle',
                     layer: entity.layer || '0',
+                    color: entity.trueColor || undefined,
+                    lineType: entity.lineType ? entity.lineType.toLowerCase() : undefined,
                     center: this.fromDxfPoint(entity.center),
                     r: entity.r || 0,
                     hatch: entity.hatch || undefined,
@@ -1544,21 +1548,29 @@ const Storage = {
                 return {
                     type: 'arc',
                     layer: entity.layer || '0',
+                    color: entity.trueColor || undefined,
+                    lineType: entity.lineType ? entity.lineType.toLowerCase() : undefined,
                     center: this.fromDxfPoint(entity.center),
                     r: entity.r || 0,
-                    start: -Utils.degToRad(entity.start || 0),
-                    end: -Utils.degToRad(entity.end || 0)
+                    // Swap start/end and negate for Y-flip
+                    // DXF angles are in degrees from dxf.js
+                    start: -Utils.degToRad(entity.end || 0),
+                    end: -Utils.degToRad(entity.start || 0)
                 };
-            case 'lwpolyline': {
+            case 'lwpolyline':
+            case 'polyline': {
                 const points = (entity.points || []).map(point => ({
                     x: point.x || 0,
                     y: -(point.y || 0)
                 }));
-                const bulges = (entity.points || []).map(point => point.bulge || 0);
+                // Negate bulge values to compensate for Y-flip
+                const bulges = (entity.points || []).map(point => -(point.bulge || 0));
                 const resolvedPoints = this.expandBulgePolyline(points, bulges, entity.closed);
                 return {
                     type: 'polyline',
                     layer: entity.layer || '0',
+                    color: entity.trueColor || undefined,
+                    lineType: entity.lineType ? entity.lineType.toLowerCase() : undefined,
                     points: resolvedPoints,
                     closed: entity.closed || false
                 };
@@ -1571,95 +1583,161 @@ const Storage = {
                 return {
                     type: 'polyline',
                     layer: entity.layer || '0',
+                    color: entity.trueColor || undefined,
+                    lineType: entity.lineType ? entity.lineType.toLowerCase() : undefined,
                     points,
                     isSpline: true,
-                    closed: false
+                    closed: entity.closed || false
                 };
             }
             case 'ellipse':
                 return {
                     type: 'ellipse',
                     layer: entity.layer || '0',
+                    color: entity.trueColor || undefined,
+                    lineType: entity.lineType ? entity.lineType.toLowerCase() : undefined,
                     center: this.fromDxfPoint(entity.center),
                     rx: entity.rx || 0,
                     ry: entity.ry || 0,
-                    rotation: entity.rotation || 0
+                    // Rotation is derived from geometry in dxf.js (radians), negate for Y-flip
+                    rotation: -(entity.rotation || 0)
                 };
             case 'text':
                 return {
                     type: 'text',
                     layer: entity.layer || '0',
-                    position: this.fromDxfPoint(entity.point),
-                    text: entity.text || '',
+                    color: entity.trueColor || undefined,
+                    position: this.fromDxfPoint(entity.position || entity.point),
+                    text: (entity.text || '').replace(/\\P/g, '\n'),
                     height: entity.height || 10,
-                    rotation: entity.rotation || 0
+                    // Rotation from dxf.js is in degrees, convert + negate for Y-flip
+                    rotation: -Utils.degToRad(entity.rotation || 0)
                 };
             case 'mtext':
                 return {
                     type: 'mtext',
                     layer: entity.layer || '0',
-                    position: this.fromDxfPoint(entity.point),
-                    text: entity.text || '',
+                    color: entity.trueColor || undefined,
+                    position: this.fromDxfPoint(entity.position || entity.point),
+                    text: (entity.text || '').replace(/\\P/g, '\n'),
                     height: entity.height || 10,
                     width: entity.width || 0,
-                    rotation: entity.rotation || 0
+                    // Rotation from dxf.js is in degrees, convert + negate for Y-flip
+                    rotation: -Utils.degToRad(entity.rotation || 0)
                 };
             case 'point':
                 return {
                     type: 'point',
                     layer: entity.layer || '0',
-                    position: this.fromDxfPoint(entity.point)
+                    color: entity.trueColor || undefined,
+                    position: this.fromDxfPoint(entity.point || entity.position)
                 };
             case 'insert': {
                 return {
                     type: 'block',
                     layer: entity.layer || '0',
+                    color: entity.trueColor || undefined,
                     blockName: entity.blockName || 'UNNAMED',
-                    insertPoint: this.fromDxfPoint(entity.p),
+                    insertPoint: this.fromDxfPoint(entity.p || entity.insertPoint),
                     scale: {
                         x: entity.scale?.x ?? 1,
                         y: entity.scale?.y ?? 1
                     },
+                    // Rotation from dxf.js is in degrees, convert + negate for Y-flip
                     rotation: -Utils.degToRad(entity.rotation || 0)
                 };
             }
             case 'hatch': {
-                const points = (entity.points || []).map(point => ({
-                    x: point.x || 0,
-                    y: -(point.y || 0)
-                }));
-                return {
-                    type: 'polyline',
+                // Extract boundary points from edges or boundaryPoints
+                let hatchPoints = [];
+                if (entity.boundaryPoints && entity.boundaryPoints.length >= 3) {
+                    hatchPoints = entity.boundaryPoints.map(p => ({
+                        x: p.x || 0,
+                        y: -(p.y || 0)
+                    }));
+                } else if (entity.boundary && entity.boundary.length > 0) {
+                    // Extract points from edge definitions
+                    entity.boundary.forEach(edge => {
+                        if (edge.type === 'line') {
+                            hatchPoints.push({
+                                x: edge.start.x,
+                                y: -(edge.start.y || 0)
+                            });
+                        } else if (edge.type === 'arc') {
+                            // Tessellate arc edges into points
+                            const cx = edge.center.x;
+                            const cy = edge.center.y;
+                            const r = edge.radius || 0;
+                            const startDeg = edge.start || 0;
+                            const endDeg = edge.end || 360;
+                            let sweep = endDeg - startDeg;
+                            if (sweep <= 0) sweep += 360;
+                            const steps = Math.max(8, Math.ceil(sweep / 10));
+                            for (let i = 0; i <= steps; i++) {
+                                const a = (startDeg + (sweep * i / steps)) * (Math.PI / 180);
+                                hatchPoints.push({
+                                    x: cx + r * Math.cos(a),
+                                    y: -(cy + r * Math.sin(a))
+                                });
+                            }
+                        }
+                    });
+                } else if (entity.points) {
+                    hatchPoints = (entity.points || []).map(p => ({
+                        x: p.x || 0,
+                        y: -(p.y || 0)
+                    }));
+                }
+
+                if (hatchPoints.length < 3) {
+                    return null;
+                }
+
+                const isSolid = entity.solid === 1 || (entity.pattern || '').toLowerCase() === 'solid';
+                const patternName = isSolid ? 'solid' : (entity.pattern || 'ansi31').toLowerCase();
+
+                // Create proper hatch entity
+                const hatchEntity = {
+                    type: 'hatch',
                     layer: entity.layer || '0',
-                    points,
-                    closed: true,
-                    hatch: { pattern: entity.pattern || 'solid' },
-                    noStroke: true
+                    color: entity.trueColor || undefined,
+                    hatch: { pattern: patternName },
+                    boundary: hatchPoints,
+                    patternName: patternName,
+                    scale: entity.scale || 1,
+                    angle: entity.angle || 0,
+                    renderLines: [],
+                    clipIds: []
                 };
+
+                return hatchEntity;
             }
             case 'solid': {
-                const points = (entity.points || []).map(point => ({
+                const solidPts = (entity.points || []).map(point => ({
                     x: point.x || 0,
                     y: -(point.y || 0)
                 }));
                 return {
                     type: 'polyline',
                     layer: entity.layer || '0',
-                    points,
+                    color: entity.trueColor || undefined,
+                    points: solidPts,
                     closed: true,
                     hatch: { pattern: 'solid' },
                     noStroke: true
                 };
             }
             case 'leader': {
-                const points = (entity.points || []).map(point => ({
+                const leaderPts = (entity.points || []).map(point => ({
                     x: point.x || 0,
                     y: -(point.y || 0)
                 }));
+                if (leaderPts.length < 2) return null;
                 const leader = {
                     type: 'leader',
                     layer: entity.layer || '0',
-                    points
+                    color: entity.trueColor || undefined,
+                    points: leaderPts
                 };
                 if (entity.text) {
                     leader.text = entity.text;
@@ -1668,6 +1746,33 @@ const Storage = {
                     leader.height = entity.height;
                 }
                 return leader;
+            }
+            case 'dimension': {
+                // Convert DXF dimension to internal representation
+                // DXF dim types: 0=linear, 1=aligned, 2=angular, 3=diameter, 4=radius
+                const dimTypeMap = { 0: 'linear', 1: 'aligned', 2: 'angular', 3: 'diameter', 4: 'radius', 5: 'angular', 6: 'ordinate' };
+                const dimTypeName = dimTypeMap[entity.dimType] || 'linear';
+                const dim = {
+                    type: 'dimension',
+                    layer: entity.layer || '0',
+                    color: entity.trueColor || undefined,
+                    dimType: dimTypeName,
+                    text: entity.text || ''
+                };
+                if (dimTypeName === 'linear' || dimTypeName === 'aligned') {
+                    dim.p1 = this.fromDxfPoint(entity.ext1);
+                    dim.p2 = this.fromDxfPoint(entity.ext2);
+                    dim.textPosition = this.fromDxfPoint(entity.textMid);
+                } else if (dimTypeName === 'radius' || dimTypeName === 'diameter') {
+                    dim.center = this.fromDxfPoint(entity.defPoint);
+                    dim.textPosition = this.fromDxfPoint(entity.textMid);
+                } else if (dimTypeName === 'angular') {
+                    dim.center = this.fromDxfPoint(entity.defPoint);
+                    dim.p1 = this.fromDxfPoint(entity.ext1);
+                    dim.p2 = this.fromDxfPoint(entity.ext2);
+                    dim.textPosition = this.fromDxfPoint(entity.textMid);
+                }
+                return dim;
             }
             case 'xref': {
                 const blockName = this.getXrefBlockName(entity);
@@ -2274,7 +2379,8 @@ const Storage = {
                 const vy = parseFloat(vertexData[20]);
                 if (!isNaN(vx) && !isNaN(vy)) {
                     points.push({ x: vx, y: -vy });
-                    bulges.push(parseFloat(vertexData[42]) || 0);
+                    // Negate bulge to compensate for Y-flip
+                    bulges.push(-(parseFloat(vertexData[42]) || 0));
                 }
             }
 
@@ -2310,7 +2416,8 @@ const Storage = {
                 x: parseFloat(xCoords[j]) || 0,
                 y: -(parseFloat(yCoords[j]) || 0)
             });
-            bulges.push(parseFloat(bulgeValues[j]) || 0);
+            // Negate bulge to compensate for Y-flip
+            bulges.push(-(parseFloat(bulgeValues[j]) || 0));
         }
 
         // Check closed flag (group code 70, bit 1)
