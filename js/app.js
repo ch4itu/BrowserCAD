@@ -830,11 +830,18 @@ const MobileUI = {
             actions.push({ label: 'Close', value: 'C' });
             actions.push({ label: 'Undo', value: 'U' });
         } else if (cmd === 'hatch') {
-            actions.push({ label: 'Solid', value: 'solid' });
-            actions.push({ label: 'Angle', value: 'angle' });
-            actions.push({ label: 'Cross', value: 'cross' });
-            actions.push({ label: 'Dots', value: 'dots' });
-            actions.push({ label: 'List', value: 'list' });
+            const hatchPatterns = (typeof Commands !== 'undefined' && Commands.hatchPatterns)
+                ? Commands.hatchPatterns
+                : ['solid', 'diagonal', 'cross', 'dots', 'angle'];
+            hatchPatterns.forEach(pattern => {
+                let label = pattern;
+                if (pattern.startsWith('ansi')) {
+                    label = pattern.toUpperCase();
+                } else {
+                    label = pattern.charAt(0).toUpperCase() + pattern.slice(1);
+                }
+                actions.push({ label, value: pattern });
+            });
         }
 
         this._els.subActions.innerHTML = '';
