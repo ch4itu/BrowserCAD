@@ -44,6 +44,38 @@ const DXF = (() => {
         return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
     };
 
+    // Parse DXF tolerance string into frames array
+    const parseTolString = (str) => {
+        if (!str) return [{ symbol: '', tolerance1: '', datum1: '', datum2: '', datum3: '' }];
+        const frames = [];
+        const parts = str.split('%%v');
+        let frame = { symbol: '', tolerance1: '', datum1: '', datum2: '', datum3: '' };
+        let fieldIdx = 0;
+        for (const part of parts) {
+            const cleaned = part.replace(/%%c/g, '');
+            if (fieldIdx === 0) {
+                // First part may contain symbol + tolerance
+                const match = cleaned.match(/^([^\d]*)(.*)$/);
+                if (match) {
+                    frame.symbol = match[1] || '';
+                    frame.tolerance1 = match[2] || '';
+                }
+                frame.diameterSymbol = part.includes('%%c');
+            } else if (fieldIdx === 1) frame.datum1 = cleaned;
+            else if (fieldIdx === 2) frame.datum2 = cleaned;
+            else if (fieldIdx === 3) {
+                frame.datum3 = cleaned;
+                frames.push(frame);
+                frame = { symbol: '', tolerance1: '', datum1: '', datum2: '', datum3: '' };
+                fieldIdx = -1;
+            }
+            fieldIdx++;
+        }
+        if (frame.symbol || frame.tolerance1 || frame.datum1) frames.push(frame);
+        if (frames.length === 0) frames.push({ symbol: '', tolerance1: str, datum1: '', datum2: '', datum3: '' });
+        return frames;
+    };
+
     // Convert #RRGGBB hex to 24-bit RGB integer
     const hexToInt = (hex) => {
         if (!hex || typeof hex !== 'string') return 0;
@@ -611,6 +643,104 @@ const DXF = (() => {
                     angle: parseNumber(tags[52], 0),
                     boundary: edges.length > 0 ? edges : undefined,
                     boundaryPoints: boundaryPoints.length >= 3 ? boundaryPoints : undefined
+                };
+            }
+            case 'TOLERANCE': {
+                return {
+                    type: 'tolerance',
+                    layer,
+                    ...style,
+                    position: {
+                        x: parseNumber(tags[10] || 0),
+                        y: parseNumber(tags[20] || 0)
+                    },
+                    height: parseNumber(tags[40] || 5),
+                    frames: parseTolString(tags[1] || '')
+                };
+            }
+            case 'ATTDEF': {
+                return {
+                    type: 'attdef',
+                    layer,
+                    ...style,
+                    position: {
+                        x: parseNumber(tags[10] || 0),
+                        y: parseNumber(tags[20] || 0)
+                    },
+                    height: parseNumber(tags[40] || 2.5),
+                    rotation: parseNumber(tags[50] || 0) * Math.PI / 180,
+                    tag: tags[2] || '',
+                    prompt: tags[3] || '',
+                    defaultValue: tags[1] || '',
+                    flags: parseInt(tags[70] || '0')
+                };
+            }
+            case 'ATTRIB': {
+                return {
+                    type: 'attrib',
+                    layer,
+                    ...style,
+                    position: {
+                        x: parseNumber(tags[10] || 0),
+                        y: parseNumber(tags[20] || 0)
+                    },
+                    height: parseNumber(tags[40] || 2.5),
+                    rotation: parseNumber(tags[50] || 0) * Math.PI / 180,
+                    tag: tags[2] || '',
+                    value: tags[1] || '',
+                    flags: parseInt(tags[70] || '0')
+                };
+            }
+            case 'WIPEOUT': {
+                // WIPEOUT uses group codes similar to IMAGE
+                const wpPoints = [];
+                if (Array.isArray(tags[14])) {
+                    for (let i = 0; i < tags[14].length; i++) {
+                        wpPoints.push({
+                            x: parseNumber(tags[14][i]),
+                            y: parseNumber((tags[24] || [])[i] || 0)
+                        });
+                    }
+                }
+                // Fallback: use insertion point and size to create boundary
+                if (wpPoints.length === 0 && tags[10] !== undefined) {
+                    const ix = parseNumber(tags[10]);
+                    const iy = parseNumber(tags[20] || 0);
+                    const ux = parseNumber(tags[11] || 100);
+                    const vy = parseNumber(tags[22] || 100);
+                    wpPoints.push(
+                        { x: ix, y: iy },
+                        { x: ix + ux, y: iy },
+                        { x: ix + ux, y: iy + vy },
+                        { x: ix, y: iy + vy }
+                    );
+                }
+                if (wpPoints.length < 3) return null;
+                return {
+                    type: 'wipeout',
+                    layer,
+                    ...style,
+                    points: wpPoints
+                };
+            }
+            case 'VIEWPORT': {
+                return {
+                    type: 'viewport',
+                    layer,
+                    ...style,
+                    center: {
+                        x: parseNumber(tags[10] || 0),
+                        y: parseNumber(tags[20] || 0)
+                    },
+                    width: parseNumber(tags[40] || 200),
+                    height: parseNumber(tags[41] || 150),
+                    viewCenter: {
+                        x: parseNumber(tags[12] || 0),
+                        y: parseNumber(tags[22] || 0)
+                    },
+                    viewHeight: parseNumber(tags[45] || 100),
+                    status: parseInt(tags[68] || '0'),
+                    id: parseInt(tags[69] || '0')
                 };
             }
             default:
@@ -1305,6 +1435,136 @@ const DXF = (() => {
                 out.push('10', formatNumber(fp.x), '20', formatNumber(fy(fp.y)), '30', '0.0');
                 out.push('40', formatNumber(entity.height || 10));
                 out.push('1', entity.evaluatedText || entity.fieldExpression || '---');
+                break;
+            }
+            case 'donut': {
+                // Export as two circles + solid hatch
+                const dc = entity.center || { x: 0, y: 0 };
+                out.push('0', 'CIRCLE');
+                out.push('8', entity.layer || '0');
+                writeCommonStyle(out, entity);
+                out.push('10', formatNumber(dc.x), '20', formatNumber(fy(dc.y)), '30', '0.0');
+                out.push('40', formatNumber(entity.outerRadius || 1));
+                if (entity.innerRadius > 0) {
+                    out.push('0', 'CIRCLE');
+                    out.push('8', entity.layer || '0');
+                    writeCommonStyle(out, entity);
+                    out.push('10', formatNumber(dc.x), '20', formatNumber(fy(dc.y)), '30', '0.0');
+                    out.push('40', formatNumber(entity.innerRadius));
+                }
+                break;
+            }
+            case 'solid': {
+                // DXF SOLID entity - 4 corner points
+                const sp = entity.points || [];
+                if (sp.length >= 3) {
+                    out.push('0', 'SOLID');
+                    out.push('8', entity.layer || '0');
+                    writeCommonStyle(out, entity);
+                    const codes = [[10,20],[11,21],[12,22],[13,23]];
+                    for (let si = 0; si < Math.min(sp.length, 4); si++) {
+                        out.push(String(codes[si][0]), formatNumber(sp[si].x));
+                        out.push(String(codes[si][1]), formatNumber(fy(sp[si].y)));
+                        out.push(String(codes[si][0] + 20), '0.0');
+                    }
+                    if (sp.length === 3) {
+                        out.push('13', formatNumber(sp[2].x), '23', formatNumber(fy(sp[2].y)), '33', '0.0');
+                    }
+                }
+                break;
+            }
+            case 'wipeout': {
+                // Export as closed LWPOLYLINE (DXF WIPEOUT is proprietary)
+                const wp = entity.points || [];
+                if (wp.length >= 3) {
+                    out.push('0', 'LWPOLYLINE');
+                    out.push('8', entity.layer || '0');
+                    writeCommonStyle(out, entity);
+                    out.push('90', String(wp.length));
+                    out.push('70', '1'); // Closed
+                    wp.forEach(p => {
+                        out.push('10', formatNumber(p.x), '20', formatNumber(fy(p.y)));
+                    });
+                }
+                break;
+            }
+            case 'region': {
+                // Export as closed LWPOLYLINE
+                const rp = entity.points || [];
+                if (rp.length >= 3) {
+                    out.push('0', 'LWPOLYLINE');
+                    out.push('8', entity.layer || '0');
+                    writeCommonStyle(out, entity);
+                    out.push('90', String(rp.length));
+                    out.push('70', '1');
+                    rp.forEach(p => {
+                        out.push('10', formatNumber(p.x), '20', formatNumber(fy(p.y)));
+                    });
+                }
+                break;
+            }
+            case 'image': {
+                // Export image boundary as rectangle LWPOLYLINE
+                if (entity.p1 && entity.p2) {
+                    out.push('0', 'LWPOLYLINE');
+                    out.push('8', entity.layer || '0');
+                    writeCommonStyle(out, entity);
+                    out.push('90', '4');
+                    out.push('70', '1');
+                    out.push('10', formatNumber(entity.p1.x), '20', formatNumber(fy(entity.p1.y)));
+                    out.push('10', formatNumber(entity.p2.x), '20', formatNumber(fy(entity.p1.y)));
+                    out.push('10', formatNumber(entity.p2.x), '20', formatNumber(fy(entity.p2.y)));
+                    out.push('10', formatNumber(entity.p1.x), '20', formatNumber(fy(entity.p2.y)));
+                }
+                break;
+            }
+            case 'revcloud': {
+                // Export as closed LWPOLYLINE
+                const rc = entity.points || [];
+                if (rc.length >= 3) {
+                    out.push('0', 'LWPOLYLINE');
+                    out.push('8', entity.layer || '0');
+                    writeCommonStyle(out, entity);
+                    out.push('90', String(rc.length));
+                    out.push('70', '1');
+                    rc.forEach(p => {
+                        out.push('10', formatNumber(p.x), '20', formatNumber(fy(p.y)));
+                    });
+                }
+                break;
+            }
+            case 'table': {
+                // Export as grid of LINE entities
+                if (entity.position) {
+                    const tp = entity.position;
+                    const rows = entity.rows || 3, cols = entity.cols || 3;
+                    const rh = entity.rowHeight || 10, cw = entity.colWidth || 30;
+                    const lay = entity.layer || '0';
+                    for (let r = 0; r <= rows; r++) {
+                        out.push('0', 'LINE', '8', lay);
+                        out.push('10', formatNumber(tp.x), '20', formatNumber(fy(tp.y + r * rh)), '30', '0.0');
+                        out.push('11', formatNumber(tp.x + cols * cw), '21', formatNumber(fy(tp.y + r * rh)), '31', '0.0');
+                    }
+                    for (let c = 0; c <= cols; c++) {
+                        out.push('0', 'LINE', '8', lay);
+                        out.push('10', formatNumber(tp.x + c * cw), '20', formatNumber(fy(tp.y)), '30', '0.0');
+                        out.push('11', formatNumber(tp.x + c * cw), '21', formatNumber(fy(tp.y + rows * rh)), '31', '0.0');
+                    }
+                }
+                break;
+            }
+            case 'mline': {
+                // Export multiline as individual LINE entities
+                const ml = entity.points || [];
+                if (ml.length >= 2) {
+                    for (let mi = 0; mi < ml.length - 1; mi++) {
+                        out.push('0', 'LINE');
+                        out.push('8', entity.layer || '0');
+                        writeCommonStyle(out, entity);
+                        out.push('10', formatNumber(ml[mi].x), '20', formatNumber(fy(ml[mi].y)), '30', '0.0');
+                        out.push('11', formatNumber(ml[mi + 1].x), '21', formatNumber(fy(ml[mi + 1].y)), '31', '0.0');
+                    }
+                }
                 break;
             }
             default:
