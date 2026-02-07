@@ -47,6 +47,7 @@
                 <span id="googleSignInText">Sign In</span>
             </button>
             <div class="file-name" id="fileName">Untitled.dxf</div>
+            <button class="mobile-help-btn" onclick="MobileUI.showGestureHints()" title="Gestures">?</button>
             <button class="mobile-menu-btn" onclick="MobileUI.toggleMenu()" title="Menu">&#9776;</button>
         </div>
 
@@ -714,6 +715,17 @@
                     <!-- Mobile coordinate display -->
                     <div class="mobile-coords-overlay" id="mobileCoordsOverlay">0.00, 0.00</div>
 
+                    <!-- Mobile zoom level indicator (shown during pinch) -->
+                    <div class="mobile-zoom-indicator" id="mobileZoomIndicator"></div>
+
+                    <!-- Mobile pan/draw mode toggle -->
+                    <div class="mobile-mode-indicator" id="mobileModeIndicator">
+                        <button class="mode-toggle-btn" id="modeToggleBtn" onclick="MobileUI.togglePanMode()">
+                            <i class="mode-icon">&#9997;</i>
+                            <span id="modeToggleLabel">Draw</span>
+                        </button>
+                    </div>
+
                     <!-- Floating Canvas Selection Toolbar -->
                     <div class="canvas-selection-toolbar" id="canvasSelectionToolbar" style="display: none;">
                         <div class="cst-title">Select Objects:</div>
@@ -769,8 +781,30 @@
             <div class="desktop-hatch-swatches" id="desktopHatchSwatches"></div>
         </div>
 
+        <!-- Mobile Layer/Color/Snap Status Strip -->
+        <div class="mobile-status-strip" id="mobileStatusStrip">
+            <div class="mss-item" id="mssLayerItem" onclick="MobileUI.showLayerPanel()">
+                <span class="mss-label">Layer</span>
+                <span class="mss-value" id="mssLayerValue">0</span>
+            </div>
+            <div class="mss-item" id="mssColorItem" onclick="MobileUI.cycleColor()">
+                <span class="mss-label">Color</span>
+                <span class="mss-color-dot" id="mssColorDot"></span>
+                <span class="mss-value" id="mssColorValue">ByLayer</span>
+            </div>
+            <div class="mss-snap-badges" id="mssSnapBadges">
+                <span class="mss-snap-badge off" id="mssBadgeOsnap">OSN</span>
+                <span class="mss-snap-badge off" id="mssBadgeOrtho">ORT</span>
+                <span class="mss-snap-badge off" id="mssBadgeGrid">GRD</span>
+            </div>
+        </div>
+
         <!-- Mobile Drawing Interface -->
         <div class="mobile-draw-bar" id="mobileDrawBar">
+            <!-- Recent commands row (shown when idle) -->
+            <div class="mdb-recent-row" id="mdbRecentRow">
+                <span class="mdb-recent-label">Recent</span>
+            </div>
             <div class="mdb-prompt-row" id="mdbPromptRow">
                 <span class="mdb-tool-badge" id="mdbToolBadge"></span>
                 <span class="mdb-prompt-text" id="mdbPromptText">Tap a tool to begin</span>
@@ -809,6 +843,11 @@
 
         <!-- Mobile Numeric Keypad -->
         <div class="mobile-numpad" id="mobileNumpad">
+            <div class="numpad-mode-row">
+                <button class="numpad-mode-btn active" id="numpadModeAbs" onclick="MobileUI.setCoordMode('abs')">X,Y</button>
+                <button class="numpad-mode-btn" id="numpadModeRel" onclick="MobileUI.setCoordMode('rel')">@X,Y</button>
+                <button class="numpad-mode-btn" id="numpadModePolar" onclick="MobileUI.setCoordMode('polar')">@D&lt;A</button>
+            </div>
             <div class="numpad-grid">
                 <button class="nk" onclick="MobileUI.numpadPress('7')">7</button>
                 <button class="nk" onclick="MobileUI.numpadPress('8')">8</button>
@@ -824,7 +863,7 @@
                 <button class="nk nk-op" onclick="MobileUI.numpadPress(',')">,</button>
                 <button class="nk nk-zero" onclick="MobileUI.numpadPress('0')">0</button>
                 <button class="nk nk-op" onclick="MobileUI.numpadPress('.')">.</button>
-                <button class="nk nk-op" onclick="MobileUI.numpadPress('@')">@</button>
+                <button class="nk nk-op" onclick="MobileUI.numpadPress('&lt;')">&lt;</button>
                 <button class="nk nk-enter" onclick="MobileUI.submitInput()">&#9166;</button>
             </div>
         </div>
@@ -908,7 +947,7 @@
                 <button class="mobile-tool-btn" id="mSnapGrid" onclick="MobileUI.toggleSnap('grid')"><i class="m-icon">#</i><span class="m-label">Grid</span></button>
                 <button class="mobile-tool-btn" id="mSnapOrtho" onclick="MobileUI.toggleSnap('ortho')"><i class="m-icon">&#9482;</i><span class="m-label">Ortho</span></button>
                 <button class="mobile-tool-btn" id="mSnapPolar" onclick="MobileUI.toggleSnap('polar')"><i class="m-icon">&#8737;</i><span class="m-label">Polar</span></button>
-                <button class="mobile-tool-btn" onclick="MobileUI.togglePanMode()"><i class="m-icon">&#9995;</i><span class="m-label">Pan</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('find')"><i class="m-icon">&#128269;</i><span class="m-label">Find</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('osnap')"><i class="m-icon">&#9881;</i><span class="m-label">Settings</span></button>
             </div>
         </div>
@@ -1102,6 +1141,49 @@
                 <div class="mobile-menu-item" onclick="MobileUI.menuAction('help')"><i class="m-icon">?</i> Help</div>
             </div>
         </div>
+    </div>
+
+    <!-- Mobile Toast Notifications -->
+    <div class="mobile-toast-container" id="mobileToastContainer"></div>
+
+    <!-- Mobile Gesture Hints (shown on first visit) -->
+    <div class="gesture-hints-overlay" id="gestureHintsOverlay">
+        <div class="gesture-hint">
+            <div class="gesture-hint-icon">&#9758;</div>
+            <div class="gesture-hint-text">
+                <strong>Tap to Draw</strong>
+                <span>Tap the canvas to place points and draw entities</span>
+            </div>
+        </div>
+        <div class="gesture-hint">
+            <div class="gesture-hint-icon">&#9995;</div>
+            <div class="gesture-hint-text">
+                <strong>Two-Finger Pan</strong>
+                <span>Drag with two fingers to move the view around</span>
+            </div>
+        </div>
+        <div class="gesture-hint">
+            <div class="gesture-hint-icon">&#128269;</div>
+            <div class="gesture-hint-text">
+                <strong>Pinch to Zoom</strong>
+                <span>Pinch with two fingers to zoom in and out</span>
+            </div>
+        </div>
+        <div class="gesture-hint">
+            <div class="gesture-hint-icon">&#8634;</div>
+            <div class="gesture-hint-text">
+                <strong>Double-Tap</strong>
+                <span>Double-tap the canvas to zoom to extents</span>
+            </div>
+        </div>
+        <div class="gesture-hint">
+            <div class="gesture-hint-icon">&#9776;</div>
+            <div class="gesture-hint-text">
+                <strong>Long Press</strong>
+                <span>Press and hold for the context menu</span>
+            </div>
+        </div>
+        <button class="gesture-hints-dismiss" onclick="MobileUI.dismissGestureHints()">Got it!</button>
     </div>
 
     <!-- Load JavaScript Modules -->
