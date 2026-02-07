@@ -2444,7 +2444,8 @@ const Commands = {
             canvasSize.width / 2,
             canvasSize.height / 2,
             modelLayout.pan,
-            modelLayout.zoom
+            modelLayout.zoom,
+            canvasSize.height
         );
         const viewScale = modelLayout.zoom / (state.zoom || 1);
 
@@ -3693,7 +3694,9 @@ const Commands = {
     },
 
     hitTest(point) {
-        const tolerance = 10 / CAD.zoom;
+        // Pixel-based tolerance scaled by pickbox size
+        const pxTolerance = Math.max(8, (CAD.pickboxSize || 3) * 3);
+        const tolerance = pxTolerance / CAD.zoom;
         const entities = CAD.getVisibleEntities();
 
         for (let i = entities.length - 1; i >= 0; i--) {
@@ -5132,7 +5135,8 @@ const Commands = {
 
     // --- SELECTION CYCLING ---
     hitTestAll(point) {
-        const tolerance = 10 / CAD.zoom;
+        const pxTolerance = Math.max(8, (CAD.pickboxSize || 3) * 3);
+        const tolerance = pxTolerance / CAD.zoom;
         const entities = CAD.getVisibleEntities();
         const hits = [];
 

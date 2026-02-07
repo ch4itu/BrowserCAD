@@ -158,6 +158,15 @@ const UI = {
             this.handleKeyboard(e);
         });
 
+        // Re-focus command line after any canvas interaction
+        const viewport = document.getElementById('viewport');
+        if (viewport) {
+            viewport.addEventListener('pointerup', () => {
+                // Small delay so click handlers run first
+                requestAnimationFrame(() => this.focusCommandLine());
+            });
+        }
+
         // Prevent text selection during CAD operations, but allow in command history
         document.addEventListener('selectstart', (e) => {
             const target = e.target;
@@ -803,7 +812,13 @@ LISP:
 
     focusCommandLine() {
         if (this.elements.cmdInput) {
-            this.elements.cmdInput.focus();
+            // Avoid stealing focus from modals, color pickers, or other inputs
+            const active = document.activeElement;
+            const isOtherInput = active && active !== document.body &&
+                active.tagName === 'INPUT' && active !== this.elements.cmdInput;
+            if (!isOtherInput) {
+                this.elements.cmdInput.focus();
+            }
         }
     },
 

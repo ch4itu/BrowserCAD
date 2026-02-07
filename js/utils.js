@@ -181,16 +181,30 @@ const Utils = {
     // COORDINATE TRANSFORMATIONS
     // ==========================================
 
-    // Screen to world coordinates
-    screenToWorld(sx, sy, pan, zoom) {
+    // Screen to world coordinates (Y-up: uses canvas height)
+    // Prefer Renderer.screenToWorld() which knows the canvas size.
+    screenToWorld(sx, sy, pan, zoom, canvasHeight) {
+        if (canvasHeight !== undefined) {
+            return {
+                x: (sx - pan.x) / zoom,
+                y: (canvasHeight - sy - pan.y) / zoom
+            };
+        }
+        // Legacy fallback (no canvas height → no Y-flip)
         return {
             x: (sx - pan.x) / zoom,
             y: (sy - pan.y) / zoom
         };
     },
 
-    // World to screen coordinates
-    worldToScreen(wx, wy, pan, zoom) {
+    // World to screen coordinates (Y-up: uses canvas height)
+    worldToScreen(wx, wy, pan, zoom, canvasHeight) {
+        if (canvasHeight !== undefined) {
+            return {
+                x: wx * zoom + pan.x,
+                y: canvasHeight - (wy * zoom + pan.y)
+            };
+        }
         return {
             x: wx * zoom + pan.x,
             y: wy * zoom + pan.y

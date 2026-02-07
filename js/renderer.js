@@ -40,6 +40,8 @@ const Renderer = {
     },
     hatchPatterns: new Map(),
     imageCache: new Map(),
+    _dirty: true,
+    _rafId: null,
 
     // ==========================================
     // INITIALIZATION
@@ -57,6 +59,24 @@ const Renderer = {
         return this;
     },
 
+    // ==========================================
+    // COORDINATE TRANSFORMS (centralized, Y-up)
+    // ==========================================
+
+    screenToWorld(sx, sy) {
+        return {
+            x: (sx - CAD.pan.x) / CAD.zoom,
+            y: (this.canvas.height - sy - CAD.pan.y) / CAD.zoom
+        };
+    },
+
+    worldToScreen(wx, wy) {
+        return {
+            x: wx * CAD.zoom + CAD.pan.x,
+            y: this.canvas.height - (wy * CAD.zoom + CAD.pan.y)
+        };
+    },
+
     resize() {
         if (!this.viewport || !this.canvas) return;
 
@@ -65,11 +85,30 @@ const Renderer = {
         this.draw();
     },
 
+    requestRedraw() {
+        this._dirty = true;
+        if (!this._rafId) {
+            this._rafId = requestAnimationFrame(() => this._renderLoop());
+        }
+    },
+
+    _renderLoop() {
+        this._rafId = null;
+        if (this._dirty) {
+            this._dirty = false;
+            this._drawFrame();
+        }
+    },
+
     // ==========================================
     // MAIN DRAW FUNCTION
     // ==========================================
 
     draw() {
+        this.requestRedraw();
+    },
+
+    _drawFrame() {
         if (!this.ctx) return;
 
         const ctx = this.ctx;
@@ -82,9 +121,9 @@ const Renderer = {
         ctx.fillStyle = this.colors.background;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Apply view transformation
-        ctx.translate(state.pan.x, state.pan.y);
-        ctx.scale(state.zoom, state.zoom);
+        // Apply view transformation (Y-up: origin at bottom-left)
+        ctx.translate(state.pan.x, this.canvas.height - state.pan.y);
+        ctx.scale(state.zoom, -state.zoom);
 
         if (isPaper) {
             this.drawLayout(layout);
@@ -137,7 +176,13 @@ const Renderer = {
         if (!activeLayout || activeLayout.type !== 'paper' || !activeLayout.paper) return;
 
         const ctx = this.ctx;
-        const { width, height, margin } = activeLayout.paper;
+        const { width, height } = activeLayout.paper;
+        // Use page setup margins if available, fallback to paper.margin
+        const ps = activeLayout.pageSetup;
+        const marginTop = ps?.margins?.top ?? activeLayout.paper.margin ?? 10;
+        const marginRight = ps?.margins?.right ?? activeLayout.paper.margin ?? 10;
+        const marginBottom = ps?.margins?.bottom ?? activeLayout.paper.margin ?? 10;
+        const marginLeft = ps?.margins?.left ?? activeLayout.paper.margin ?? 10;
         const effectiveZoom = zoom ?? state.zoom;
 
         ctx.save();
@@ -152,11 +197,11 @@ const Renderer = {
         ctx.fill();
         ctx.stroke();
 
-        if (margin) {
+        if (marginTop || marginRight || marginBottom || marginLeft) {
             ctx.strokeStyle = '#999999';
             ctx.setLineDash([5 / effectiveZoom, 5 / effectiveZoom]);
             ctx.beginPath();
-            ctx.rect(margin, margin, width - margin * 2, height - margin * 2);
+            ctx.rect(marginLeft, marginTop, width - marginLeft - marginRight, height - marginTop - marginBottom);
             ctx.stroke();
             ctx.setLineDash([]);
         }
@@ -206,14 +251,18 @@ const Renderer = {
         const subdivisions = state.gridSubdivisions;
         const minorSpacing = spacing / subdivisions;
 
-        // Calculate visible area
-        const topLeft = Utils.screenToWorld(0, 0, state.pan, state.zoom);
-        const bottomRight = Utils.screenToWorld(this.canvas.width, this.canvas.height, state.pan, state.zoom);
+        // Calculate visible area (Y-flip: topLeft has maxY, bottomRight has minY)
+        const corner1 = this.screenToWorld(0, 0);
+        const corner2 = this.screenToWorld(this.canvas.width, this.canvas.height);
+        const visMinX = Math.min(corner1.x, corner2.x);
+        const visMaxX = Math.max(corner1.x, corner2.x);
+        const visMinY = Math.min(corner1.y, corner2.y);
+        const visMaxY = Math.max(corner1.y, corner2.y);
 
-        const startX = Math.floor(topLeft.x / minorSpacing) * minorSpacing;
-        const startY = Math.floor(topLeft.y / minorSpacing) * minorSpacing;
-        const endX = Math.ceil(bottomRight.x / minorSpacing) * minorSpacing;
-        const endY = Math.ceil(bottomRight.y / minorSpacing) * minorSpacing;
+        const startX = Math.floor(visMinX / minorSpacing) * minorSpacing;
+        const startY = Math.floor(visMinY / minorSpacing) * minorSpacing;
+        const endX = Math.ceil(visMaxX / minorSpacing) * minorSpacing;
+        const endY = Math.ceil(visMaxY / minorSpacing) * minorSpacing;
 
         // Minor grid lines
         ctx.strokeStyle = this.colors.gridMinor;
@@ -222,15 +271,15 @@ const Renderer = {
 
         for (let x = startX; x <= endX; x += minorSpacing) {
             if (Math.abs(x % spacing) > 0.001) {
-                ctx.moveTo(x, topLeft.y);
-                ctx.lineTo(x, bottomRight.y);
+                ctx.moveTo(x, visMinY);
+                ctx.lineTo(x, visMaxY);
             }
         }
 
         for (let y = startY; y <= endY; y += minorSpacing) {
             if (Math.abs(y % spacing) > 0.001) {
-                ctx.moveTo(topLeft.x, y);
-                ctx.lineTo(bottomRight.x, y);
+                ctx.moveTo(visMinX, y);
+                ctx.lineTo(visMaxX, y);
             }
         }
 
@@ -241,20 +290,20 @@ const Renderer = {
         ctx.lineWidth = 1 / state.zoom;
         ctx.beginPath();
 
-        const majorStartX = Math.floor(topLeft.x / spacing) * spacing;
-        const majorStartY = Math.floor(topLeft.y / spacing) * spacing;
+        const majorStartX = Math.floor(visMinX / spacing) * spacing;
+        const majorStartY = Math.floor(visMinY / spacing) * spacing;
 
         for (let x = majorStartX; x <= endX; x += spacing) {
             if (x !== 0) {
-                ctx.moveTo(x, topLeft.y);
-                ctx.lineTo(x, bottomRight.y);
+                ctx.moveTo(x, visMinY);
+                ctx.lineTo(x, visMaxY);
             }
         }
 
         for (let y = majorStartY; y <= endY; y += spacing) {
             if (y !== 0) {
-                ctx.moveTo(topLeft.x, y);
-                ctx.lineTo(bottomRight.x, y);
+                ctx.moveTo(visMinX, y);
+                ctx.lineTo(visMaxX, y);
             }
         }
 
@@ -266,15 +315,15 @@ const Renderer = {
         // X axis (red)
         ctx.strokeStyle = this.colors.axisX;
         ctx.beginPath();
-        ctx.moveTo(topLeft.x, 0);
-        ctx.lineTo(bottomRight.x, 0);
+        ctx.moveTo(visMinX, 0);
+        ctx.lineTo(visMaxX, 0);
         ctx.stroke();
 
         // Y axis (green)
         ctx.strokeStyle = this.colors.axisY;
         ctx.beginPath();
-        ctx.moveTo(0, topLeft.y);
-        ctx.lineTo(0, bottomRight.y);
+        ctx.moveTo(0, visMinY);
+        ctx.lineTo(0, visMaxY);
         ctx.stroke();
     },
 
@@ -500,8 +549,9 @@ const Renderer = {
         ctx.save();
         ctx.globalAlpha = entity.opacity ?? 0.6;
         ctx.translate(minX, minY);
+        ctx.scale(1, -1);
         if (rotation) {
-            ctx.rotate(rotation);
+            ctx.rotate(-rotation);
         }
         // Apply image clipping if enabled
         if (entity.clipEnabled && entity.clipBoundary) {
@@ -529,8 +579,9 @@ const Renderer = {
             ctx.lineWidth = (isSelected ? 2 : 1.5) / CAD.zoom;
             ctx.setLineDash(isSelected ? [5 / CAD.zoom, 3 / CAD.zoom] : []);
             ctx.translate(minX, minY);
+            ctx.scale(1, -1);
             if (rotation) {
-                ctx.rotate(rotation);
+                ctx.rotate(-rotation);
             }
             ctx.strokeRect(0, 0, width, height);
             ctx.restore();
@@ -903,6 +954,21 @@ const Renderer = {
         }
     },
 
+    drawTextFlipped(ctx, text, x, y, options = {}) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.scale(1, -1);
+        if (options.rotation) {
+            ctx.rotate(-options.rotation);
+        }
+        if (options.align) ctx.textAlign = options.align;
+        if (options.baseline) ctx.textBaseline = options.baseline;
+        if (options.font) ctx.font = options.font;
+        if (options.fillStyle) ctx.fillStyle = options.fillStyle;
+        ctx.fillText(text, 0, 0);
+        ctx.restore();
+    },
+
     drawEntity(entity, ctx) {
         switch (entity.type) {
             case 'line':
@@ -966,12 +1032,9 @@ const Renderer = {
                     }
                 }
                 if (entity.text) {
-                    ctx.save();
-                    ctx.font = `${entity.height || 10}px Arial`;
-                    ctx.fillStyle = ctx.strokeStyle;
+                    const leaderFont = `${entity.height || 10}px Arial`;
                     const textPos = entity.textPosition || entity.points[entity.points.length - 1];
-                    ctx.fillText(entity.text, textPos.x, textPos.y);
-                    ctx.restore();
+                    this.drawTextFlipped(ctx, entity.text, textPos.x, textPos.y, { font: leaderFont, fillStyle: ctx.strokeStyle });
                 }
                 break;
 
@@ -991,6 +1054,7 @@ const Renderer = {
                 ctx.fillStyle = ctx.strokeStyle;
                 const textPos = entity.position || entity.point || { x: 0, y: 0 };
                 ctx.translate(textPos.x, textPos.y);
+                ctx.scale(1, -1);
                 if (entity.rotation) {
                     const rotation = Math.abs(entity.rotation) > Math.PI * 2 + 0.001
                         ? Utils.degToRad(entity.rotation)
@@ -1009,6 +1073,7 @@ const Renderer = {
                 ctx.fillStyle = ctx.strokeStyle;
                 const mtextPos = entity.position || entity.point || { x: 0, y: 0 };
                 ctx.translate(mtextPos.x, mtextPos.y);
+                ctx.scale(1, -1);
                 if (entity.rotation) {
                     const rotation = Math.abs(entity.rotation) > Math.PI * 2 + 0.001
                         ? Utils.degToRad(entity.rotation)
@@ -1193,20 +1258,17 @@ const Renderer = {
                 }
                 // Draw text
                 if (entity.text) {
-                    ctx.save();
                     const tStyle = this._getTextFont(entity);
                     const h = entity.height || entity.textHeight || 2.5;
-                    ctx.font = `${tStyle.prefix}${h}px ${tStyle.font}`;
-                    ctx.fillStyle = ctx.strokeStyle;
+                    const mleaderFont = `${tStyle.prefix}${h}px ${tStyle.font}`;
                     const tp = entity.textPosition || entity.points[entity.points.length - 1];
                     if (tp) {
-                        const lines = entity.text.split('\n');
+                        const mleaderLines = entity.text.split('\n');
                         const lineHeight = h * 1.2;
-                        lines.forEach((line, index) => {
-                            ctx.fillText(line, tp.x, tp.y + h * 0.3 + index * lineHeight);
+                        mleaderLines.forEach((line, index) => {
+                            this.drawTextFlipped(ctx, line, tp.x, tp.y + h * 0.3 + index * lineHeight, { font: mleaderFont, fillStyle: ctx.strokeStyle });
                         });
                     }
-                    ctx.restore();
                 }
                 break;
             }
@@ -1216,7 +1278,8 @@ const Renderer = {
                 const pos = entity.position || { x: 0, y: 0 };
                 const h = entity.height || 5;
                 const frames = entity.frames || [];
-                ctx.font = `${h}px Arial`;
+                const tolFont = `${h}px Arial`;
+                ctx.font = tolFont;
                 ctx.fillStyle = ctx.strokeStyle;
                 ctx.textBaseline = 'middle';
 
@@ -1239,7 +1302,7 @@ const Renderer = {
                     cells.forEach(cellText => {
                         const tw = ctx.measureText(cellText).width + cellPad * 2;
                         ctx.strokeRect(pos.x + xOff, pos.y - frameH / 2, tw, frameH);
-                        ctx.fillText(cellText, pos.x + xOff + cellPad, pos.y);
+                        this.drawTextFlipped(ctx, cellText, pos.x + xOff + cellPad, pos.y, { font: tolFont, fillStyle: ctx.fillStyle, baseline: 'middle' });
                         xOff += tw;
                     });
                     xOff += cellPad;
@@ -1267,7 +1330,8 @@ const Renderer = {
             case 'field': {
                 ctx.save();
                 const fh = entity.height || 10;
-                ctx.font = `${fh}px Arial`;
+                const fieldFont = `${fh}px Arial`;
+                ctx.font = fieldFont;
                 const fp = entity.position || { x: 0, y: 0 };
                 const displayText = entity.evaluatedText || entity.fieldExpression || '---';
                 const textW = ctx.measureText(displayText).width;
@@ -1275,8 +1339,7 @@ const Renderer = {
                 ctx.fillStyle = 'rgba(180,180,180,0.25)';
                 ctx.fillRect(fp.x, fp.y - fh, textW + 4, fh * 1.3);
                 // Draw text
-                ctx.fillStyle = ctx.strokeStyle;
-                ctx.fillText(displayText, fp.x + 2, fp.y);
+                this.drawTextFlipped(ctx, displayText, fp.x + 2, fp.y, { font: fieldFont, fillStyle: ctx.strokeStyle });
                 ctx.restore();
                 break;
             }
@@ -1306,9 +1369,7 @@ const Renderer = {
             ctx.stroke();
 
             // Draw block name
-            ctx.font = `${12 / CAD.zoom}px Arial`;
-            ctx.fillStyle = '#ff0000';
-            ctx.fillText(`[${blockRef.blockName}]`, ip.x + size, ip.y - size);
+            this.drawTextFlipped(ctx, `[${blockRef.blockName}]`, ip.x + size, ip.y - size, { font: `${12 / CAD.zoom}px Arial`, fillStyle: '#ff0000' });
 
             ctx.restore();
             return;
@@ -1470,6 +1531,7 @@ const Renderer = {
             const midY = (dimP1.y + dimP2.y) / 2;
             ctx.save();
             ctx.translate(midX, midY);
+            ctx.scale(1, -1);
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
             // Offset text above the dimension line
@@ -1507,6 +1569,7 @@ const Renderer = {
             const textY = center.y + (entity.radius * 0.6) * Math.sin(angle);
             ctx.save();
             ctx.translate(textX, textY);
+            ctx.scale(1, -1);
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
             ctx.fillText(entity.text, 0, -textHeight * 0.3);
@@ -1534,6 +1597,7 @@ const Renderer = {
             // Draw text at leader endpoint
             ctx.save();
             ctx.translate(le.x, le.y);
+            ctx.scale(1, -1);
             ctx.textAlign = entity.isXDatum ? 'center' : 'left';
             ctx.textBaseline = 'bottom';
             const textOffset = textHeight * 0.5;
@@ -1578,6 +1642,7 @@ const Renderer = {
             };
             ctx.save();
             ctx.translate(textPt.x, textPt.y);
+            ctx.scale(1, -1);
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(entity.text, 0, 0);
@@ -1965,7 +2030,7 @@ const Renderer = {
         const ctx = this.ctx;
         const state = CAD;
 
-        const screen = Utils.worldToScreen(state.cursor.x, state.cursor.y, state.pan, state.zoom);
+        const screen = this.worldToScreen(state.cursor.x, state.cursor.y);
 
         // Check if full-screen crosshair is enabled (CAD-like)
         const fullCrosshair = state.fullCrosshair || false;
@@ -2008,7 +2073,7 @@ const Renderer = {
         const end = state.tempEnd || state.cursor;
         if (!end) return;
 
-        const screen = Utils.worldToScreen(end.x, end.y, state.pan, state.zoom);
+        const screen = this.worldToScreen(end.x, end.y);
 
         // Draw a larger, semi-transparent target circle
         ctx.save();
@@ -2036,7 +2101,7 @@ const Renderer = {
 
         if (!(state.osnapEnabled || state.gridSnapEnabled) || !state.snapPoint) return;
 
-        const screen = Utils.worldToScreen(state.snapPoint.x, state.snapPoint.y, state.pan, state.zoom);
+        const screen = this.worldToScreen(state.snapPoint.x, state.snapPoint.y);
         const size = 8;
 
         ctx.strokeStyle = this.colors.snap[state.snapType] || '#00ff00';
@@ -2186,8 +2251,8 @@ const Renderer = {
         if (!cursorWorld) return;
 
         const lastPoint = state.points[state.points.length - 1];
-        const cursorScreen = Utils.worldToScreen(cursorWorld.x, cursorWorld.y, state.pan, state.zoom);
-        const lastScreen = Utils.worldToScreen(lastPoint.x, lastPoint.y, state.pan, state.zoom);
+        const cursorScreen = this.worldToScreen(cursorWorld.x, cursorWorld.y);
+        const lastScreen = this.worldToScreen(lastPoint.x, lastPoint.y);
 
         ctx.save();
         ctx.setLineDash([4, 4]);
@@ -2212,7 +2277,7 @@ const Renderer = {
                 const extendDist = Math.max(this.canvas.width, this.canvas.height) * 2;
 
                 const extPoint = Utils.polarPoint(lastPoint, radians, extendDist);
-                const extScreen = Utils.worldToScreen(extPoint.x, extPoint.y, state.pan, state.zoom);
+                const extScreen = this.worldToScreen(extPoint.x, extPoint.y);
 
                 ctx.moveTo(lastScreen.x, lastScreen.y);
                 ctx.lineTo(extScreen.x, extScreen.y);
@@ -2249,7 +2314,7 @@ const Renderer = {
 
         // Object Snap Tracking lines (if there's a snap point)
         if (state.osnapEnabled && state.snapPoint && state.snapType !== 'grid') {
-            const snapScreen = Utils.worldToScreen(state.snapPoint.x, state.snapPoint.y, state.pan, state.zoom);
+            const snapScreen = this.worldToScreen(state.snapPoint.x, state.snapPoint.y);
 
             ctx.strokeStyle = '#ffff00';
 
@@ -2287,7 +2352,7 @@ const Renderer = {
         const cursor = state.cursor;
         if (!cursor) return;
 
-        const screen = Utils.worldToScreen(cursor.x, cursor.y, state.pan, state.zoom);
+        const screen = this.worldToScreen(cursor.x, cursor.y);
         const hasBasePoint = state.activeCmd && state.points && state.points.length > 0;
         const basePoint = hasBasePoint ? state.points[state.points.length - 1] : null;
 
