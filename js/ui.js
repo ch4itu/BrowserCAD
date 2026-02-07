@@ -1441,6 +1441,31 @@ LISP:
                     </div>
                 `;
                 break;
+            case 'mleader':
+                html += `<div class="property-row"><span>Text</span><span>${entity.text || ''}</span></div>`;
+                html += `<div class="property-row"><span>Leader Points</span><span>${(entity.points || []).length}</span></div>`;
+                html += `<div class="property-row"><span>Arrow Type</span><span>${entity.arrowType || 'closed'}</span></div>`;
+                html += `<div class="property-row"><span>Text Height</span><span>${entity.height || 2.5}</span></div>`;
+                html += `<div class="property-row"><span>Style</span><span>${entity.mleaderStyle || 'Standard'}</span></div>`;
+                break;
+            case 'tolerance':
+                html += `<div class="property-row"><span>Position</span><span>${entity.position.x.toFixed(2)}, ${entity.position.y.toFixed(2)}</span></div>`;
+                html += `<div class="property-row"><span>Frames</span><span>${(entity.frames || []).length}</span></div>`;
+                html += `<div class="property-row"><span>Height</span><span>${entity.height || 5}</span></div>`;
+                break;
+            case 'trace':
+                html += `<div class="property-row"><span>Width</span><span>${entity.width || 'N/A'}</span></div>`;
+                if (entity.p1 && entity.p2) {
+                    html += `<div class="property-row"><span>From</span><span>${entity.p1.x.toFixed(2)}, ${entity.p1.y.toFixed(2)}</span></div>`;
+                    html += `<div class="property-row"><span>To</span><span>${entity.p2.x.toFixed(2)}, ${entity.p2.y.toFixed(2)}</span></div>`;
+                }
+                break;
+            case 'field':
+                html += `<div class="property-row"><span>Field Type</span><span>${entity.fieldType || 'custom'}</span></div>`;
+                html += `<div class="property-row"><span>Value</span><span>${entity.evaluatedText || '---'}</span></div>`;
+                html += `<div class="property-row"><span>Position</span><span>${entity.position.x.toFixed(2)}, ${entity.position.y.toFixed(2)}</span></div>`;
+                html += `<div class="property-row"><span>Height</span><span>${entity.height || 10}</span></div>`;
+                break;
         }
 
         return html;

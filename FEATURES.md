@@ -24,9 +24,9 @@ BrowserCAD has strong support for core 2D primitives.
 - [x] Region (REGION)
 - [x] Multiline (MLINE)
 - [x] Tables (TABLE)
-- [ ] Multiline Styles (MLSTYLE)
-- [ ] Trace (TRACE)
-- [ ] Helix (HELIX)
+- [x] Multiline Styles (MLSTYLE)
+- [x] Trace (TRACE)
+- [ ] Helix (HELIX) — 3D feature, not in AutoCAD LT
 
 ## 2) Modify & Edit Commands
 A broad set of 2D editing tools is implemented.
@@ -78,9 +78,9 @@ Dimensioning and basic text tools are present; advanced styling is limited.
 - [x] Leaders (LEADER)
 - [x] Tables (TABLE)
 - [x] Dimension Styles Manager (DIMSTYLE)
-- [ ] Multi-Leaders (MLEADER)
-- [ ] Fields (FIELD)
-- [ ] Geometric Tolerances (TOLERANCE)
+- [x] Multi-Leaders (MLEADER) + MLEADERSTYLE, MLEADERALIGN, MLEADERCOLLECT
+- [x] Fields (FIELD) — dynamic fields: Date, Filename, Author, NumObjects, Title
+- [x] Geometric Tolerances (TOLERANCE) — GD&T feature control frames
 
 ## 4) Layers & Properties
 Layer management is robust; advanced layer states are missing.
@@ -100,11 +100,11 @@ Layer management is robust; advanced layer states are missing.
 Basic internal block handling is present; external reference features are missing.
 - [x] Create Block (BLOCK)
 - [x] Insert Block (INSERT)
-- [ ] Define Attributes (ATTDEF)
-- [ ] Edit Attributes (ATTEDIT / EATTEDIT)
-- [ ] Dynamic Blocks (Parameters/Actions)
+- [x] Define Attributes (ATTDEF)
+- [x] Edit Attributes (ATTEDIT / EATTEDIT)
+- [ ] Dynamic Blocks (Parameters/Actions) — not in AutoCAD LT
 - [ ] External References (XREF)
-- [ ] Image Clip (IMAGECLIP)
+- [x] Image Clip (IMAGECLIP)
 
 ## 6) View & Navigation
 Core navigation exists; 3D navigation is not present.
@@ -135,7 +135,8 @@ A strong set of utilities and drafting aids is implemented.
 - [x] Filter Selection (FILTER, QSELECT, SELECTSIMILAR)
 - [x] Image Attachment (IMAGEATTACH)
 - [ ] Parametric Constraints
-- [ ] Calculator (QUICKCALC)
+- [x] Calculator (QUICKCALC)
+- [x] Count (COUNT) — entity count by type and block references
 - [ ] Design Center (ADCENTER)
 
 ## 8) Programming & Scripting
@@ -150,9 +151,9 @@ Lisp support exists; advanced IDE/integration does not.
 Basic layout tabs, paper space backgrounds, and viewports are present; plotting is limited to PDF output.
 - [x] Layout Tabs (Model + Paper Space backgrounds)
 - [x] Viewports (MVIEW)
-- [ ] Page Setup
+- [x] Page Setup (PAGESETUP) — paper size, orientation, scale, margins, plot area
 - [ ] Title Blocks
-- [ ] Viewport Scaling (XP)
+- [x] Viewport Scaling (VPSCALE / XP)
 
 ## 10) 3D Modeling (Missing)
 The engine is strictly 2D.

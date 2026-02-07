@@ -580,6 +580,61 @@ const Storage = {
                     dxf += '10\n' + entity.p1.x + '\n20\n' + (-entity.p2.y) + '\n';
                 }
                 break;
+
+            case 'mleader':
+                // Export as LEADER entity for compatibility
+                dxf += '  0\nLEADER\n';
+                dxf += '  8\n' + layer + '\n';
+                if (colorInt !== null) dxf += ' 62\n' + colorInt + '\n';
+                dxf += '  3\nStandard\n';
+                dxf += ' 76\n3\n'; // leader path type: spline=0, straight=3
+                dxf += ' 73\n0\n'; // no arrowhead in legacy (drawn by viewer)
+                dxf += ' 40\n' + (entity.height || 2.5) + '\n'; // text height
+                (entity.points || []).forEach(p => {
+                    dxf += ' 10\n' + p.x.toFixed(6) + '\n 20\n' + (-p.y).toFixed(6) + '\n 30\n0.0\n';
+                });
+                break;
+            case 'tolerance':
+                // Export as TOLERANCE entity
+                dxf += '  0\nTOLERANCE\n';
+                dxf += '  8\n' + layer + '\n';
+                if (colorInt !== null) dxf += ' 62\n' + colorInt + '\n';
+                dxf += ' 10\n' + (entity.position.x).toFixed(6) + '\n';
+                dxf += ' 20\n' + (-entity.position.y).toFixed(6) + '\n';
+                dxf += ' 30\n0.0\n';
+                // Encode tolerance string
+                const tolStr = (entity.frames || []).map(f => {
+                    let s = (f.symbol || '') + (f.diameterSymbol ? '%%c' : '') + (f.tolerance1 || '');
+                    if (f.datum1) s += '%%v' + f.datum1;
+                    if (f.datum2) s += '%%v' + f.datum2;
+                    if (f.datum3) s += '%%v' + f.datum3;
+                    return s;
+                }).join('%%v');
+                dxf += '  1\n' + tolStr + '\n';
+                break;
+            case 'trace':
+                // DXF TRACE entity - 4 corner points
+                dxf += '  0\nTRACE\n';
+                dxf += '  8\n' + layer + '\n';
+                if (colorInt !== null) dxf += ' 62\n' + colorInt + '\n';
+                if (entity.points && entity.points.length >= 4) {
+                    dxf += ' 10\n' + entity.points[0].x.toFixed(6) + '\n 20\n' + (-entity.points[0].y).toFixed(6) + '\n 30\n0.0\n';
+                    dxf += ' 11\n' + entity.points[1].x.toFixed(6) + '\n 21\n' + (-entity.points[1].y).toFixed(6) + '\n 31\n0.0\n';
+                    dxf += ' 12\n' + entity.points[2].x.toFixed(6) + '\n 22\n' + (-entity.points[2].y).toFixed(6) + '\n 32\n0.0\n';
+                    dxf += ' 13\n' + entity.points[3].x.toFixed(6) + '\n 23\n' + (-entity.points[3].y).toFixed(6) + '\n 33\n0.0\n';
+                }
+                break;
+            case 'field':
+                // Export as TEXT with evaluated content
+                dxf += '  0\nTEXT\n';
+                dxf += '  8\n' + layer + '\n';
+                if (colorInt !== null) dxf += ' 62\n' + colorInt + '\n';
+                dxf += ' 10\n' + (entity.position.x).toFixed(6) + '\n';
+                dxf += ' 20\n' + (-entity.position.y).toFixed(6) + '\n';
+                dxf += ' 30\n0.0\n';
+                dxf += ' 40\n' + (entity.height || 10) + '\n';
+                dxf += '  1\n' + (entity.evaluatedText || entity.fieldExpression || '---') + '\n';
+                break;
         }
 
         // Add hatch if entity has it (for entities with inline hatch property)
@@ -1414,6 +1469,60 @@ const Storage = {
                 });
                 blockSvg += '</g>\n';
                 return blockSvg;
+
+            case 'mleader': {
+                let svg = '';
+                const pts = entity.points || [];
+                if (pts.length > 1) {
+                    const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+                    svg += `<path d="${pathD}" fill="none" stroke="${color}" stroke-width="1"/>`;
+                    // Arrowhead at first point
+                    const p0 = pts[0], p1 = pts[1];
+                    const ang = Math.atan2(p0.y - p1.y, p0.x - p1.x);
+                    const as = entity.arrowSize || 3;
+                    const ax1 = p0.x - as * Math.cos(ang - 0.3);
+                    const ay1 = p0.y - as * Math.sin(ang - 0.3);
+                    const ax2 = p0.x - as * Math.cos(ang + 0.3);
+                    const ay2 = p0.y - as * Math.sin(ang + 0.3);
+                    svg += `<polygon points="${p0.x},${p0.y} ${ax1},${ay1} ${ax2},${ay2}" fill="${color}"/>`;
+                }
+                if (entity.text && entity.textPosition) {
+                    const tp = entity.textPosition;
+                    const h = entity.height || 2.5;
+                    svg += `<text x="${tp.x}" y="${tp.y}" fill="${color}" font-size="${h}">${entity.text}</text>`;
+                }
+                return svg;
+            }
+            case 'tolerance': {
+                let svg = '';
+                const pos = entity.position || { x: 0, y: 0 };
+                const h = entity.height || 5;
+                let xOff = 0;
+                (entity.frames || []).forEach(frame => {
+                    const cells = [frame.symbol, (frame.diameterSymbol ? '\u2300' : '') + (frame.tolerance1 || ''), frame.datum1, frame.datum2, frame.datum3].filter(Boolean);
+                    cells.forEach(text => {
+                        const w = text.length * h * 0.8 + h;
+                        svg += `<rect x="${pos.x + xOff}" y="${pos.y - h * 0.8}" width="${w}" height="${h * 1.6}" fill="none" stroke="${color}"/>`;
+                        svg += `<text x="${pos.x + xOff + h * 0.3}" y="${pos.y + h * 0.3}" fill="${color}" font-size="${h}">${text}</text>`;
+                        xOff += w;
+                    });
+                    xOff += h * 0.3;
+                });
+                return svg;
+            }
+            case 'trace': {
+                if (entity.points && entity.points.length >= 4) {
+                    const pts = entity.points.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+                    return `<polygon points="${pts}" fill="${color}" stroke="${color}" stroke-width="0.5"/>`;
+                }
+                return '';
+            }
+            case 'field': {
+                const fp = entity.position || { x: 0, y: 0 };
+                const fh = entity.height || 10;
+                const ft = entity.evaluatedText || entity.fieldExpression || '---';
+                return `<text x="${fp.x}" y="${fp.y}" fill="${color}" font-size="${fh}">${ft}</text>`;
+            }
 
             default:
                 return '';

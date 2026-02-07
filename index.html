@@ -227,8 +227,31 @@
                             <i class="icon">&#10010;</i>
                             <span class="label">Insert</span>
                         </button>
+                        <button class="tool-btn" data-cmd="attdef" onclick="App.executeCommand('attdef')" title="Define Attribute (ATT)">
+                            <i class="icon">&#9839;</i>
+                            <span class="label">AttDef</span>
+                        </button>
                     </div>
                     <div class="ribbon-panel-title">Blocks</div>
+                </div>
+
+                <!-- Annotate Panel (NEW) -->
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" data-cmd="mleader" onclick="App.executeCommand('mleader')" title="Multi-Leader (MLD)">
+                            <i class="icon">&#10145;</i>
+                            <span class="label">MLeader</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="tolerance" onclick="App.executeCommand('tolerance')" title="Geometric Tolerance (TOL)">
+                            <i class="icon">&#9744;</i>
+                            <span class="label">Tolerance</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="field" onclick="App.executeCommand('field')" title="Insert Field">
+                            <i class="icon">&#402;</i>
+                            <span class="label">Field</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Annotate</div>
                 </div>
             </div>
 
@@ -308,6 +331,10 @@
                             <i class="icon">&#9638;</i>
                             <span class="label">Table</span>
                         </button>
+                        <button class="tool-btn" data-cmd="trace" onclick="App.executeCommand('trace')" title="Trace">
+                            <i class="icon">&#9644;</i>
+                            <span class="label">Trace</span>
+                        </button>
                     </div>
                     <div class="ribbon-panel-title">Draw</div>
                 </div>
@@ -337,6 +364,18 @@
                             <i class="icon">&#8994;</i>
                             <span class="label">DimArc</span>
                         </button>
+                        <button class="tool-btn" data-cmd="mleader" onclick="App.executeCommand('mleader')" title="Multi-Leader (MLD)">
+                            <i class="icon">&#10145;</i>
+                            <span class="label">MLeader</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="tolerance" onclick="App.executeCommand('tolerance')" title="Geometric Tolerance (TOL)">
+                            <i class="icon">&#9744;</i>
+                            <span class="label">Tolerance</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="field" onclick="App.executeCommand('field')" title="Insert Field">
+                            <i class="icon">&#402;</i>
+                            <span class="label">Field</span>
+                        </button>
                     </div>
                     <div class="ribbon-panel-title">Dimension</div>
                 </div>
@@ -349,6 +388,14 @@
                         <button class="tool-btn" data-cmd="insert" onclick="App.executeCommand('insert')" title="Insert Block (I)">
                             <i class="icon">&#10010;</i>
                             <span class="label">Insert</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="attdef" onclick="App.executeCommand('attdef')" title="Define Attribute (ATT)">
+                            <i class="icon">&#9839;</i>
+                            <span class="label">AttDef</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="attedit" onclick="App.executeCommand('attedit')" title="Edit Attributes (ATE)">
+                            <i class="icon">&#9998;</i>
+                            <span class="label">AttEdit</span>
                         </button>
                     </div>
                     <div class="ribbon-panel-title">Blocks</div>
@@ -567,8 +614,41 @@
                             <i class="icon">&#9776;</i>
                             <span class="label">List</span>
                         </button>
+                        <button class="tool-btn" data-cmd="count" onclick="App.executeCommand('count')" title="Count Entities (COUNT)">
+                            <i class="icon">&#9839;</i>
+                            <span class="label">Count</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="quickcalc" onclick="App.executeCommand('quickcalc')" title="Calculator (QC)">
+                            <i class="icon">&#9107;</i>
+                            <span class="label">QuickCalc</span>
+                        </button>
                     </div>
                     <div class="ribbon-panel-title">Inquiry</div>
+                </div>
+                <div class="ribbon-panel">
+                    <div class="ribbon-panel-content">
+                        <button class="tool-btn" data-cmd="pagesetup" onclick="App.executeCommand('pagesetup')" title="Page Setup">
+                            <i class="icon">&#128196;</i>
+                            <span class="label">PageSetup</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="vpscale" onclick="App.executeCommand('vpscale')" title="Viewport Scale (XP)">
+                            <i class="icon">&#8984;</i>
+                            <span class="label">VP Scale</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="imageclip" onclick="App.executeCommand('imageclip')" title="Image Clip (ICLIP)">
+                            <i class="icon">&#9986;</i>
+                            <span class="label">ImgClip</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="mlstyle" onclick="App.executeCommand('mlstyle')" title="Multiline Style">
+                            <i class="icon">&#9552;</i>
+                            <span class="label">MLStyle</span>
+                        </button>
+                        <button class="tool-btn" data-cmd="mleaderstyle" onclick="App.executeCommand('mleaderstyle')" title="MLeader Style (MLS)">
+                            <i class="icon">&#10145;</i>
+                            <span class="label">MLdrStyle</span>
+                        </button>
+                    </div>
+                    <div class="ribbon-panel-title">Styles</div>
                 </div>
             </div>
         </div>
@@ -801,6 +881,9 @@
                 <button class="mobile-tool-btn" onclick="App.executeCommand('dimordinate')"><i class="m-icon">&#8614;</i><span class="m-label">Ordinate</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('qdim')"><i class="m-icon">&#9889;</i><span class="m-label">QDim</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('leader')"><i class="m-icon">&#10145;</i><span class="m-label">Leader</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('mleader')"><i class="m-icon">&#10145;</i><span class="m-label">MLeader</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('tolerance')"><i class="m-icon">&#9744;</i><span class="m-label">Tolerance</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('field')"><i class="m-icon">&#402;</i><span class="m-label">Field</span></button>
             </div>
             <!-- View tools -->
             <div class="mobile-tool-row" data-mtab="view">
@@ -815,6 +898,9 @@
                 <button class="mobile-tool-btn" onclick="App.executeCommand('dimstyle')"><i class="m-icon">&#128396;</i><span class="m-label">DimStyle</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('layerstate')"><i class="m-icon">&#9776;</i><span class="m-label">LayerState</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('help')"><i class="m-icon">?</i><span class="m-label">Help</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('count')"><i class="m-icon">&#9839;</i><span class="m-label">Count</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('quickcalc')"><i class="m-icon">&#9107;</i><span class="m-label">Calc</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('pagesetup')"><i class="m-icon">&#128196;</i><span class="m-label">PageSetup</span></button>
             </div>
             <!-- Snap controls -->
             <div class="mobile-tool-row" data-mtab="snap">

@@ -695,6 +695,58 @@ const Geometry = {
                 // Also check insertion point
                 return Utils.dist(point, entity.insertPoint) < tolerance;
 
+            case 'mleader':
+                if (entity.points) {
+                    for (let i = 0; i < entity.points.length - 1; i++) {
+                        if (Utils.distToSegment(point, entity.points[i], entity.points[i + 1]) < tolerance) {
+                            return true;
+                        }
+                    }
+                }
+                if (entity.text && entity.textPosition) {
+                    const mh = entity.height || entity.textHeight || 10;
+                    const mtw = entity.text.length * mh * 0.6;
+                    const mtp = entity.textPosition;
+                    if (point.x >= mtp.x && point.x <= mtp.x + mtw &&
+                        point.y >= mtp.y - mh && point.y <= mtp.y + mh * 0.3) {
+                        return true;
+                    }
+                }
+                return false;
+
+            case 'tolerance':
+                if (entity.position) {
+                    const th = entity.height || 5;
+                    const tw = (entity.frames || []).length * th * 8;
+                    return point.x >= entity.position.x &&
+                           point.x <= entity.position.x + tw &&
+                           point.y >= entity.position.y - th &&
+                           point.y <= entity.position.y + th;
+                }
+                return false;
+
+            case 'trace':
+                if (entity.points && entity.points.length >= 3) {
+                    for (let ti = 0; ti < entity.points.length; ti++) {
+                        const tn = (ti + 1) % entity.points.length;
+                        if (Utils.distToSegment(point, entity.points[ti], entity.points[tn]) < tolerance) return true;
+                    }
+                    return Utils.pointInPolygon(point, entity.points);
+                }
+                return false;
+
+            case 'field':
+                if (entity.position) {
+                    const fh = entity.height || 10;
+                    const ft = entity.evaluatedText || entity.fieldExpression || '---';
+                    const fw = ft.length * fh * 0.6;
+                    return point.x >= entity.position.x &&
+                           point.x <= entity.position.x + fw &&
+                           point.y >= entity.position.y - fh &&
+                           point.y <= entity.position.y;
+                }
+                return false;
+
             default:
                 return false;
         }
@@ -982,6 +1034,10 @@ const Geometry = {
                     endpoints.push(...eps);
                 });
                 return endpoints;
+            case 'mleader':
+                return (entity.points || []).map(p => ({ ...p }));
+            case 'trace':
+                return (entity.points || []).map(p => ({ ...p }));
             default:
                 return [];
         }
@@ -1198,6 +1254,31 @@ const Geometry = {
                 });
                 return lgrips;
             }
+            case 'mleader': {
+                const mlgrips = [];
+                (entity.points || []).forEach((p, i) => {
+                    mlgrips.push({ point: { ...p }, type: 'vertex', index: i });
+                });
+                if (entity.textPosition) {
+                    mlgrips.push({ point: { ...entity.textPosition }, type: 'text', index: mlgrips.length });
+                }
+                return mlgrips;
+            }
+            case 'tolerance':
+                return [
+                    { point: { ...(entity.position || { x: 0, y: 0 }) }, type: 'insertion', index: 0 }
+                ];
+            case 'trace': {
+                const tgrips = [];
+                (entity.points || []).forEach((p, i) => {
+                    tgrips.push({ point: { ...p }, type: 'vertex', index: i });
+                });
+                return tgrips;
+            }
+            case 'field':
+                return [
+                    { point: { ...(entity.position || { x: 0, y: 0 }) }, type: 'insertion', index: 0 }
+                ];
             default:
                 return [];
         }
@@ -1340,6 +1421,30 @@ const Geometry = {
                 }
                 break;
             }
+            case 'mleader': {
+                const mlpts = [...(entity.points || []).map(p => ({ ...p }))];
+                if (gripIndex >= 0 && gripIndex < mlpts.length) {
+                    mlpts[gripIndex] = { ...newPoint };
+                    return { points: mlpts };
+                }
+                // Text position grip
+                if (gripIndex === mlpts.length && entity.textPosition) {
+                    return { textPosition: { ...newPoint } };
+                }
+                break;
+            }
+            case 'tolerance':
+                return { position: { ...newPoint } };
+            case 'trace': {
+                const trPts = [...(entity.points || []).map(p => ({ ...p }))];
+                if (gripIndex >= 0 && gripIndex < trPts.length) {
+                    trPts[gripIndex] = { ...newPoint };
+                    return { points: trPts };
+                }
+                break;
+            }
+            case 'field':
+                return { position: { ...newPoint } };
         }
         return null;
     },
@@ -1400,6 +1505,29 @@ const Geometry = {
                     x: entity.center.x + (entity.rx || entity.r) * Math.cos(ea),
                     y: entity.center.y + (entity.ry || entity.r) * Math.sin(ea)
                 };
+            }
+            case 'mleader': {
+                let minDist = Infinity;
+                let nearest = null;
+                const pts = entity.points || [];
+                for (let i = 0; i < pts.length - 1; i++) {
+                    const p = Utils.closestPointOnSegment(point, pts[i], pts[i + 1]);
+                    const d = Utils.dist(point, p);
+                    if (d < minDist) { minDist = d; nearest = p; }
+                }
+                return nearest;
+            }
+            case 'trace': {
+                let minDist = Infinity;
+                let nearest = null;
+                const pts = entity.points || [];
+                for (let i = 0; i < pts.length; i++) {
+                    const ni = (i + 1) % pts.length;
+                    const p = Utils.closestPointOnSegment(point, pts[i], pts[ni]);
+                    const d = Utils.dist(point, p);
+                    if (d < minDist) { minDist = d; nearest = p; }
+                }
+                return nearest;
             }
             default:
                 return null;
@@ -1599,6 +1727,19 @@ const Geometry = {
                 moved.center.x += delta.x;
                 moved.center.y += delta.y;
                 break;
+            case 'mleader':
+                if (moved.points) moved.points = moved.points.map(p => ({ x: p.x + delta.x, y: p.y + delta.y }));
+                if (moved.textPosition) moved.textPosition = { x: moved.textPosition.x + delta.x, y: moved.textPosition.y + delta.y };
+                break;
+            case 'tolerance':
+            case 'field':
+                if (moved.position) moved.position = { x: moved.position.x + delta.x, y: moved.position.y + delta.y };
+                break;
+            case 'trace':
+                if (moved.points) moved.points = moved.points.map(p => ({ x: p.x + delta.x, y: p.y + delta.y }));
+                if (moved.p1) moved.p1 = { x: moved.p1.x + delta.x, y: moved.p1.y + delta.y };
+                if (moved.p2) moved.p2 = { x: moved.p2.x + delta.x, y: moved.p2.y + delta.y };
+                break;
         }
 
         return moved;
@@ -1663,6 +1804,19 @@ const Geometry = {
             case 'donut':
                 rotated.center = Utils.rotatePoint(rotated.center, center, angle);
                 break;
+            case 'mleader':
+                if (rotated.points) rotated.points = rotated.points.map(p => Utils.rotatePoint(p, center, angle));
+                if (rotated.textPosition) rotated.textPosition = Utils.rotatePoint(rotated.textPosition, center, angle);
+                break;
+            case 'tolerance':
+            case 'field':
+                if (rotated.position) rotated.position = Utils.rotatePoint(rotated.position, center, angle);
+                break;
+            case 'trace':
+                if (rotated.points) rotated.points = rotated.points.map(p => Utils.rotatePoint(p, center, angle));
+                if (rotated.p1) rotated.p1 = Utils.rotatePoint(rotated.p1, center, angle);
+                if (rotated.p2) rotated.p2 = Utils.rotatePoint(rotated.p2, center, angle);
+                break;
         }
 
         return rotated;
@@ -1725,6 +1879,22 @@ const Geometry = {
                 scaled.innerRadius *= scale;
                 scaled.outerRadius *= scale;
                 break;
+            case 'mleader':
+                if (scaled.points) scaled.points = scaled.points.map(p => Utils.scalePoint(p, center, scale));
+                if (scaled.textPosition) scaled.textPosition = Utils.scalePoint(scaled.textPosition, center, scale);
+                if (scaled.height) scaled.height *= scale;
+                if (scaled.textHeight) scaled.textHeight *= scale;
+                break;
+            case 'tolerance':
+            case 'field':
+                if (scaled.position) scaled.position = Utils.scalePoint(scaled.position, center, scale);
+                if (scaled.height) scaled.height *= scale;
+                break;
+            case 'trace':
+                if (scaled.points) scaled.points = scaled.points.map(p => Utils.scalePoint(p, center, scale));
+                if (scaled.p1) scaled.p1 = Utils.scalePoint(scaled.p1, center, scale);
+                if (scaled.p2) scaled.p2 = Utils.scalePoint(scaled.p2, center, scale);
+                break;
         }
 
         return scaled;
@@ -1786,6 +1956,19 @@ const Geometry = {
                 break;
             case 'donut':
                 mirrored.center = Utils.mirrorPoint(mirrored.center, lineP1, lineP2);
+                break;
+            case 'mleader':
+                if (mirrored.points) mirrored.points = mirrored.points.map(p => Utils.mirrorPoint(p, lineP1, lineP2));
+                if (mirrored.textPosition) mirrored.textPosition = Utils.mirrorPoint(mirrored.textPosition, lineP1, lineP2);
+                break;
+            case 'tolerance':
+            case 'field':
+                if (mirrored.position) mirrored.position = Utils.mirrorPoint(mirrored.position, lineP1, lineP2);
+                break;
+            case 'trace':
+                if (mirrored.points) mirrored.points = mirrored.points.map(p => Utils.mirrorPoint(p, lineP1, lineP2));
+                if (mirrored.p1) mirrored.p1 = Utils.mirrorPoint(mirrored.p1, lineP1, lineP2);
+                if (mirrored.p2) mirrored.p2 = Utils.mirrorPoint(mirrored.p2, lineP1, lineP2);
                 break;
         }
 

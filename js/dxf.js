@@ -452,6 +452,7 @@ const DXF = (() => {
                 };
             }
             case 'SOLID':
+            case 'TRACE':
             case '3DFACE': {
                 // 4 corner points: 10/20, 11/21, 12/22, 13/23
                 const solidPoints = [];
@@ -465,7 +466,7 @@ const DXF = (() => {
                 }
                 if (solidPoints.length < 3) return null;
                 return {
-                    type: 'solid',
+                    type: type === 'TRACE' ? 'trace' : 'solid',
                     layer,
                     ...style,
                     points: solidPoints
@@ -1261,6 +1262,51 @@ const DXF = (() => {
                     ]
                 });
                 break;
+            case 'mleader':
+                // Export as LEADER entity for compatibility
+                writeEntityLeader(out, entity);
+                break;
+            case 'tolerance': {
+                const pos = entity.position || { x: 0, y: 0 };
+                out.push('0', 'TOLERANCE');
+                out.push('8', entity.layer || '0');
+                writeCommonStyle(out, entity);
+                out.push('10', formatNumber(pos.x), '20', formatNumber(fy(pos.y)), '30', '0.0');
+                const tolStr = (entity.frames || []).map(f => {
+                    let s = (f.symbol || '') + (f.diameterSymbol ? '%%c' : '') + (f.tolerance1 || '');
+                    if (f.datum1) s += '%%v' + f.datum1;
+                    if (f.datum2) s += '%%v' + f.datum2;
+                    if (f.datum3) s += '%%v' + f.datum3;
+                    return s;
+                }).join('%%v');
+                out.push('1', tolStr);
+                break;
+            }
+            case 'trace': {
+                // DXF TRACE entity - 4 corner points
+                const pts = entity.points || [];
+                if (pts.length >= 4) {
+                    out.push('0', 'TRACE');
+                    out.push('8', entity.layer || '0');
+                    writeCommonStyle(out, entity);
+                    out.push('10', formatNumber(pts[0].x), '20', formatNumber(fy(pts[0].y)), '30', '0.0');
+                    out.push('11', formatNumber(pts[1].x), '21', formatNumber(fy(pts[1].y)), '31', '0.0');
+                    out.push('12', formatNumber(pts[2].x), '22', formatNumber(fy(pts[2].y)), '32', '0.0');
+                    out.push('13', formatNumber(pts[3].x), '23', formatNumber(fy(pts[3].y)), '33', '0.0');
+                }
+                break;
+            }
+            case 'field': {
+                // Export as TEXT with evaluated content
+                const fp = entity.position || { x: 0, y: 0 };
+                out.push('0', 'TEXT');
+                out.push('8', entity.layer || '0');
+                writeCommonStyle(out, entity);
+                out.push('10', formatNumber(fp.x), '20', formatNumber(fy(fp.y)), '30', '0.0');
+                out.push('40', formatNumber(entity.height || 10));
+                out.push('1', entity.evaluatedText || entity.fieldExpression || '---');
+                break;
+            }
             default:
                 break;
         }

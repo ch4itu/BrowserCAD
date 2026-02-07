@@ -159,6 +159,47 @@ class StateManager {
         // { blockName: { name, basePoint, entities: [...], description } }
         this.blocks = {};
 
+        // MLeader styles (MLEADERSTYLE)
+        this.mleaderStyles = [{
+            name: 'Standard',
+            arrowType: 'closed',  // closed, open, dot, none
+            arrowSize: 3,
+            landingGap: 2,
+            textHeight: 2.5,
+            doglegLength: 8,
+            contentType: 'mtext'  // mtext, block, none
+        }];
+        this.currentMLeaderStyle = 'Standard';
+
+        // Multiline styles (MLSTYLE)
+        this.multilineStyles = [{
+            name: 'Standard',
+            elements: [
+                { offset: 0.5, color: '#ffffff', linetype: 'Continuous' },
+                { offset: -0.5, color: '#ffffff', linetype: 'Continuous' }
+            ],
+            showJoints: true,
+            startCap: 'none',
+            endCap: 'none'
+        }];
+        this.currentMultilineStyle = 'Standard';
+
+        // Page setup defaults
+        this.defaultPageSetup = {
+            paperSize: 'ISO A3',
+            paperWidth: 420,
+            paperHeight: 297,
+            orientation: 'Landscape',
+            plotScale: 'Fit',
+            plotScaleCustom: 1,
+            margins: { top: 10, right: 10, bottom: 10, left: 10 },
+            plotArea: 'Layout',  // Layout, Extents, Window
+            plotOffset: { x: 0, y: 0 }
+        };
+
+        // Dynamic fields
+        this.fields = [];  // Active field references { id, type, entityId, format }
+
         // Named views { name: { pan: {x,y}, zoom: number } }
         this.namedViews = {};
 
@@ -1116,6 +1157,52 @@ class StateManager {
                     }
                 });
                 return bMinX !== Infinity ? { minX: bMinX, maxX: bMaxX, minY: bMinY, maxY: bMaxY } : null;
+            case 'mleader': {
+                let mnX = Infinity, mnY = Infinity, mxX = -Infinity, mxY = -Infinity;
+                (entity.points || []).forEach(p => {
+                    mnX = Math.min(mnX, p.x); mnY = Math.min(mnY, p.y);
+                    mxX = Math.max(mxX, p.x); mxY = Math.max(mxY, p.y);
+                });
+                if (entity.textPosition) {
+                    const th = entity.height || 2.5;
+                    const tw = (entity.text || '').length * th * 0.6;
+                    mnX = Math.min(mnX, entity.textPosition.x);
+                    mnY = Math.min(mnY, entity.textPosition.y - th);
+                    mxX = Math.max(mxX, entity.textPosition.x + tw);
+                    mxY = Math.max(mxY, entity.textPosition.y + th);
+                }
+                return mnX < Infinity ? { minX: mnX, minY: mnY, maxX: mxX, maxY: mxY } : null;
+            }
+            case 'tolerance': {
+                const th = entity.height || 5;
+                const tw = (entity.frames || []).length * th * 10;
+                return {
+                    minX: entity.position.x,
+                    minY: entity.position.y - th,
+                    maxX: entity.position.x + tw,
+                    maxY: entity.position.y + th
+                };
+            }
+            case 'trace': {
+                if (!entity.points || entity.points.length === 0) return null;
+                let mnX = Infinity, mnY = Infinity, mxX = -Infinity, mxY = -Infinity;
+                entity.points.forEach(p => {
+                    mnX = Math.min(mnX, p.x); mnY = Math.min(mnY, p.y);
+                    mxX = Math.max(mxX, p.x); mxY = Math.max(mxY, p.y);
+                });
+                return { minX: mnX, minY: mnY, maxX: mxX, maxY: mxY };
+            }
+            case 'field': {
+                const fh = entity.height || 10;
+                const ft = (entity.evaluatedText || entity.fieldExpression || '---');
+                const fw = ft.length * fh * 0.6;
+                return {
+                    minX: entity.position.x,
+                    minY: entity.position.y - fh,
+                    maxX: entity.position.x + fw,
+                    maxY: entity.position.y
+                };
+            }
             default:
                 return null;
         }
@@ -1138,6 +1225,11 @@ class StateManager {
             currentLayout: this.currentLayout,
             dimStyles: this.dimStyles,
             currentDimStyle: this.currentDimStyle,
+            mleaderStyles: this.mleaderStyles,
+            currentMLeaderStyle: this.currentMLeaderStyle,
+            multilineStyles: this.multilineStyles,
+            currentMultilineStyle: this.currentMultilineStyle,
+            fields: this.fields,
             layerStates: this.layerStates,
             view: {
                 pan: this.pan,
@@ -1168,6 +1260,11 @@ class StateManager {
             this.currentLayout = data.currentLayout || this.currentLayout;
             this.dimStyles = data.dimStyles || this.dimStyles;
             this.currentDimStyle = data.currentDimStyle || this.currentDimStyle;
+            if (data.mleaderStyles) this.mleaderStyles = data.mleaderStyles;
+            if (data.currentMLeaderStyle) this.currentMLeaderStyle = data.currentMLeaderStyle;
+            if (data.multilineStyles) this.multilineStyles = data.multilineStyles;
+            if (data.currentMultilineStyle) this.currentMultilineStyle = data.currentMultilineStyle;
+            if (data.fields) this.fields = data.fields;
             this.layerStates = data.layerStates || this.layerStates;
 
             if (data.view) {
@@ -1203,6 +1300,27 @@ class StateManager {
         this.modified = true;
     }
 
+    getMLeaderStyle(name) {
+        return this.mleaderStyles.find(s => s.name === (name || this.currentMLeaderStyle)) || this.mleaderStyles[0];
+    }
+
+    getMultilineStyle(name) {
+        return this.multilineStyles.find(s => s.name === (name || this.currentMultilineStyle)) || this.multilineStyles[0];
+    }
+
+    getPageSetup(layoutName) {
+        const layout = this.getLayout(layoutName || this.currentLayout);
+        return (layout && layout.pageSetup) || { ...this.defaultPageSetup };
+    }
+
+    setPageSetup(layoutName, setup) {
+        const layout = this.getLayout(layoutName || this.currentLayout);
+        if (layout) {
+            layout.pageSetup = { ...setup };
+            this.modified = true;
+        }
+    }
+
     newDrawing() {
         this.entities = [];
         this.selectedIds = [];
@@ -1223,6 +1341,21 @@ class StateManager {
             }
         ];
         this.currentDimStyle = 'Standard';
+        this.mleaderStyles = [{
+            name: 'Standard', arrowType: 'closed', arrowSize: 3,
+            landingGap: 2, textHeight: 2.5, doglegLength: 8, contentType: 'mtext'
+        }];
+        this.currentMLeaderStyle = 'Standard';
+        this.multilineStyles = [{
+            name: 'Standard',
+            elements: [
+                { offset: 0.5, color: '#ffffff', linetype: 'Continuous' },
+                { offset: -0.5, color: '#ffffff', linetype: 'Continuous' }
+            ],
+            showJoints: true, startCap: 'none', endCap: 'none'
+        }];
+        this.currentMultilineStyle = 'Standard';
+        this.fields = [];
         this.applyDimStyle(this.currentDimStyle);
         this.layouts = [
             {
