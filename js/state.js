@@ -769,6 +769,11 @@ class StateManager {
             this._previousSelection = [...this.selectedIds];
         }
         this.selectedIds = [];
+        // Clear grip state
+        this.hoveredGrip = null;
+        this.activeGrip = null;
+        this.gripDragging = false;
+        this.gripBasePoint = null;
         // Update UI
         if (typeof UI !== 'undefined') {
             UI.updatePropertiesPanel();

@@ -6398,7 +6398,18 @@ const Commands = {
                 polyline: ['a', 'arc', 'l', 'line', 'c', 'close', 'u', 'undo'],
                 spline: ['c', 'close', 'u', 'undo'],
                 revcloud: ['c', 'close'],
-                hatch: ['list']
+                hatch: ['list'],
+                // Commands with text sub-options - allow all input to pass through
+                pedit: ['c', 'close', 'o', 'open', 'j', 'join', 'w', 'width', 'e', 'edit', 's', 'spline', 'd', 'decurve', 'x', 'exit', 'n', 'next', 'p', 'previous', 'm', 'move', 'delete'],
+                osnap: ['on', 'off', 'end', 'mid', 'cen', 'int', 'per', 'tan', 'nea', 'qua', 'nod', 'all', 'none', 'list'],
+                hatchedit: ['p', 'pattern', 's', 'scale', 'a', 'angle', 'c', 'color', 'l', 'layer', 'list'],
+                layer: ['n', 'new', 's', 'set', 'on', 'off', 'list', 'color', 'delete', 'freeze', 'thaw', 'lock', 'unlock'],
+                dimstyle: ['list', 'set', 'save', 's', 'l'],
+                layout: ['new', 'set', 'list', 'delete', 'rename', 'n', 's', 'l', 'd', 'r'],
+                layerstate: ['save', 'restore', 'list', 'delete', 's', 'r', 'l', 'd'],
+                chprop: ['c', 'color', 'l', 'layer', 'lt', 'linetype', 'lw', 'lineweight', 's', 'scale'],
+                filter: ['t', 'type', 'l', 'layer', 'c', 'color', 'a', 'all', 'clear'],
+                find: ['n', 'next', 'r', 'replace', 'a', 'all']
             };
 
             if (active === 'polyline') {
