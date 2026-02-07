@@ -1955,27 +1955,43 @@ body {
 
 .mobile-tab {
     flex: 1;
-    padding: 12px 6px;
+    padding: 8px 4px 6px;
     background: transparent;
     border: none;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: 10px;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
     cursor: pointer;
     text-align: center;
     border-bottom: 3px solid transparent;
     transition: all 0.15s ease;
     -webkit-tap-highlight-color: transparent;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    font-family: inherit;
+}
+
+.mobile-tab .mtab-icon {
+    font-size: 16px;
+    line-height: 1;
+}
+
+.mobile-tab .mtab-label {
+    font-size: 9px;
+    line-height: 1;
 }
 
 .mobile-tab.active {
-    color: var(--text-bright);
+    color: var(--accent-blue-hover);
     border-bottom-color: var(--accent-blue);
     background: var(--bg-medium);
 }
 
+/* Tool rows (legacy class name for compatibility) */
 .mobile-tool-row {
     display: none;
     overflow-x: auto;
@@ -1989,49 +2005,67 @@ body {
 .mobile-tool-row::-webkit-scrollbar { display: none; }
 .mobile-tool-row.active { display: flex; }
 
+/* Tool grid - 2 rows wrapping */
+.mobile-tool-grid {
+    display: none;
+    flex-wrap: wrap;
+    padding: 6px 8px;
+    gap: 5px;
+    overflow-y: auto;
+    max-height: 140px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    justify-content: flex-start;
+}
+
+.mobile-tool-grid::-webkit-scrollbar { display: none; }
+.mobile-tool-grid.active { display: flex; }
+
 .mobile-tool-btn {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-width: 64px;
-    min-height: 60px;
-    padding: 10px 6px;
+    width: calc(16.666% - 5px);
+    min-width: 54px;
+    min-height: 56px;
+    padding: 8px 4px;
     background: var(--bg-light);
     border: 1px solid var(--border-dark);
-    border-radius: 6px;
+    border-radius: 8px;
     color: var(--text-primary);
     cursor: pointer;
-    flex-shrink: 0;
     -webkit-tap-highlight-color: transparent;
-    transition: background 0.1s ease;
-    scroll-snap-align: start;
+    transition: background 0.1s ease, transform 0.08s ease;
+    box-sizing: border-box;
 }
 
 .mobile-tool-btn:active {
     background: var(--accent-blue);
     border-color: var(--accent-blue-hover);
     color: var(--text-bright);
-    transform: scale(0.95);
+    transform: scale(0.92);
 }
 
 .mobile-tool-btn.active {
     background: var(--accent-blue);
     border-color: var(--accent-blue-hover);
     color: var(--text-bright);
+    box-shadow: 0 0 8px rgba(0, 122, 204, 0.4);
 }
 
 .mobile-tool-btn .m-icon {
-    font-size: 24px;
+    font-size: 22px;
     font-style: normal;
     line-height: 1;
 }
 
 .mobile-tool-btn .m-label {
-    font-size: 11px;
-    margin-top: 3px;
+    font-size: 10px;
+    margin-top: 2px;
     white-space: nowrap;
-    font-weight: 500;
+    font-weight: 600;
+    letter-spacing: 0.2px;
 }
 
 /* ============================================
@@ -2448,15 +2482,19 @@ body {
     .google-signin-btn { padding: 3px 6px; font-size: 10px; }
     .google-signin-btn #googleSignInText { display: none; }
 
-    .mobile-tab { padding: 10px 2px; font-size: 10px; letter-spacing: 0; }
-    .mobile-tool-btn { min-width: 54px; min-height: 52px; padding: 8px 4px; }
-    .mobile-tool-btn .m-icon { font-size: 20px; }
-    .mobile-tool-btn .m-label { font-size: 9px; }
+    .mobile-tab { padding: 6px 2px 4px; }
+    .mobile-tab .mtab-icon { font-size: 14px; }
+    .mobile-tab .mtab-label { font-size: 8px; }
+    .mobile-tool-btn { min-width: 48px; min-height: 48px; padding: 6px 2px; }
+    .mobile-tool-btn .m-icon { font-size: 18px; }
+    .mobile-tool-btn .m-label { font-size: 8px; }
+    .mobile-tool-grid { max-height: 120px; gap: 4px; padding: 4px 6px; }
     .mobile-menu-drawer { width: 260px; }
     .mobile-quick-btn { width: 40px; height: 40px; font-size: 16px; }
 
     .mdb-btn { padding: 6px 10px; font-size: 12px; min-height: 34px; }
     .nk { padding: 10px 6px; font-size: 20px; min-height: 44px; }
+    .mobile-fab { width: 38px; height: 38px; font-size: 16px; }
 }
 
 /* Landscape phones */
@@ -2489,6 +2527,7 @@ body {
     .mobile-mode-indicator { display: block !important; }
     .mobile-help-btn { display: flex !important; }
     .mobile-toast-container { display: flex !important; }
+    .mobile-fab-group { display: flex !important; }
     
     /* Show Bottom Toolbar (unless numpad is open) */
     .mobile-toolbar { 
@@ -2508,6 +2547,8 @@ body {
     /* Layout: Active tools in one row, hide others */
     .mobile-tool-row.active { display: flex !important; flex-wrap: nowrap; }
     .mobile-tool-row:not(.active) { display: none !important; }
+    .mobile-tool-grid.active { display: flex !important; }
+    .mobile-tool-grid:not(.active) { display: none !important; }
 
     /* 4. COMPACT SIZING FOR SHORT SCREENS */
     .mdb-prompt-row { padding: 4px 10px 2px; }
@@ -3055,4 +3096,175 @@ body {
     .mdb-recent-cmd { padding: 3px 10px; font-size: 10px; min-height: 26px; }
     .gesture-hint-icon { width: 40px; height: 40px; font-size: 18px; border-radius: 10px; }
     .gesture-hints-overlay { gap: 16px; padding: 16px; }
+    .mobile-tool-grid { max-height: 70px; }
+    .mobile-tool-btn { min-height: 40px; padding: 4px 2px; }
+    .mobile-tool-btn .m-icon { font-size: 18px; }
+    .mobile-fab-group { bottom: 4px; left: 4px; gap: 4px; }
+    .mobile-fab { width: 36px; height: 36px; font-size: 16px; }
+}
+
+/* ============================================
+   FLOATING ACTION BUTTONS (mobile)
+   ============================================ */
+
+.mobile-fab-group {
+    display: none;
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    z-index: 50;
+    flex-direction: row;
+    gap: 8px;
+}
+
+@media (max-width: 768px) {
+    .mobile-fab-group { display: flex; }
+}
+
+.mobile-fab {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(35, 35, 40, 0.92);
+    border: 1px solid var(--border-medium);
+    color: var(--text-primary);
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+    transition: transform 0.1s ease, background 0.1s ease;
+    font-family: inherit;
+}
+
+.mobile-fab:active {
+    transform: scale(0.88);
+    background: var(--accent-blue);
+    border-color: var(--accent-blue-hover);
+    color: #fff;
+}
+
+.mobile-fab.fab-undo { color: var(--text-secondary); }
+.mobile-fab.fab-redo { color: var(--text-secondary); }
+
+/* ============================================
+   MOBILE CROSSHAIR (precision drawing overlay)
+   ============================================ */
+
+.mobile-crosshair {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 25;
+}
+
+@media (max-width: 768px) {
+    .mobile-crosshair.visible { display: block; }
+}
+
+.mobile-crosshair .crosshair-h,
+.mobile-crosshair .crosshair-v {
+    position: absolute;
+    background: rgba(0, 122, 204, 0.35);
+}
+
+.mobile-crosshair .crosshair-h {
+    width: 40px;
+    height: 1px;
+    top: 0;
+    left: -20px;
+}
+
+.mobile-crosshair .crosshair-v {
+    width: 1px;
+    height: 40px;
+    top: -20px;
+    left: 0;
+}
+
+.mobile-crosshair .crosshair-dot {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    top: -3px;
+    left: -3px;
+}
+
+.mobile-crosshair .crosshair-coord {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    font-size: 10px;
+    font-family: 'Courier New', monospace;
+    color: var(--accent-blue-hover);
+    background: rgba(15, 23, 42, 0.8);
+    padding: 2px 5px;
+    border-radius: 3px;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+/* ============================================
+   IMPROVED DRAW BAR ACTIVE STATE
+   ============================================ */
+
+.mobile-draw-bar.cmd-active {
+    border-top-color: #10b981;
+    background: linear-gradient(180deg, rgba(16, 185, 129, 0.06) 0%, var(--bg-dark) 40%);
+}
+
+.mobile-draw-bar.cmd-active .mdb-tool-badge {
+    background: #10b981;
+}
+
+.mdb-ortho-toggle {
+    background: var(--bg-lighter);
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.mdb-ortho-toggle.active {
+    background: rgba(0, 122, 204, 0.25);
+    color: var(--accent-blue-hover);
+    border: 1px solid var(--accent-blue);
+}
+
+/* ============================================
+   IMPROVED GESTURE HINTS
+   ============================================ */
+
+.gesture-hints-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-bright);
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+/* ============================================
+   SNAP TOGGLE BUTTON STATE
+   ============================================ */
+
+.snap-toggle-btn.active {
+    background: rgba(0, 122, 204, 0.2);
+    border-color: var(--accent-blue);
+    color: var(--accent-blue-hover);
+}
+
+/* ============================================
+   IDLE STATE HINT
+   ============================================ */
+
+.mdb-prompt-text.idle-hint {
+    font-style: italic;
+    opacity: 0.7;
 }

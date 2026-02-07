@@ -3428,18 +3428,41 @@ class Hatch {
     }
 }
 
-// Sutherland-Hodgman polygon clipping for intersection of two convex/concave polygons
+// Compute signed area of polygon (positive = CCW, negative = CW)
+Geometry.polygonSignedArea = function(poly) {
+    let area = 0;
+    for (let i = 0; i < poly.length; i++) {
+        const j = (i + 1) % poly.length;
+        area += poly[i].x * poly[j].y;
+        area -= poly[j].x * poly[i].y;
+    }
+    return area / 2;
+};
+
+// Ensure polygon is in CCW winding order
+Geometry.ensureCCW = function(poly) {
+    if (Geometry.polygonSignedArea(poly) < 0) {
+        return poly.slice().reverse();
+    }
+    return poly;
+};
+
+// Sutherland-Hodgman polygon clipping - clip polygon MUST be convex and CCW
 Geometry.clipPolygon = function(subjectPoly, clipPoly) {
     if (!subjectPoly || !clipPoly || subjectPoly.length < 3 || clipPoly.length < 3) return [];
 
-    let output = subjectPoly.slice();
+    // Ensure both polygons are in CCW winding order for correct _isInside test
+    const subject = Geometry.ensureCCW(subjectPoly);
+    const clip = Geometry.ensureCCW(clipPoly);
 
-    for (let i = 0; i < clipPoly.length; i++) {
+    let output = subject.slice();
+
+    for (let i = 0; i < clip.length; i++) {
         if (output.length === 0) return [];
         const input = output;
         output = [];
-        const edgeStart = clipPoly[i];
-        const edgeEnd = clipPoly[(i + 1) % clipPoly.length];
+        const edgeStart = clip[i];
+        const edgeEnd = clip[(i + 1) % clip.length];
 
         for (let j = 0; j < input.length; j++) {
             const current = input[j];

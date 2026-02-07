@@ -3123,34 +3123,39 @@ const Commands = {
 
     handleHatchClick(point) {
         const targets = this.findHatchTargets(point);
+
+        // Multiple overlapping closed entities -> compute intersection
+        if (targets.length > 1) {
+            let intersectionPoly = this.getHatchBoundaryPoints(targets[0]);
+            for (let i = 1; i < targets.length; i++) {
+                const otherPoly = this.getHatchBoundaryPoints(targets[i]);
+                const clipped = Geometry.clipPolygon(intersectionPoly, otherPoly);
+                if (clipped && clipped.length >= 3) {
+                    intersectionPoly = clipped;
+                }
+                // If clipping fails, keep the last good polygon
+            }
+            if (intersectionPoly && intersectionPoly.length >= 3) {
+                CAD.saveUndoState('Hatch');
+                const hatchEntity = this.createHatchEntity(
+                    intersectionPoly,
+                    targets.map(entity => entity.id)
+                );
+                CAD.addEntity(hatchEntity);
+                UI.log('Hatch applied to intersection.');
+                this.finishCommand();
+                return;
+            }
+        }
+
+        // Single closed entity containing the point
         if (targets.length === 1) {
             this.applyHatch(targets[0]);
             this.finishCommand();
             return;
         }
 
-        if (targets.length > 1) {
-            CAD.saveUndoState('Hatch');
-            // Compute the actual polygon intersection of all overlapping entities
-            let intersectionPoly = this.getHatchBoundaryPoints(targets[0]);
-            for (let i = 1; i < targets.length; i++) {
-                const otherPoly = this.getHatchBoundaryPoints(targets[i]);
-                intersectionPoly = Geometry.clipPolygon(intersectionPoly, otherPoly);
-                if (!intersectionPoly || intersectionPoly.length < 3) {
-                    intersectionPoly = this.getHatchBoundaryPoints(targets[0]);
-                    break;
-                }
-            }
-            const hatchEntity = this.createHatchEntity(
-                intersectionPoly,
-                targets.map(entity => entity.id)
-            );
-            CAD.addEntity(hatchEntity);
-            UI.log('Hatch applied to intersection.');
-            this.finishCommand();
-            return;
-        }
-
+        // Direct hit test on a specific entity (clicking on its boundary)
         const hit = this.hitTest(point);
         if (hit) {
             if (this.entitySupportsHatch(hit)) {
@@ -3162,6 +3167,7 @@ const Commands = {
             return;
         }
 
+        // Last resort: try to find a closed loop from intersecting line/polyline segments
         const loop = this.findLineLoopContainingPoint(point);
         if (loop) {
             CAD.saveUndoState('Hatch');
@@ -3256,7 +3262,7 @@ const Commands = {
     applyHatch(entity) {
         CAD.saveUndoState('Hatch');
         const boundary = this.getHatchBoundaryPoints(entity);
-        const hatchEntity = this.createHatchEntity(boundary, [entity.id]);
+        const hatchEntity = this.createHatchEntity(boundary, [entity.id], entity);
         CAD.addEntity(hatchEntity);
         UI.log('Hatch applied.');
         Renderer.draw();
@@ -3272,7 +3278,7 @@ const Commands = {
         CAD.saveUndoState('Hatch');
         targets.forEach(entity => {
             const boundary = this.getHatchBoundaryPoints(entity);
-            const hatchEntity = this.createHatchEntity(boundary, [entity.id]);
+            const hatchEntity = this.createHatchEntity(boundary, [entity.id], entity);
             CAD.addEntity(hatchEntity, true);
         });
         UI.log(`HATCH: Applied to ${targets.length} object(s).`, 'success');
@@ -3373,7 +3379,7 @@ const Commands = {
         return result;
     },
 
-    createHatchEntity(boundaryPoints, clipIds = []) {
+    createHatchEntity(boundaryPoints, clipIds = [], sourceEntity = null) {
         const pattern = (CAD.hatchPattern || 'ansi31').toLowerCase();
         const userScale = CAD.hatchScale || 1;
         const userAngle = CAD.hatchAngle || 0;
@@ -3383,8 +3389,6 @@ const Commands = {
         if (boundaryPoints && boundaryPoints.length >= 2) {
             const bbox = Geometry.Hatch.getPointsBoundingBox(boundaryPoints);
             const extent = Math.max(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY);
-            // Base: 1 scale unit = ~3.175 drawing units (AutoCAD ANSI standard)
-            // Adjust so ~15-25 lines appear across the shape
             autoScale = Math.max(extent / 60, 0.1);
         }
         const effectiveScale = autoScale * userScale;
@@ -3396,7 +3400,7 @@ const Commands = {
             renderLines = hatch.generateRenderLines();
         }
 
-        return {
+        const result = {
             type: 'hatch',
             hatch: { pattern },
             boundary: boundaryPoints,
@@ -3406,6 +3410,25 @@ const Commands = {
             renderLines,
             clipIds
         };
+
+        // Store source entity geometry info for accurate clip path rendering
+        if (sourceEntity) {
+            if (sourceEntity.type === 'polyline' && sourceEntity.bulges && sourceEntity.bulges.length > 0) {
+                result.sourcePoints = [...sourceEntity.points];
+                result.sourceBulges = [...sourceEntity.bulges];
+                result.sourceClosed = sourceEntity.closed || false;
+            } else if (sourceEntity.type === 'polyline' && sourceEntity.isSpline) {
+                result.sourceIsSpline = true;
+                result.sourcePoints = [...sourceEntity.points];
+                result.sourceClosed = sourceEntity.closed || false;
+            } else if (sourceEntity.type === 'circle') {
+                result.sourceCircle = { center: { ...sourceEntity.center }, r: sourceEntity.r };
+            } else if (sourceEntity.type === 'ellipse') {
+                result.sourceEllipse = { center: { ...sourceEntity.center }, rx: sourceEntity.rx, ry: sourceEntity.ry, rotation: sourceEntity.rotation || 0 };
+            }
+        }
+
+        return result;
     },
 
     findHatchTargets(point) {
@@ -3474,11 +3497,70 @@ const Commands = {
             if (entity.type === 'line') {
                 segments.push({ p1: entity.p1, p2: entity.p2 });
             } else if (entity.type === 'polyline' && entity.points.length > 1) {
-                for (let i = 0; i < entity.points.length - 1; i++) {
-                    segments.push({ p1: entity.points[i], p2: entity.points[i + 1] });
+                if (entity.isSpline) {
+                    // Interpolate spline to segments
+                    const pts = Geometry.getSplineBoundaryPoints(entity.points, entity.closed);
+                    for (let i = 0; i < pts.length - 1; i++) {
+                        segments.push({ p1: pts[i], p2: pts[i + 1] });
+                    }
+                    if (entity.closed && pts.length > 1) {
+                        segments.push({ p1: pts[pts.length - 1], p2: pts[0] });
+                    }
+                } else if (entity.bulges && entity.bulges.length > 0) {
+                    // Interpolate arcs to segments
+                    const pts = this._getPolylineWithArcsBoundaryPoints(entity);
+                    for (let i = 0; i < pts.length - 1; i++) {
+                        segments.push({ p1: pts[i], p2: pts[i + 1] });
+                    }
+                    if (entity.closed && pts.length > 1) {
+                        segments.push({ p1: pts[pts.length - 1], p2: pts[0] });
+                    }
+                } else {
+                    for (let i = 0; i < entity.points.length - 1; i++) {
+                        segments.push({ p1: entity.points[i], p2: entity.points[i + 1] });
+                    }
+                    if (entity.closed || Utils.isPolygonClosed(entity.points)) {
+                        segments.push({ p1: entity.points[entity.points.length - 1], p2: entity.points[0] });
+                    }
                 }
-                if (entity.closed || Utils.isPolygonClosed(entity.points)) {
-                    segments.push({ p1: entity.points[entity.points.length - 1], p2: entity.points[0] });
+            } else if (entity.type === 'circle') {
+                // Convert circle to segments
+                const steps = 36;
+                for (let i = 0; i < steps; i++) {
+                    const a1 = (Math.PI * 2 * i) / steps;
+                    const a2 = (Math.PI * 2 * ((i + 1) % steps)) / steps;
+                    segments.push({
+                        p1: { x: entity.center.x + Math.cos(a1) * entity.r, y: entity.center.y + Math.sin(a1) * entity.r },
+                        p2: { x: entity.center.x + Math.cos(a2) * entity.r, y: entity.center.y + Math.sin(a2) * entity.r }
+                    });
+                }
+            } else if (entity.type === 'rect') {
+                const x1 = entity.p1.x, y1 = entity.p1.y, x2 = entity.p2.x, y2 = entity.p2.y;
+                const corners = [{ x: x1, y: y1 }, { x: x2, y: y1 }, { x: x2, y: y2 }, { x: x1, y: y2 }];
+                for (let i = 0; i < 4; i++) {
+                    segments.push({ p1: corners[i], p2: corners[(i + 1) % 4] });
+                }
+            } else if (entity.type === 'ellipse') {
+                const steps = 36;
+                for (let i = 0; i < steps; i++) {
+                    const a1 = (Math.PI * 2 * i) / steps;
+                    const a2 = (Math.PI * 2 * ((i + 1) % steps)) / steps;
+                    segments.push({
+                        p1: { x: entity.center.x + Math.cos(a1) * entity.rx, y: entity.center.y + Math.sin(a1) * entity.ry },
+                        p2: { x: entity.center.x + Math.cos(a2) * entity.rx, y: entity.center.y + Math.sin(a2) * entity.ry }
+                    });
+                }
+            } else if (entity.type === 'arc') {
+                const steps = Math.max(8, Math.ceil(Math.abs((entity.end || 0) - (entity.start || 0)) * entity.r / 2));
+                const start = entity.start || 0;
+                const end = entity.end || 0;
+                for (let i = 0; i < steps; i++) {
+                    const a1 = start + (end - start) * i / steps;
+                    const a2 = start + (end - start) * (i + 1) / steps;
+                    segments.push({
+                        p1: { x: entity.center.x + Math.cos(a1) * entity.r, y: entity.center.y + Math.sin(a1) * entity.r },
+                        p2: { x: entity.center.x + Math.cos(a2) * entity.r, y: entity.center.y + Math.sin(a2) * entity.r }
+                    });
                 }
             }
         });
