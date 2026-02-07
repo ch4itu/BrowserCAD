@@ -2667,7 +2667,7 @@ class Hatch {
                 return { families: [{ angle: 0, spacing: 3.175 }] };
             case 'ansi37':
             case 'cross':
-                // Cross-hatch: 0° + 90°
+                // Cross-hatch: 45° + 135°
                 return { families: [
                     { angle: 45, spacing: 3.175 },
                     { angle: 135, spacing: 3.175 }
@@ -2741,45 +2741,6 @@ class Hatch {
                 ], complex: true };
             case 'solid':
                 return { solid: true, families: [] };
-            // ANSI patterns (industry standard)
-            case 'ansi31':
-                return { families: [{ angle: 45, spacing: 3.175 }] };
-            case 'ansi32':
-                return { families: [
-                    { angle: 45, spacing: 3.175 },
-                    { angle: 45, spacing: 3.175, phase: 1.5875 }
-                ]};
-            case 'ansi33':
-                return { families: [
-                    { angle: 45, spacing: 5 },
-                    { angle: 45, spacing: 5, phase: 1.67 },
-                    { angle: 45, spacing: 5, phase: 3.34 }
-                ]};
-            case 'ansi34':
-                return { families: [
-                    { angle: 45, spacing: 6.35 },
-                    { angle: -45, spacing: 6.35 }
-                ]};
-            case 'ansi35':
-                return { families: [
-                    { angle: 45, spacing: 6.35 },
-                    { angle: 0, spacing: 6.35 }
-                ]};
-            case 'ansi36':
-                return { families: [
-                    { angle: 45, spacing: 5 },
-                    { angle: -45, spacing: 5, dashes: [6, 1.5] }
-                ]};
-            case 'ansi37':
-                return { families: [
-                    { angle: 45, spacing: 3.175 },
-                    { angle: 135, spacing: 3.175 }
-                ]};
-            case 'ansi38':
-                return { families: [
-                    { angle: 45, spacing: 3.175 },
-                    { angle: 135, spacing: 6.35 }
-                ]};
             // Architectural patterns
             case 'ar-b816':
             case 'ar-brstd':
