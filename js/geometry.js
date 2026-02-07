@@ -3428,6 +3428,108 @@ class Hatch {
     }
 }
 
+// Sutherland-Hodgman polygon clipping for intersection of two convex/concave polygons
+Geometry.clipPolygon = function(subjectPoly, clipPoly) {
+    if (!subjectPoly || !clipPoly || subjectPoly.length < 3 || clipPoly.length < 3) return [];
+
+    let output = subjectPoly.slice();
+
+    for (let i = 0; i < clipPoly.length; i++) {
+        if (output.length === 0) return [];
+        const input = output;
+        output = [];
+        const edgeStart = clipPoly[i];
+        const edgeEnd = clipPoly[(i + 1) % clipPoly.length];
+
+        for (let j = 0; j < input.length; j++) {
+            const current = input[j];
+            const previous = input[(j + input.length - 1) % input.length];
+
+            const currInside = Geometry._isInside(current, edgeStart, edgeEnd);
+            const prevInside = Geometry._isInside(previous, edgeStart, edgeEnd);
+
+            if (currInside) {
+                if (!prevInside) {
+                    const inter = Geometry._lineIntersect(previous, current, edgeStart, edgeEnd);
+                    if (inter) output.push(inter);
+                }
+                output.push(current);
+            } else if (prevInside) {
+                const inter = Geometry._lineIntersect(previous, current, edgeStart, edgeEnd);
+                if (inter) output.push(inter);
+            }
+        }
+    }
+
+    return output;
+};
+
+Geometry._isInside = function(point, edgeStart, edgeEnd) {
+    return (edgeEnd.x - edgeStart.x) * (point.y - edgeStart.y) -
+           (edgeEnd.y - edgeStart.y) * (point.x - edgeStart.x) >= 0;
+};
+
+Geometry._lineIntersect = function(p1, p2, p3, p4) {
+    const x1 = p1.x, y1 = p1.y, x2 = p2.x, y2 = p2.y;
+    const x3 = p3.x, y3 = p3.y, x4 = p4.x, y4 = p4.y;
+    const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+    if (Math.abs(denom) < 1e-10) return null;
+    const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+    return { x: x1 + t * (x2 - x1), y: y1 + t * (y2 - y1) };
+};
+
+// Get interpolated spline boundary points for hatching
+Geometry.getSplineBoundaryPoints = function(controlPoints, closed) {
+    if (!controlPoints || controlPoints.length < 2) return controlPoints || [];
+    const segsPerSpan = 20;
+    const result = [];
+
+    // For closed splines, wrap the control points
+    let pts;
+    if (closed) {
+        // Remove the duplicated closing point if present
+        let cp = controlPoints;
+        if (cp.length >= 2) {
+            const first = cp[0], last = cp[cp.length - 1];
+            if (Math.abs(first.x - last.x) < 1e-6 && Math.abs(first.y - last.y) < 1e-6) {
+                cp = cp.slice(0, -1);
+            }
+        }
+        // Wrap: last, ...all, first, second
+        pts = [cp[cp.length - 1], ...cp, cp[0], cp[1]];
+    } else {
+        pts = [controlPoints[0], ...controlPoints, controlPoints[controlPoints.length - 1]];
+    }
+
+    for (let i = 1; i < pts.length - 2; i++) {
+        const p0 = pts[i - 1];
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+        const p3 = pts[i + 2];
+
+        const numSegs = segsPerSpan;
+        for (let j = 0; j <= (i === pts.length - 3 ? numSegs : numSegs - 1); j++) {
+            const t = j / numSegs;
+            const t2 = t * t;
+            const t3 = t2 * t;
+
+            const x = 0.5 * ((2 * p1.x) +
+                (-p0.x + p2.x) * t +
+                (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+                (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3);
+
+            const y = 0.5 * ((2 * p1.y) +
+                (-p0.y + p2.y) * t +
+                (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+                (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3);
+
+            result.push({ x, y });
+        }
+    }
+
+    return result;
+};
+
 Geometry.Line = Line;
 Geometry.Circle = Circle;
 Geometry.Arc = Arc;

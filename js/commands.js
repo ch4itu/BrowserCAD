@@ -322,6 +322,8 @@ const Commands = {
         'g': 'group',
         'ungroup': 'ungroup',
 
+        'xclip': 'xclip',
+        'xc': 'xclip',
         'arraypath': 'arraypath',
 
         'mline': 'mline',
@@ -555,6 +557,7 @@ const Commands = {
                 CAD.cmdOptions.polylineMode = 'line';
                 CAD.cmdOptions.polylineArcStep = 0;
                 CAD.cmdOptions.polylineArcEnd = null;
+                CAD.cmdOptions.polylineBulges = [];
                 UI.log('PLINE: Specify start point:', 'prompt');
                 break;
 
@@ -787,6 +790,23 @@ const Commands = {
                 } else {
                     UI.log('EXPLODE: Select objects to explode:', 'prompt');
                     CAD.cmdOptions.needSelection = true;
+                }
+                break;
+
+            case 'xclip':
+                if (CAD.selectedIds.length === 0) {
+                    UI.log('XCLIP: Select block reference to clip:', 'prompt');
+                    CAD.cmdOptions.needSelection = true;
+                } else {
+                    const xclipTarget = CAD.getSelectedEntities()[0];
+                    if (xclipTarget && xclipTarget.type === 'insert') {
+                        CAD.cmdOptions.xclipTarget = xclipTarget;
+                        UI.log('XCLIP: [ON/OFF/Delete/New boundary] <New>:', 'prompt');
+                        CAD.cmdOptions.xclipMode = 'options';
+                    } else {
+                        UI.log('XCLIP: Selected entity is not a block reference.', 'error');
+                        this.finishCommand();
+                    }
                 }
                 break;
 
@@ -2087,6 +2107,10 @@ const Commands = {
                 break;
             }
 
+            case 'xclip':
+                this.handleXClipClick(point);
+                break;
+
             case 'distance':
                 this.handleDistanceClick(point);
                 break;
@@ -2315,6 +2339,11 @@ const Commands = {
         const state = CAD;
         const mode = state.cmdOptions.polylineMode || 'line';
 
+        // Initialize bulges array if not present
+        if (!state.cmdOptions.polylineBulges) {
+            state.cmdOptions.polylineBulges = [];
+        }
+
         if (mode === 'arc' && state.points.length >= 1) {
             if (!state.cmdOptions.polylineArcStep) {
                 state.cmdOptions.polylineArcEnd = point;
@@ -2324,13 +2353,20 @@ const Commands = {
             }
 
             const startPoint = state.points[state.points.length - 1];
-            const arcEnd = state.cmdOptions.polylineArcEnd;
-            const arcPoints = this.getArcPointsFromThreePoints(startPoint, point, arcEnd);
+            const midPoint = point;
+            const endPoint = state.cmdOptions.polylineArcEnd;
 
-            if (arcPoints && arcPoints.length) {
-                state.points.push(...arcPoints);
+            // Compute bulge from three points (start, midpoint-on-arc, end)
+            const bulge = this._computeBulgeFromThreePoints(startPoint, midPoint, endPoint);
+
+            if (bulge !== null) {
+                // Store the bulge for the segment from startPoint to endPoint
+                state.cmdOptions.polylineBulges[state.points.length - 1] = bulge;
+                state.points.push({ ...endPoint });
             } else {
-                state.points.push({ ...arcEnd });
+                // Fallback to straight segment
+                state.cmdOptions.polylineBulges[state.points.length - 1] = 0;
+                state.points.push({ ...endPoint });
                 UI.log('PLINE: Arc points invalid, used straight segment.', 'error');
             }
 
@@ -2340,9 +2376,53 @@ const Commands = {
             return;
         }
 
+        // Line mode: push point with 0 bulge for preceding segment
+        if (state.points.length > 0) {
+            state.cmdOptions.polylineBulges[state.points.length - 1] = 0;
+        }
         state.points.push(point);
         state.step++;
         UI.log('PLINE: Specify next point or [Arc/Line/Close/Undo]:', 'prompt');
+    },
+
+    _computeBulgeFromThreePoints(start, mid, end) {
+        // Compute circle through three points
+        const ax = start.x, ay = start.y;
+        const bx = mid.x, by = mid.y;
+        const cx = end.x, cy = end.y;
+
+        const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+        if (Math.abs(d) < 1e-8) return null;
+
+        const ax2ay2 = ax * ax + ay * ay;
+        const bx2by2 = bx * bx + by * by;
+        const cx2cy2 = cx * cx + cy * cy;
+
+        const ux = (ax2ay2 * (by - cy) + bx2by2 * (cy - ay) + cx2cy2 * (ay - by)) / d;
+        const uy = (ax2ay2 * (cx - bx) + bx2by2 * (ax - cx) + cx2cy2 * (bx - ax)) / d;
+        const center = { x: ux, y: uy };
+        const radius = Utils.dist(center, start);
+        if (!radius || Number.isNaN(radius)) return null;
+
+        // Compute the included angle
+        const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
+        const midAngle = Math.atan2(mid.y - center.y, mid.x - center.x);
+        const endAngle = Math.atan2(end.y - center.y, end.x - center.x);
+
+        // Determine direction (CCW or CW)
+        const ccw = this.isAngleBetweenCCW(startAngle, endAngle, midAngle);
+
+        let sweep;
+        if (ccw) {
+            sweep = endAngle - startAngle;
+            if (sweep <= 0) sweep += Math.PI * 2;
+        } else {
+            sweep = endAngle - startAngle;
+            if (sweep >= 0) sweep -= Math.PI * 2;
+        }
+
+        // Bulge = tan(sweep / 4)
+        return Math.tan(sweep / 4);
     },
 
     handleCircleClick(point) {
@@ -3051,8 +3131,18 @@ const Commands = {
 
         if (targets.length > 1) {
             CAD.saveUndoState('Hatch');
+            // Compute the actual polygon intersection of all overlapping entities
+            let intersectionPoly = this.getHatchBoundaryPoints(targets[0]);
+            for (let i = 1; i < targets.length; i++) {
+                const otherPoly = this.getHatchBoundaryPoints(targets[i]);
+                intersectionPoly = Geometry.clipPolygon(intersectionPoly, otherPoly);
+                if (!intersectionPoly || intersectionPoly.length < 3) {
+                    intersectionPoly = this.getHatchBoundaryPoints(targets[0]);
+                    break;
+                }
+            }
             const hatchEntity = this.createHatchEntity(
-                this.getHatchBoundaryPoints(targets[0]),
+                intersectionPoly,
                 targets.map(entity => entity.id)
             );
             CAD.addEntity(hatchEntity);
@@ -3191,6 +3281,14 @@ const Commands = {
 
     getHatchBoundaryPoints(entity) {
         if (!entity) return [];
+        // For spline polylines, generate smooth interpolated boundary points
+        if (entity.type === 'polyline' && entity.isSpline && entity.points && entity.points.length >= 2) {
+            return Geometry.getSplineBoundaryPoints(entity.points, entity.closed);
+        }
+        // For polylines with bulges, generate arc-interpolated boundary points
+        if (entity.type === 'polyline' && entity.bulges && entity.bulges.length > 0 && entity.points) {
+            return this._getPolylineWithArcsBoundaryPoints(entity);
+        }
         if (entity.points && entity.points.length) return entity.points;
         if (entity.type === 'rect') {
             const x1 = entity.p1.x;
@@ -3229,6 +3327,50 @@ const Commands = {
             return points;
         }
         return [];
+    },
+
+    _getPolylineWithArcsBoundaryPoints(entity) {
+        const points = entity.points || [];
+        const bulges = entity.bulges || [];
+        const result = [];
+        const numPoints = entity.closed ? points.length : points.length - 1;
+        for (let i = 0; i < numPoints; i++) {
+            const p1 = points[i];
+            const p2 = points[(i + 1) % points.length];
+            const bulge = bulges[i] || 0;
+            result.push({ ...p1 });
+            if (Math.abs(bulge) > 1e-10) {
+                // Generate arc points between p1 and p2
+                const dx = p2.x - p1.x;
+                const dy = p2.y - p1.y;
+                const d = Math.sqrt(dx * dx + dy * dy);
+                if (d < 1e-10) continue;
+                const r = d * (1 + bulge * bulge) / (4 * Math.abs(bulge));
+                const nx = -dy / d;
+                const ny = dx / d;
+                const h = d * (1 - bulge * bulge) / (4 * bulge);
+                const midX = (p1.x + p2.x) / 2;
+                const midY = (p1.y + p2.y) / 2;
+                const cx = midX + h * nx;
+                const cy = midY + h * ny;
+                const startAngle = Math.atan2(p1.y - cy, p1.x - cx);
+                const endAngle = Math.atan2(p2.y - cy, p2.x - cx);
+                const ccw = bulge > 0;
+                let sweep = endAngle - startAngle;
+                if (ccw && sweep < 0) sweep += Math.PI * 2;
+                if (!ccw && sweep > 0) sweep -= Math.PI * 2;
+                const steps = Math.max(8, Math.ceil(Math.abs(sweep * r) / 2));
+                for (let j = 1; j < steps; j++) {
+                    const t = j / steps;
+                    const angle = startAngle + sweep * t;
+                    result.push({ x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
+                }
+            }
+        }
+        if (!entity.closed && points.length > 0) {
+            result.push({ ...points[points.length - 1] });
+        }
+        return result;
     },
 
     createHatchEntity(boundaryPoints, clipIds = []) {
@@ -3307,10 +3449,17 @@ const Commands = {
             case 'rect':
                 return Utils.pointInRect(point, entity.p1, entity.p2);
             case 'polyline': {
-                const points = Utils.isPolygonClosed(entity.points)
-                    ? entity.points
-                    : [...entity.points, entity.points[0]];
-                return Utils.pointInPolygon(point, points);
+                let testPoints;
+                if (entity.isSpline && entity.points.length >= 2) {
+                    testPoints = Geometry.getSplineBoundaryPoints(entity.points, entity.closed);
+                } else if (entity.bulges && entity.bulges.length > 0) {
+                    testPoints = this._getPolylineWithArcsBoundaryPoints(entity);
+                } else {
+                    testPoints = Utils.isPolygonClosed(entity.points)
+                        ? entity.points
+                        : [...entity.points, entity.points[0]];
+                }
+                return Utils.pointInPolygon(point, testPoints);
             }
             default:
                 return false;
@@ -3346,6 +3495,69 @@ const Commands = {
         }
 
         return null;
+    },
+
+    handleXClipClick(point) {
+        const state = CAD;
+        const mode = state.cmdOptions.xclipMode;
+
+        if (mode === 'options') {
+            // User clicked on an entity - use as target
+            const hit = this.hitTest(point);
+            if (hit && hit.type === 'insert') {
+                state.cmdOptions.xclipTarget = hit;
+                UI.log('XCLIP: [ON/OFF/Delete/New boundary] <New>:', 'prompt');
+            }
+            return;
+        }
+
+        if (mode === 'rect1') {
+            // First corner of rectangular clip boundary
+            state.points.push(point);
+            state.cmdOptions.xclipMode = 'rect2';
+            UI.log('XCLIP: Specify opposite corner:', 'prompt');
+            return;
+        }
+
+        if (mode === 'rect2') {
+            // Second corner of rectangular clip boundary
+            const p1 = state.points[0];
+            const p2 = point;
+            const clipBoundary = [
+                { x: p1.x, y: p1.y },
+                { x: p2.x, y: p1.y },
+                { x: p2.x, y: p2.y },
+                { x: p1.x, y: p2.y }
+            ];
+            this.applyXClip(state.cmdOptions.xclipTarget, clipBoundary);
+            return;
+        }
+
+        if (mode === 'poly') {
+            // Polygonal clip boundary - accumulate points
+            state.points.push(point);
+            state.step++;
+            UI.log(`XCLIP: Specify next point or [Enter to finish]:`, 'prompt');
+            return;
+        }
+    },
+
+    applyXClip(target, clipBoundary) {
+        if (!target || !clipBoundary || clipBoundary.length < 3) {
+            UI.log('XCLIP: Invalid clip boundary.', 'error');
+            this.finishCommand();
+            return;
+        }
+
+        CAD.saveUndoState('XCLIP');
+        target.xclip = {
+            enabled: true,
+            boundary: clipBoundary
+        };
+        CAD.modified = true;
+        UI.log('XCLIP: Clip boundary applied.');
+        this.finishCommand();
+        Renderer.draw();
     },
 
     buildLineLoops(segments) {
@@ -3711,12 +3923,17 @@ const Commands = {
         const state = CAD;
 
         if (state.activeCmd === 'polyline' && state.points.length >= 2) {
-            state.points.push({ ...state.points[0] });
-            CAD.addEntity({
+            const bulges = state.cmdOptions.polylineBulges || [];
+            const hasBulges = bulges.some(b => b && Math.abs(b) > 1e-10);
+            const entityData = {
                 type: 'polyline',
                 points: [...state.points],
                 closed: true
-            });
+            };
+            if (hasBulges) {
+                entityData.bulges = [...bulges];
+            }
+            CAD.addEntity(entityData);
             UI.log('Polyline closed.');
             this.finishCommand();
         } else if (state.activeCmd === 'spline' && state.points.length >= 2) {
@@ -6803,11 +7020,17 @@ const Commands = {
             }
 
             if (state.activeCmd === 'polyline' && state.points.length >= 2) {
-                // Finish polyline
-                CAD.addEntity({
+                // Finish polyline, include bulges if any arcs were drawn
+                const bulges = state.cmdOptions.polylineBulges || [];
+                const hasBulges = bulges.some(b => b && Math.abs(b) > 1e-10);
+                const entityData = {
                     type: 'polyline',
                     points: [...state.points]
-                });
+                };
+                if (hasBulges) {
+                    entityData.bulges = [...bulges];
+                }
+                CAD.addEntity(entityData);
                 UI.log('Polyline created.');
                 this.finishCommand();
                 Renderer.draw();
@@ -8325,6 +8548,72 @@ const Commands = {
             const h = parseFloat(input);
             if (!isNaN(h) && h > 0) state.cmdOptions.tableCellH = h;
             this.createTable();
+            return true;
+        }
+
+        // XCLIP options handling
+        if (state.activeCmd === 'xclip') {
+            const option = input.toLowerCase();
+            if (state.cmdOptions.xclipMode === 'options') {
+                if (option === 'on') {
+                    if (state.cmdOptions.xclipTarget && state.cmdOptions.xclipTarget.xclip) {
+                        state.cmdOptions.xclipTarget.xclip.enabled = true;
+                        CAD.modified = true;
+                        UI.log('XCLIP: Clipping enabled.');
+                    }
+                    this.finishCommand();
+                    Renderer.draw();
+                    return true;
+                }
+                if (option === 'off') {
+                    if (state.cmdOptions.xclipTarget && state.cmdOptions.xclipTarget.xclip) {
+                        state.cmdOptions.xclipTarget.xclip.enabled = false;
+                        CAD.modified = true;
+                        UI.log('XCLIP: Clipping disabled.');
+                    }
+                    this.finishCommand();
+                    Renderer.draw();
+                    return true;
+                }
+                if (option === 'd' || option === 'delete') {
+                    if (state.cmdOptions.xclipTarget) {
+                        delete state.cmdOptions.xclipTarget.xclip;
+                        CAD.modified = true;
+                        UI.log('XCLIP: Clip boundary deleted.');
+                    }
+                    this.finishCommand();
+                    Renderer.draw();
+                    return true;
+                }
+                if (option === 'n' || option === 'new' || option === '') {
+                    UI.log('XCLIP: [Select polyline/Rectangular/Polygonal] <Rectangular>:', 'prompt');
+                    state.cmdOptions.xclipMode = 'newtype';
+                    return true;
+                }
+            }
+            if (state.cmdOptions.xclipMode === 'newtype') {
+                if (option === 'r' || option === 'rectangular' || option === '') {
+                    state.cmdOptions.xclipMode = 'rect1';
+                    state.points = [];
+                    UI.log('XCLIP: Specify first corner of clip boundary:', 'prompt');
+                    return true;
+                }
+                if (option === 'p' || option === 'polygonal') {
+                    state.cmdOptions.xclipMode = 'poly';
+                    state.points = [];
+                    state.step = 0;
+                    UI.log('XCLIP: Specify first point of polygonal clip boundary:', 'prompt');
+                    return true;
+                }
+            }
+            if (state.cmdOptions.xclipMode === 'poly' && (option === '' || option === 'enter')) {
+                if (state.points.length >= 3) {
+                    this.applyXClip(state.cmdOptions.xclipTarget, [...state.points]);
+                } else {
+                    UI.log('XCLIP: Need at least 3 points for a polygonal boundary.', 'error');
+                }
+                return true;
+            }
             return true;
         }
 

@@ -95,6 +95,13 @@ body {
     font-size: 13px;
     color: var(--text-bright);
     margin-right: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.logo-icon {
+    flex-shrink: 0;
 }
 
 .title-bar .logo span {
