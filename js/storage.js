@@ -635,6 +635,63 @@ const Storage = {
                 dxf += ' 40\n' + (entity.height || 10) + '\n';
                 dxf += '  1\n' + (entity.evaluatedText || entity.fieldExpression || '---') + '\n';
                 break;
+            case 'solid':
+                if (entity.points && entity.points.length >= 3) {
+                    dxf += '  0\nSOLID\n';
+                    dxf += '  8\n' + layer + '\n';
+                    if (colorInt !== null) dxf += ' 62\n' + colorInt + '\n';
+                    const solidCodes = [[10,20],[11,21],[12,22],[13,23]];
+                    for (let si = 0; si < Math.min(entity.points.length, 4); si++) {
+                        dxf += ' ' + solidCodes[si][0] + '\n' + entity.points[si].x.toFixed(6) + '\n';
+                        dxf += ' ' + solidCodes[si][1] + '\n' + (-entity.points[si].y).toFixed(6) + '\n';
+                        dxf += ' ' + (solidCodes[si][0] + 20) + '\n0.0\n';
+                    }
+                    if (entity.points.length === 3) {
+                        dxf += ' 13\n' + entity.points[2].x.toFixed(6) + '\n 23\n' + (-entity.points[2].y).toFixed(6) + '\n 33\n0.0\n';
+                    }
+                }
+                break;
+            case 'revcloud':
+                if (entity.points && entity.points.length > 0) {
+                    dxf += '  0\nLWPOLYLINE\n';
+                    dxf += '  8\n' + layer + '\n';
+                    if (colorInt !== null) dxf += ' 62\n' + colorInt + '\n';
+                    dxf += ' 90\n' + entity.points.length + '\n';
+                    dxf += ' 70\n1\n';
+                    entity.points.forEach(p => {
+                        dxf += ' 10\n' + p.x.toFixed(6) + '\n 20\n' + (-p.y).toFixed(6) + '\n';
+                    });
+                }
+                break;
+            case 'table':
+                if (entity.position) {
+                    const tpos = entity.position;
+                    const trows = entity.rows || 3, tcols = entity.cols || 3;
+                    const trh = entity.rowHeight || 10, tcw = entity.colWidth || 30;
+                    for (let r = 0; r <= trows; r++) {
+                        dxf += '  0\nLINE\n  8\n' + layer + '\n';
+                        if (colorInt !== null) dxf += ' 62\n' + colorInt + '\n';
+                        dxf += ' 10\n' + tpos.x.toFixed(6) + '\n 20\n' + (-(tpos.y + r * trh)).toFixed(6) + '\n 30\n0.0\n';
+                        dxf += ' 11\n' + (tpos.x + tcols * tcw).toFixed(6) + '\n 21\n' + (-(tpos.y + r * trh)).toFixed(6) + '\n 31\n0.0\n';
+                    }
+                    for (let c = 0; c <= tcols; c++) {
+                        dxf += '  0\nLINE\n  8\n' + layer + '\n';
+                        if (colorInt !== null) dxf += ' 62\n' + colorInt + '\n';
+                        dxf += ' 10\n' + (tpos.x + c * tcw).toFixed(6) + '\n 20\n' + (-tpos.y).toFixed(6) + '\n 30\n0.0\n';
+                        dxf += ' 11\n' + (tpos.x + c * tcw).toFixed(6) + '\n 21\n' + (-(tpos.y + trows * trh)).toFixed(6) + '\n 31\n0.0\n';
+                    }
+                }
+                break;
+            case 'mline':
+                if (entity.points && entity.points.length >= 2) {
+                    for (let mi = 0; mi < entity.points.length - 1; mi++) {
+                        dxf += '  0\nLINE\n  8\n' + layer + '\n';
+                        if (colorInt !== null) dxf += ' 62\n' + colorInt + '\n';
+                        dxf += ' 10\n' + entity.points[mi].x.toFixed(6) + '\n 20\n' + (-entity.points[mi].y).toFixed(6) + '\n 30\n0.0\n';
+                        dxf += ' 11\n' + entity.points[mi + 1].x.toFixed(6) + '\n 21\n' + (-entity.points[mi + 1].y).toFixed(6) + '\n 31\n0.0\n';
+                    }
+                }
+                break;
         }
 
         // Add hatch if entity has it (for entities with inline hatch property)
@@ -1523,6 +1580,127 @@ const Storage = {
                 const ft = entity.evaluatedText || entity.fieldExpression || '---';
                 return `<text x="${fp.x}" y="${fp.y}" fill="${color}" font-size="${fh}">${ft}</text>`;
             }
+            case 'mtext': {
+                const mp = entity.position || { x: 0, y: 0 };
+                const mh = entity.height || 10;
+                const lines = (entity.text || '').split('\\P');
+                let svg = '';
+                lines.forEach((line, i) => {
+                    svg += `<text x="${mp.x}" y="${mp.y + i * mh * 1.4}" fill="${color}" font-size="${mh}">${line.replace(/\\[^;]+;/g, '')}</text>`;
+                });
+                return svg;
+            }
+            case 'point': {
+                const pp = entity.position || entity.point || { x: 0, y: 0 };
+                return `<circle cx="${pp.x}" cy="${pp.y}" r="1.5" fill="${color}"/>`;
+            }
+            case 'leader': {
+                const lPts = entity.points || [];
+                if (lPts.length < 2) return '';
+                const pathD = lPts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+                let svg = `<path d="${pathD}" fill="none" stroke="${color}" stroke-width="1"/>`;
+                // Arrowhead
+                const p0 = lPts[0], p1 = lPts[1];
+                const ang = Math.atan2(p0.y - p1.y, p0.x - p1.x);
+                const as = 3;
+                svg += `<polygon points="${p0.x},${p0.y} ${p0.x - as * Math.cos(ang - 0.3)},${p0.y - as * Math.sin(ang - 0.3)} ${p0.x - as * Math.cos(ang + 0.3)},${p0.y - as * Math.sin(ang + 0.3)}" fill="${color}"/>`;
+                if (entity.text) {
+                    const last = lPts[lPts.length - 1];
+                    const th = entity.height || 2.5;
+                    svg += `<text x="${last.x + 2}" y="${last.y}" fill="${color}" font-size="${th}">${entity.text}</text>`;
+                }
+                return svg;
+            }
+            case 'dimension': {
+                let svg = '';
+                const de = entity;
+                if (de.defPoint && de.textMidPoint) {
+                    svg += `<line x1="${de.defPoint.x}" y1="${de.defPoint.y}" x2="${de.textMidPoint.x}" y2="${de.textMidPoint.y}" stroke="${color}" stroke-width="0.5"/>`;
+                }
+                if (de.text || de.measurement) {
+                    const tp = de.textMidPoint || de.defPoint || { x: 0, y: 0 };
+                    const th = de.textHeight || 2.5;
+                    svg += `<text x="${tp.x}" y="${tp.y}" fill="${color}" font-size="${th}" text-anchor="middle">${de.text || (de.measurement ? de.measurement.toFixed(2) : '')}</text>`;
+                }
+                return svg;
+            }
+            case 'donut': {
+                const dc = entity.center || { x: 0, y: 0 };
+                let svg = `<circle cx="${dc.x}" cy="${dc.y}" r="${entity.outerRadius}" fill="${color}" opacity="0.3" stroke="${color}"/>`;
+                if (entity.innerRadius > 0) {
+                    svg += `<circle cx="${dc.x}" cy="${dc.y}" r="${entity.innerRadius}" fill="#1a1a1a" stroke="${color}"/>`;
+                }
+                return svg;
+            }
+            case 'solid': {
+                if (entity.points && entity.points.length >= 3) {
+                    const pts = entity.points.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+                    return `<polygon points="${pts}" fill="${color}" stroke="${color}" stroke-width="0.5" opacity="0.7"/>`;
+                }
+                return '';
+            }
+            case 'wipeout': {
+                if (entity.points && entity.points.length >= 3) {
+                    const pts = entity.points.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+                    return `<polygon points="${pts}" fill="#ffffff" stroke="#cccccc" stroke-width="0.5"/>`;
+                }
+                return '';
+            }
+            case 'image': {
+                if (entity.p1 && entity.p2) {
+                    const x = Math.min(entity.p1.x, entity.p2.x);
+                    const y = Math.min(entity.p1.y, entity.p2.y);
+                    const w = Math.abs(entity.p2.x - entity.p1.x);
+                    const h = Math.abs(entity.p2.y - entity.p1.y);
+                    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="${color}" stroke-dasharray="5,5"/>`;
+                }
+                return '';
+            }
+            case 'region': {
+                if (entity.points && entity.points.length >= 3) {
+                    const pts = entity.points.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+                    return `<polygon points="${pts}" fill="${color}" fill-opacity="0.2" stroke="${color}"/>`;
+                }
+                return '';
+            }
+            case 'revcloud': {
+                if (entity.points && entity.points.length >= 3) {
+                    const pts = entity.points;
+                    let d = `M${pts[0].x.toFixed(2)},${pts[0].y.toFixed(2)}`;
+                    for (let i = 1; i < pts.length; i++) {
+                        const prev = pts[i - 1], curr = pts[i];
+                        const dx = curr.x - prev.x, dy = curr.y - prev.y;
+                        const r = Math.sqrt(dx * dx + dy * dy) * 0.6;
+                        d += ` A${r.toFixed(2)},${r.toFixed(2)} 0 0,1 ${curr.x.toFixed(2)},${curr.y.toFixed(2)}`;
+                    }
+                    return `<path d="${d}" fill="none" stroke="${color}" stroke-width="1"/>`;
+                }
+                return '';
+            }
+            case 'table': {
+                if (!entity.position) return '';
+                const tp = entity.position;
+                const rows = entity.rows || 3, cols = entity.cols || 3;
+                const rh = entity.rowHeight || 10, cw = entity.colWidth || 30;
+                let svg = '';
+                for (let r = 0; r <= rows; r++) {
+                    svg += `<line x1="${tp.x}" y1="${tp.y + r * rh}" x2="${tp.x + cols * cw}" y2="${tp.y + r * rh}" stroke="${color}" stroke-width="0.5"/>`;
+                }
+                for (let c = 0; c <= cols; c++) {
+                    svg += `<line x1="${tp.x + c * cw}" y1="${tp.y}" x2="${tp.x + c * cw}" y2="${tp.y + rows * rh}" stroke="${color}" stroke-width="0.5"/>`;
+                }
+                return svg;
+            }
+            case 'mline': {
+                if (entity.points && entity.points.length >= 2) {
+                    const pts = entity.points;
+                    let svg = '';
+                    const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+                    svg += `<path d="${pathD}" fill="none" stroke="${color}" stroke-width="1"/>`;
+                    return svg;
+                }
+                return '';
+            }
 
             default:
                 return '';
@@ -2206,6 +2384,81 @@ const Storage = {
                     src: src || '',
                     opacity: 0.6,
                     scale: 1
+                };
+            }
+            case 'tolerance': {
+                const pos = entity.position || { x: 0, y: 0 };
+                return {
+                    type: 'tolerance',
+                    layer: entity.layer || '0',
+                    color: entity.color,
+                    position: { x: pos.x, y: -pos.y },
+                    height: entity.height || 5,
+                    frames: entity.frames || []
+                };
+            }
+            case 'wipeout': {
+                const pts = (entity.points || []).map(p => ({ x: p.x, y: -p.y }));
+                if (pts.length < 3) return null;
+                return {
+                    type: 'wipeout',
+                    layer: entity.layer || '0',
+                    color: entity.color,
+                    points: pts
+                };
+            }
+            case 'attdef': {
+                const adPos = entity.position || { x: 0, y: 0 };
+                return {
+                    type: 'text',
+                    layer: entity.layer || '0',
+                    color: entity.color,
+                    position: { x: adPos.x, y: -adPos.y },
+                    height: entity.height || 2.5,
+                    rotation: entity.rotation ? -entity.rotation : 0,
+                    text: entity.defaultValue || entity.tag || '',
+                    textStyle: 'Standard',
+                    tag: entity.tag,
+                    prompt: entity.prompt
+                };
+            }
+            case 'attrib': {
+                const atPos = entity.position || { x: 0, y: 0 };
+                return {
+                    type: 'text',
+                    layer: entity.layer || '0',
+                    color: entity.color,
+                    position: { x: atPos.x, y: -atPos.y },
+                    height: entity.height || 2.5,
+                    rotation: entity.rotation ? -entity.rotation : 0,
+                    text: entity.value || '',
+                    textStyle: 'Standard',
+                    tag: entity.tag
+                };
+            }
+            case 'viewport': {
+                const vc = entity.center || { x: 0, y: 0 };
+                return {
+                    type: 'viewport',
+                    layer: entity.layer || '0',
+                    color: entity.color,
+                    center: { x: vc.x, y: -vc.y },
+                    width: entity.width || 200,
+                    height: entity.height || 150,
+                    viewCenter: entity.viewCenter ? { x: entity.viewCenter.x, y: -entity.viewCenter.y } : { x: 0, y: 0 },
+                    viewHeight: entity.viewHeight || 100,
+                    vpScale: entity.viewHeight ? (entity.height / entity.viewHeight) : 1
+                };
+            }
+            case 'trace': {
+                const trPts = (entity.points || []).map(p => ({ x: p.x, y: -p.y }));
+                if (trPts.length < 3) return null;
+                return {
+                    type: 'trace',
+                    layer: entity.layer || '0',
+                    color: entity.color,
+                    points: trPts,
+                    width: 1
                 };
             }
             default:
