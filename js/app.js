@@ -198,6 +198,8 @@ const App = {
                 nearest: CAD.osnapEnabled && CAD.snapModes.nearest,
                 quadrant: CAD.osnapEnabled && CAD.snapModes.quadrant,
                 node: CAD.osnapEnabled && CAD.snapModes.node,
+                extension: CAD.osnapEnabled && CAD.snapModes.extension,
+                appint: CAD.osnapEnabled && CAD.snapModes.appint,
                 grid: CAD.gridSnapEnabled  // Grid snap is separate
             };
 

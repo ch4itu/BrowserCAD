@@ -33,7 +33,9 @@ const Renderer = {
             perpendicular: '#00ff88',
             tangent: '#ff88ff',
             quadrant: '#ffaa00',
-            node: '#66ff66'
+            node: '#66ff66',
+            extension: '#00ccaa',
+            appint: '#cccc00'
         }
     },
     hatchPatterns: new Map(),
@@ -848,9 +850,15 @@ const Renderer = {
                     if (entity.isSpline && entity.points.length >= 2) {
                         this.drawSplineCurve(entity.points, ctx);
                     } else {
+                        const hasBulges = entity.bulges && entity.bulges.length > 0;
                         ctx.moveTo(entity.points[0].x, entity.points[0].y);
                         for (let i = 1; i < entity.points.length; i++) {
-                            ctx.lineTo(entity.points[i].x, entity.points[i].y);
+                            const bulge = hasBulges ? entity.bulges[i - 1] : 0;
+                            this._drawPolylineSegment(ctx, entity.points[i - 1], entity.points[i], bulge, false);
+                        }
+                        if (entity.closed && entity.points.length > 1) {
+                            const lastBulge = hasBulges ? entity.bulges[entity.points.length - 1] : 0;
+                            this._drawPolylineSegment(ctx, entity.points[entity.points.length - 1], entity.points[0], lastBulge, false);
                         }
                     }
                     if (forceClose || entity.closed || Utils.isPolygonClosed(entity.points)) {
@@ -900,9 +908,15 @@ const Renderer = {
                     } else if (entity.isSpline && entity.points.length >= 2) {
                         this.drawSplineCurve(entity.points, ctx);
                     } else {
+                        const hasBulges = entity.bulges && entity.bulges.length > 0;
                         ctx.moveTo(entity.points[0].x, entity.points[0].y);
                         for (let i = 1; i < entity.points.length; i++) {
-                            ctx.lineTo(entity.points[i].x, entity.points[i].y);
+                            const bulge = hasBulges ? entity.bulges[i - 1] : 0;
+                            this._drawPolylineSegment(ctx, entity.points[i - 1], entity.points[i], bulge, false);
+                        }
+                        if (entity.closed && entity.points.length > 1) {
+                            const lastBulge = hasBulges ? entity.bulges[entity.points.length - 1] : 0;
+                            this._drawPolylineSegment(ctx, entity.points[entity.points.length - 1], entity.points[0], lastBulge, false);
                         }
                     }
                     if (!entity.width && (entity.closed || Utils.isPolygonClosed(entity.points))) {
@@ -948,10 +962,10 @@ const Renderer = {
                 ctx.restore();
                 break;
 
-            case 'text':
+            case 'text': {
                 ctx.save();
-                // Font size is in world units - zoom is already applied to the context
-                ctx.font = `${entity.height}px Arial`;
+                const tStyle = this._getTextFont(entity);
+                ctx.font = `${tStyle.prefix}${entity.height}px ${tStyle.font}`;
                 ctx.fillStyle = ctx.strokeStyle;
                 const textPos = entity.position || entity.point || { x: 0, y: 0 };
                 ctx.translate(textPos.x, textPos.y);
@@ -959,15 +973,17 @@ const Renderer = {
                     const rotation = Math.abs(entity.rotation) > Math.PI * 2 + 0.001
                         ? Utils.degToRad(entity.rotation)
                         : entity.rotation;
-                    ctx.rotate(-rotation); // Negative for correct rotation direction
+                    ctx.rotate(-rotation);
                 }
-                ctx.fillText(entity.text, 0, entity.height * 0.3); // Offset for baseline
+                ctx.fillText(entity.text, 0, entity.height * 0.3);
                 ctx.restore();
                 break;
+            }
 
-            case 'mtext':
+            case 'mtext': {
                 ctx.save();
-                ctx.font = `${entity.height}px Arial`;
+                const mStyle = this._getTextFont(entity);
+                ctx.font = `${mStyle.prefix}${entity.height}px ${mStyle.font}`;
                 ctx.fillStyle = ctx.strokeStyle;
                 const mtextPos = entity.position || entity.point || { x: 0, y: 0 };
                 ctx.translate(mtextPos.x, mtextPos.y);
@@ -995,6 +1011,7 @@ const Renderer = {
                 }
                 ctx.restore();
                 break;
+            }
 
             case 'point':
                 // Draw point based on PDMODE setting
@@ -1966,6 +1983,27 @@ const Renderer = {
                 ctx.stroke();
                 break;
 
+            case 'extension':
+                // Dashed extension indicator
+                ctx.setLineDash([3, 3]);
+                ctx.moveTo(screen.x - size, screen.y);
+                ctx.lineTo(screen.x + size, screen.y);
+                ctx.moveTo(screen.x, screen.y - size);
+                ctx.lineTo(screen.x, screen.y + size);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                break;
+
+            case 'appint':
+                // X with box for apparent intersection
+                ctx.moveTo(screen.x - size, screen.y - size);
+                ctx.lineTo(screen.x + size, screen.y + size);
+                ctx.moveTo(screen.x + size, screen.y - size);
+                ctx.lineTo(screen.x - size, screen.y + size);
+                ctx.stroke();
+                ctx.strokeRect(screen.x - size * 0.6, screen.y - size * 0.6, size * 1.2, size * 1.2);
+                break;
+
             default:
                 // Default: crosshair
                 ctx.moveTo(screen.x - size, screen.y);
@@ -2243,6 +2281,63 @@ const Renderer = {
      * Draw a smooth Catmull-Rom spline through the given points.
      * Converts Catmull-Rom segments to cubic Bezier for canvas rendering.
      */
+    /**
+     * Draw a single polyline segment, handling bulge (arc) segments.
+     * @param {CanvasRenderingContext2D} ctx
+     * @param {{x:number,y:number}} p1 - start point
+     * @param {{x:number,y:number}} p2 - end point
+     * @param {number} bulge - bulge value (0 or undefined = straight line)
+     * @param {boolean} isFirst - if true, moveTo p1 first
+     */
+    _getTextFont(entity) {
+        const styleName = entity.textStyle || CAD.currentTextStyle || 'Standard';
+        const style = CAD.textStyles && CAD.textStyles[styleName];
+        if (style) {
+            let prefix = '';
+            if (style.italic) prefix += 'italic ';
+            if (style.bold) prefix += 'bold ';
+            return { font: style.font, prefix };
+        }
+        return { font: 'Arial, sans-serif', prefix: '' };
+    },
+
+    _drawPolylineSegment(ctx, p1, p2, bulge, isFirst) {
+        if (isFirst) {
+            ctx.moveTo(p1.x, p1.y);
+        }
+        if (!bulge || Math.abs(bulge) < 1e-10) {
+            // Straight line segment
+            ctx.lineTo(p2.x, p2.y);
+        } else {
+            // Arc segment: compute arc from bulge
+            const s = bulge;
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            if (d < 1e-10) {
+                ctx.lineTo(p2.x, p2.y);
+                return;
+            }
+            const r = d * (1 + s * s) / (4 * Math.abs(s));
+            // Perpendicular unit normal to chord
+            const nx = -dy / d;
+            const ny = dx / d;
+            // Signed distance from chord midpoint to arc center
+            const h = d * (1 - s * s) / (4 * s);
+            const midX = (p1.x + p2.x) / 2;
+            const midY = (p1.y + p2.y) / 2;
+            const cx = midX + h * nx;
+            const cy = midY + h * ny;
+            const startAngle = Math.atan2(p1.y - cy, p1.x - cx);
+            const endAngle = Math.atan2(p2.y - cy, p2.x - cx);
+            // positive bulge = CCW arc (counterclockwise param = true in canvas)
+            // but canvas CCW goes in decreasing-angle direction, so:
+            // bulge > 0 means the arc bulges to the left of the chord direction
+            const counterClockwise = bulge > 0;
+            ctx.arc(cx, cy, r, startAngle, endAngle, counterClockwise);
+        }
+    },
+
     _drawWidePolyline(entity, ctx) {
         // Draw a polyline with constant width as a filled shape
         const points = entity.points;
