@@ -835,7 +835,7 @@ const MobileUI = {
                 : ['solid', 'diagonal', 'cross', 'dots', 'angle'];
             hatchPatterns.forEach(pattern => {
                 let label = pattern;
-                if (pattern.startsWith('ansi')) {
+                if (pattern.startsWith('ansi') || pattern.startsWith('ar-')) {
                     label = pattern.toUpperCase();
                 } else {
                     label = pattern.charAt(0).toUpperCase() + pattern.slice(1);
