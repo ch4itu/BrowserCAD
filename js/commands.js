@@ -6393,23 +6393,16 @@ const Commands = {
 
         if (state.activeCmd && inputLower) {
             const active = state.activeCmd;
+            // Only block alias-collisions for drawing commands where accidentally
+            // starting a new command would be destructive. All other commands
+            // (pedit, osnap, layer, etc.) handle their own sub-options and should
+            // never have input blocked here.
             const allowed = {
                 line: ['c', 'close', 'u', 'undo'],
                 polyline: ['a', 'arc', 'l', 'line', 'c', 'close', 'u', 'undo'],
                 spline: ['c', 'close', 'u', 'undo'],
                 revcloud: ['c', 'close'],
-                hatch: ['list'],
-                // Commands with text sub-options - allow all input to pass through
-                pedit: ['c', 'close', 'o', 'open', 'j', 'join', 'w', 'width', 'e', 'edit', 's', 'spline', 'd', 'decurve', 'x', 'exit', 'n', 'next', 'p', 'previous', 'm', 'move', 'delete'],
-                osnap: ['on', 'off', 'end', 'mid', 'cen', 'int', 'per', 'tan', 'nea', 'qua', 'nod', 'all', 'none', 'list'],
-                hatchedit: ['p', 'pattern', 's', 'scale', 'a', 'angle', 'c', 'color', 'l', 'layer', 'list'],
-                layer: ['n', 'new', 's', 'set', 'on', 'off', 'list', 'color', 'delete', 'freeze', 'thaw', 'lock', 'unlock'],
-                dimstyle: ['list', 'set', 'save', 's', 'l'],
-                layout: ['new', 'set', 'list', 'delete', 'rename', 'n', 's', 'l', 'd', 'r'],
-                layerstate: ['save', 'restore', 'list', 'delete', 's', 'r', 'l', 'd'],
-                chprop: ['c', 'color', 'l', 'layer', 'lt', 'linetype', 'lw', 'lineweight', 's', 'scale'],
-                filter: ['t', 'type', 'l', 'layer', 'c', 'color', 'a', 'all', 'clear'],
-                find: ['n', 'next', 'r', 'replace', 'a', 'all']
+                hatch: ['list']
             };
 
             if (active === 'polyline') {
@@ -6439,10 +6432,14 @@ const Commands = {
             }
 
             if (this.aliases[inputLower] && this.aliases[inputLower] !== active) {
-                const allowedOptions = allowed[active] || [];
-                if (!allowedOptions.includes(inputLower)) {
-                    UI.log(`${active.toUpperCase()}: Command in progress. Finish or cancel to start another.`, 'error');
-                    return true;
+                // Only block for drawing commands that have an explicit allowed list.
+                // All other commands (pedit, osnap, layer, hatchedit, dimstyle, chprop,
+                // filter, find, text, etc.) accept text sub-options and must not be blocked.
+                if (active in allowed) {
+                    if (!allowed[active].includes(inputLower)) {
+                        UI.log(`${active.toUpperCase()}: Command in progress. Finish or cancel to start another.`, 'error');
+                        return true;
+                    }
                 }
             }
         }
