@@ -842,6 +842,13 @@ const MobileUI = {
                 }
                 actions.push({ label, value: pattern });
             });
+        } else if (cmd === 'insert') {
+            const blockList = (typeof CAD !== 'undefined' && typeof CAD.getBlockList === 'function')
+                ? CAD.getBlockList()
+                : [];
+            blockList.forEach(blockName => {
+                actions.push({ label: blockName, value: blockName });
+            });
         }
 
         this._els.subActions.innerHTML = '';
