@@ -29,6 +29,12 @@ class StateManager {
         // Hover state (for entity highlighting on mouse over)
         this.hoveredId = null;
 
+        // Grip editing state
+        this.gripDragging = false;
+        this.activeGrip = null;      // { entityId, gripIndex, point, type }
+        this.gripBasePoint = null;    // Original grip position when drag started
+        this.hoveredGrip = null;      // Grip under cursor (for highlighting)
+
         // View state
         this.pan = { x: 0, y: 0 };
         this.zoom = 1;
@@ -47,7 +53,9 @@ class StateManager {
             intersection: true,
             perpendicular: true,        // Enabled by default now
             tangent: false,
-            nearest: true               // Enabled by default now
+            nearest: true,              // Enabled by default now
+            quadrant: true,
+            node: true
         };
         this.snapPoint = null;
         this.snapType = null;
@@ -58,6 +66,9 @@ class StateManager {
         this.fullCrosshair = false;     // Full-screen crosshair (CURSORSIZE = 100 in CAD)
         this.pickboxSize = 3;           // Selection aperture size
         this.cursorWorld = null;        // Cursor position in world coordinates
+
+        // Dynamic Input (F12 - coordinate display near cursor)
+        this.dynamicInputEnabled = true;
 
         // Ortho mode (constrain to horizontal/vertical)
         this.orthoEnabled = false;

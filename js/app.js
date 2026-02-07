@@ -87,9 +87,23 @@ const App = {
             return;
         }
 
-        // Left click - handle command or selection
+        // Left click - check for grip drag first, then command or selection
         if (e.button === 0) {
             if (!world) return;
+
+            // Check if clicking on a grip point (only when no active command and has selection)
+            if (!CAD.activeCmd && CAD.selectedIds.length > 0) {
+                const gripHit = this.hitTestGrip(world);
+                if (gripHit) {
+                    CAD.saveUndoState('Grip Edit');
+                    CAD.gripDragging = true;
+                    CAD.activeGrip = gripHit;
+                    CAD.gripBasePoint = { ...gripHit.point };
+                    document.getElementById('viewport').style.cursor = 'move';
+                    return;
+                }
+            }
+
             Commands.handleClick(world);
             UI.updatePropertiesPanel();
         }
@@ -109,6 +123,28 @@ const App = {
         CAD.cursorWorld = cursorPoint;
         CAD.tempEnd = cursorPoint;
         UI.updateCoordinates(cursorPoint.x, cursorPoint.y);
+
+        // Handle grip dragging
+        if (CAD.gripDragging && CAD.activeGrip) {
+            const snapPoint = CAD.snapPoint || cursorPoint;
+            const entity = CAD.getEntity(CAD.activeGrip.entityId);
+            if (entity) {
+                const updates = Geometry.moveGrip(entity, CAD.activeGrip.gripIndex, snapPoint);
+                if (updates) {
+                    Object.assign(entity, updates);
+                    CAD.modified = true;
+                }
+            }
+            Renderer.draw();
+            return;
+        }
+
+        // Update hovered grip
+        if (!CAD.activeCmd && CAD.selectedIds.length > 0 && !CAD.isPanning) {
+            CAD.hoveredGrip = this.hitTestGrip(cursorPoint);
+        } else {
+            CAD.hoveredGrip = null;
+        }
 
         // Handle panning
         if (CAD.isPanning) {
@@ -147,6 +183,8 @@ const App = {
                 perpendicular: CAD.osnapEnabled && CAD.snapModes.perpendicular,
                 tangent: CAD.osnapEnabled && CAD.snapModes.tangent,
                 nearest: CAD.osnapEnabled && CAD.snapModes.nearest,
+                quadrant: CAD.osnapEnabled && CAD.snapModes.quadrant,
+                node: CAD.osnapEnabled && CAD.snapModes.node,
                 grid: CAD.gridSnapEnabled  // Grid snap is separate
             };
 
@@ -326,6 +364,15 @@ const App = {
     },
 
     onMouseUp(e) {
+        if (CAD.gripDragging) {
+            CAD.gripDragging = false;
+            CAD.activeGrip = null;
+            CAD.gripBasePoint = null;
+            document.getElementById('viewport').style.cursor = 'crosshair';
+            UI.log('Grip edit complete.');
+            UI.updatePropertiesPanel();
+            Renderer.draw();
+        }
         if (CAD.isPanning) {
             CAD.isPanning = false;
             document.getElementById('viewport').style.cursor = 'crosshair';
@@ -590,6 +637,30 @@ const App = {
             this.touchState.isPanning = false;
             this.touchState.moved = false;
         }
+    },
+
+    // ==========================================
+    // GRIP HIT TESTING
+    // ==========================================
+
+    hitTestGrip(point) {
+        const tolerance = 8 / CAD.zoom;
+        for (let i = 0; i < CAD.selectedIds.length; i++) {
+            const entity = CAD.getEntity(CAD.selectedIds[i]);
+            if (!entity) continue;
+            const grips = Geometry.getGripPoints(entity);
+            for (let j = 0; j < grips.length; j++) {
+                if (Utils.dist(point, grips[j].point) <= tolerance) {
+                    return {
+                        entityId: entity.id,
+                        gripIndex: grips[j].index,
+                        point: { ...grips[j].point },
+                        type: grips[j].type
+                    };
+                }
+            }
+        }
+        return null;
     },
 
     // ==========================================

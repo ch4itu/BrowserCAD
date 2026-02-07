@@ -31,7 +31,9 @@ const Renderer = {
             grid: '#808080',
             nearest: '#ff8800',
             perpendicular: '#00ff88',
-            tangent: '#ff88ff'
+            tangent: '#ff88ff',
+            quadrant: '#ffaa00',
+            node: '#66ff66'
         }
     },
     hatchPatterns: new Map(),
@@ -94,6 +96,9 @@ const Renderer = {
             this.drawEntities();
         }
 
+        // Draw grips on selected entities
+        this.drawGrips();
+
         // Draw preview (for active command)
         this.drawPreview();
 
@@ -114,6 +119,11 @@ const Renderer = {
 
         // Draw tracking lines (polar and object snap tracking)
         this.drawTrackingLines();
+
+        // Draw dynamic input (coordinate display near cursor)
+        if (CAD.dynamicInputEnabled) {
+            this.drawDynamicInput();
+        }
 
         // Draw UCS icon
         this.drawUCSIcon();
@@ -379,8 +389,14 @@ const Renderer = {
 
             this.drawEntity(entity, ctx);
 
+            // Wide polyline: fill the outline shape
+            if (entity.type === 'polyline' && entity.width && entity.width > 0) {
+                ctx.fillStyle = color;
+                ctx.fill();
+                ctx.stroke();
+            }
             // Handle hatch fill
-            if (entity.hatch) {
+            else if (entity.hatch) {
                 const hatchStyle = this.getHatchStyle(entity, color);
                 ctx.save();
                 ctx.fillStyle = hatchStyle.fillStyle;
@@ -878,7 +894,10 @@ const Renderer = {
 
             case 'polyline':
                 if (entity.points.length > 0) {
-                    if (entity.isSpline && entity.points.length >= 2) {
+                    if (entity.width && entity.width > 0) {
+                        // Wide polyline: draw as filled polygon outline
+                        this._drawWidePolyline(entity, ctx);
+                    } else if (entity.isSpline && entity.points.length >= 2) {
                         this.drawSplineCurve(entity.points, ctx);
                     } else {
                         ctx.moveTo(entity.points[0].x, entity.points[0].y);
@@ -886,7 +905,7 @@ const Renderer = {
                             ctx.lineTo(entity.points[i].x, entity.points[i].y);
                         }
                     }
-                    if (entity.closed || Utils.isPolygonClosed(entity.points)) {
+                    if (!entity.width && (entity.closed || Utils.isPolygonClosed(entity.points))) {
                         ctx.closePath();
                     }
                 }
@@ -1691,6 +1710,44 @@ const Renderer = {
     // SELECTION WINDOW
     // ==========================================
 
+    drawGrips() {
+        const ctx = this.ctx;
+        const state = CAD;
+        if (state.selectedIds.length === 0 || state.activeCmd) return;
+
+        const zoom = state.zoom;
+        const gripSize = 5 / zoom; // 5 pixels in screen space
+
+        state.selectedIds.forEach(id => {
+            const entity = state.getEntity(id);
+            if (!entity) return;
+
+            const grips = Geometry.getGripPoints(entity);
+            grips.forEach((grip, i) => {
+                const isActive = state.activeGrip &&
+                    state.activeGrip.entityId === id &&
+                    state.activeGrip.gripIndex === grip.index;
+                const isHovered = state.hoveredGrip &&
+                    state.hoveredGrip.entityId === id &&
+                    state.hoveredGrip.gripIndex === grip.index;
+
+                ctx.fillStyle = isActive ? '#ff3333' : (isHovered ? '#ff6666' : '#3399ff');
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1 / zoom;
+
+                ctx.beginPath();
+                ctx.rect(
+                    grip.point.x - gripSize / 2,
+                    grip.point.y - gripSize / 2,
+                    gripSize,
+                    gripSize
+                );
+                ctx.fill();
+                ctx.stroke();
+            });
+        });
+    },
+
     drawSelectionWindow() {
         const ctx = this.ctx;
         const state = CAD;
@@ -1875,6 +1932,35 @@ const Renderer = {
                 ctx.stroke();
                 break;
 
+            case 'quadrant':
+                // Diamond rotated 45 degrees (AutoCAD standard quadrant indicator)
+                ctx.moveTo(screen.x, screen.y - size);
+                ctx.lineTo(screen.x + size, screen.y);
+                ctx.lineTo(screen.x, screen.y + size);
+                ctx.lineTo(screen.x - size, screen.y);
+                ctx.closePath();
+                ctx.stroke();
+                // Small cross in center
+                ctx.beginPath();
+                ctx.moveTo(screen.x - size * 0.35, screen.y);
+                ctx.lineTo(screen.x + size * 0.35, screen.y);
+                ctx.moveTo(screen.x, screen.y - size * 0.35);
+                ctx.lineTo(screen.x, screen.y + size * 0.35);
+                ctx.stroke();
+                break;
+
+            case 'node':
+                // Circle with cross (AutoCAD standard node/point indicator)
+                ctx.arc(screen.x, screen.y, size * 0.7, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(screen.x - size, screen.y);
+                ctx.lineTo(screen.x + size, screen.y);
+                ctx.moveTo(screen.x, screen.y - size);
+                ctx.lineTo(screen.x, screen.y + size);
+                ctx.stroke();
+                break;
+
             default:
                 // Default: crosshair
                 ctx.moveTo(screen.x - size, screen.y);
@@ -1995,6 +2081,101 @@ const Renderer = {
     // UCS ICON
     // ==========================================
 
+    drawDynamicInput() {
+        const ctx = this.ctx;
+        const state = CAD;
+        const cursor = state.cursor;
+        if (!cursor) return;
+
+        const screen = Utils.worldToScreen(cursor.x, cursor.y, state.pan, state.zoom);
+        const hasBasePoint = state.activeCmd && state.points && state.points.length > 0;
+        const basePoint = hasBasePoint ? state.points[state.points.length - 1] : null;
+
+        // Position: below and to the right of cursor
+        const offsetX = 25;
+        const offsetY = 25;
+        const boxH = 20;
+        const fontSize = 12;
+        const padding = 6;
+
+        ctx.save();
+        ctx.font = `${fontSize}px "Consolas", "Courier New", monospace`;
+
+        let text1, text2;
+        if (basePoint) {
+            // Show distance and angle from last point
+            const dx = cursor.x - basePoint.x;
+            const dy = cursor.y - basePoint.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const angle = Math.atan2(-dy, dx) * 180 / Math.PI; // Negate Y for CAD-convention
+            text1 = dist.toFixed(4);
+            text2 = (angle < 0 ? angle + 360 : angle).toFixed(2) + '\u00B0';
+        } else {
+            // Show absolute coordinates
+            text1 = cursor.x.toFixed(4);
+            text2 = cursor.y.toFixed(4);
+        }
+
+        const w1 = ctx.measureText(text1).width + padding * 2;
+        const w2 = ctx.measureText(text2).width + padding * 2;
+        const gap = 4;
+        const totalW = w1 + gap + w2;
+
+        const bx = screen.x + offsetX;
+        const by = screen.y + offsetY;
+
+        // Background boxes
+        ctx.fillStyle = 'rgba(30, 30, 40, 0.85)';
+        ctx.strokeStyle = '#5588cc';
+        ctx.lineWidth = 1;
+
+        // Box 1 (distance or X)
+        this._roundRect(ctx, bx, by, w1, boxH, 3);
+        ctx.fill();
+        ctx.stroke();
+
+        // Box 2 (angle or Y)
+        this._roundRect(ctx, bx + w1 + gap, by, w2, boxH, 3);
+        ctx.fill();
+        ctx.stroke();
+
+        // Text
+        ctx.fillStyle = '#ccddff';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        ctx.fillText(text1, bx + padding, by + boxH / 2);
+        ctx.fillText(text2, bx + w1 + gap + padding, by + boxH / 2);
+
+        // Labels
+        if (basePoint) {
+            ctx.fillStyle = '#8899aa';
+            ctx.font = `9px "Consolas", monospace`;
+            ctx.fillText('Dist', bx + 2, by - 3);
+            ctx.fillText('Angle', bx + w1 + gap + 2, by - 3);
+        } else {
+            ctx.fillStyle = '#8899aa';
+            ctx.font = `9px "Consolas", monospace`;
+            ctx.fillText('X', bx + 2, by - 3);
+            ctx.fillText('Y', bx + w1 + gap + 2, by - 3);
+        }
+
+        ctx.restore();
+    },
+
+    _roundRect(ctx, x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.arcTo(x + w, y, x + w, y + r, r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+        ctx.lineTo(x + r, y + h);
+        ctx.arcTo(x, y + h, x, y + h - r, r);
+        ctx.lineTo(x, y + r);
+        ctx.arcTo(x, y, x + r, y, r);
+        ctx.closePath();
+    },
+
     drawUCSIcon() {
         const ctx = this.ctx;
         const x = 40;
@@ -2057,6 +2238,68 @@ const Renderer = {
      * Draw a smooth Catmull-Rom spline through the given points.
      * Converts Catmull-Rom segments to cubic Bezier for canvas rendering.
      */
+    _drawWidePolyline(entity, ctx) {
+        // Draw a polyline with constant width as a filled shape
+        const points = entity.points;
+        const w = entity.width / 2;
+        if (points.length < 2 || w <= 0) return;
+
+        // Build offset outlines (left and right)
+        const leftPts = [];
+        const rightPts = [];
+
+        for (let i = 0; i < points.length; i++) {
+            let nx, ny;
+            if (i === 0) {
+                const dx = points[1].x - points[0].x;
+                const dy = points[1].y - points[0].y;
+                const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                nx = -dy / len;
+                ny = dx / len;
+            } else if (i === points.length - 1) {
+                const dx = points[i].x - points[i - 1].x;
+                const dy = points[i].y - points[i - 1].y;
+                const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                nx = -dy / len;
+                ny = dx / len;
+            } else {
+                // Average normals of adjacent segments
+                const dx1 = points[i].x - points[i - 1].x;
+                const dy1 = points[i].y - points[i - 1].y;
+                const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1) || 1;
+                const dx2 = points[i + 1].x - points[i].x;
+                const dy2 = points[i + 1].y - points[i].y;
+                const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2) || 1;
+                nx = (-dy1 / len1 + -dy2 / len2) / 2;
+                ny = (dx1 / len1 + dx2 / len2) / 2;
+                const nlen = Math.sqrt(nx * nx + ny * ny) || 1;
+                nx /= nlen;
+                ny /= nlen;
+            }
+            leftPts.push({ x: points[i].x + nx * w, y: points[i].y + ny * w });
+            rightPts.push({ x: points[i].x - nx * w, y: points[i].y - ny * w });
+        }
+
+        // Draw as filled polygon
+        ctx.moveTo(leftPts[0].x, leftPts[0].y);
+        for (let i = 1; i < leftPts.length; i++) {
+            ctx.lineTo(leftPts[i].x, leftPts[i].y);
+        }
+        if (entity.closed) {
+            ctx.lineTo(leftPts[0].x, leftPts[0].y);
+            for (let i = rightPts.length - 1; i >= 0; i--) {
+                ctx.lineTo(rightPts[i].x, rightPts[i].y);
+            }
+            ctx.closePath();
+        } else {
+            // Connect to right side and go back
+            for (let i = rightPts.length - 1; i >= 0; i--) {
+                ctx.lineTo(rightPts[i].x, rightPts[i].y);
+            }
+            ctx.closePath();
+        }
+    },
+
     drawSplineCurve(points, ctx) {
         if (points.length < 2) return;
 

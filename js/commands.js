@@ -291,6 +291,8 @@ const Commands = {
         'mspace': 'mspace',
         'pspace': 'pspace',
         'plot': 'plot',
+        'exportpdf': 'exportpdf',
+        'pdfout': 'exportpdf',
 
         // Phase 3: Advanced Drawing & Editing
         'chprop': 'chprop',
@@ -369,6 +371,11 @@ const Commands = {
 
         if (cmdName === 'plot') {
             this.plotLayout();
+            return;
+        }
+
+        if (cmdName === 'exportpdf' || cmdName === 'pdfout') {
+            Storage.exportPDF();
             return;
         }
 
@@ -917,7 +924,7 @@ const Commands = {
                 this.finishCommand();
                 break;
             case 'osnap':
-                UI.log('OSNAP: Enter option [On/Off/End/Mid/Cen/Int/Per/Tan/Nea/All/None/List]:', 'prompt');
+                UI.log('OSNAP: Enter option [On/Off/End/Mid/Cen/Int/Per/Tan/Nea/Qua/Nod/All/None/List]:', 'prompt');
                 break;
             case 'polar':
                 UI.log(`POLAR: Enter option [On/Off/Angle] <${CAD.polarAngle}>:`, 'prompt');
@@ -1621,7 +1628,7 @@ const Commands = {
             'dimordinate': 'DIMORDINATE (DOR): Ordinate dimension. Click feature point, then leader endpoint. Type X/Y to force axis.',
             'qdim': 'QDIM: Quick dimension. Select objects, then click to place. Auto-generates dimensions.',
             'dimstyle': 'DIMSTYLE: Manage dimension styles. Options: List/Set/Save.',
-            'osnap': 'OSNAP: Object snap settings. Options: On/Off/End/Mid/Cen/Int/Per/Tan/Nea/All/None/List.',
+            'osnap': 'OSNAP: Object snap settings. Options: On/Off/End/Mid/Cen/Int/Per/Tan/Nea/Qua/Nod/All/None/List.',
             'layer': 'LAYER (LA): Layer management. Options: New (create), Set (current), On/Off (visibility), List.',
             'layout': 'LAYOUT: Manage Model/Layout tabs. Options: New/Set/List/Delete.',
             'layerstate': 'LAYERSTATE: Save/restore layer states. Options: Save/Restore/List/Delete.',
@@ -1749,6 +1756,21 @@ const Commands = {
             UI.log(`${state.selectedIds.length} selected. Press ENTER to confirm or keep selecting.`, 'prompt');
             UI.updateCanvasSelectionInfo();
             Renderer.draw();
+            return;
+        }
+
+        // Handle PEDIT movevertex click
+        if (state.activeCmd === 'pedit' && state.cmdOptions.peditMode === 'movevertex') {
+            const target = state.cmdOptions.peditTarget;
+            const vi = state.cmdOptions.vertexIndex || 0;
+            if (target && target.points && vi < target.points.length) {
+                CAD.saveUndoState('PEDIT Move vertex');
+                target.points[vi] = { x: point.x, y: point.y };
+                CAD.updateEntity(target.id, target, true);
+                UI.log(`Vertex ${vi} moved. [N/P/M/I/D/X]:`, 'prompt');
+                state.cmdOptions.peditMode = 'editvertex';
+                Renderer.draw();
+            }
             return;
         }
 
@@ -7047,7 +7069,11 @@ const Commands = {
                 tan: 'tangent',
                 tangent: 'tangent',
                 nea: 'nearest',
-                nearest: 'nearest'
+                nearest: 'nearest',
+                qua: 'quadrant',
+                quadrant: 'quadrant',
+                nod: 'node',
+                node: 'node'
             };
             if (value === 'on' || value === 'off') {
                 CAD.osnapEnabled = value === 'on';
@@ -7953,6 +7979,37 @@ const Commands = {
             const option = input.toLowerCase();
             const target = state.cmdOptions.peditTarget;
 
+            // Handle movevertex mode: coordinate input moves the current vertex
+            if (state.cmdOptions.peditMode === 'movevertex') {
+                const coord = Utils.parseCoordinate(input);
+                if (coord) {
+                    const vi = state.cmdOptions.vertexIndex || 0;
+                    CAD.saveUndoState('PEDIT Move vertex');
+                    target.points[vi] = { x: coord.x, y: coord.y };
+                    CAD.updateEntity(target.id, target, true);
+                    UI.log(`Vertex ${vi} moved. [N/P/M/I/D/X]:`, 'prompt');
+                    state.cmdOptions.peditMode = 'editvertex';
+                    Renderer.draw();
+                } else {
+                    UI.log('Invalid coordinate. Enter x,y:', 'prompt');
+                }
+                return true;
+            }
+
+            // Handle width mode: numeric input sets width
+            if (state.cmdOptions.peditMode === 'width') {
+                const width = parseFloat(input);
+                if (!isNaN(width) && width >= 0) {
+                    CAD.saveUndoState('PEDIT Width');
+                    target.width = width;
+                    CAD.updateEntity(target.id, target, true);
+                    UI.log(`Polyline width set to ${width}.`);
+                    Renderer.draw();
+                }
+                this.finishCommand();
+                return true;
+            }
+
             if (option === 'c' || option === 'close') {
                 // Close polyline
                 if (target.type === 'polyline' && target.points.length >= 3) {
@@ -8023,12 +8080,61 @@ const Commands = {
                 return true;
             }
 
+            if (option === 'w' || option === 'width') {
+                state.cmdOptions.peditMode = 'width';
+                UI.log('PEDIT Width: Enter new width for all segments <' + (target.width || 0) + '>:', 'prompt');
+                return true;
+            }
+
+            if (option === 'e' || option === 'edit') {
+                // Edit vertex mode
+                state.cmdOptions.peditMode = 'editvertex';
+                state.cmdOptions.vertexIndex = 0;
+                UI.log('PEDIT Edit vertex [Next/Previous/Move/Insert/Delete/eXit]:', 'prompt');
+                return true;
+            }
+
             if (option === 'x' || option === 'exit') {
                 this.finishCommand();
                 return true;
             }
 
-            UI.log('PEDIT: Unknown option. [Close/Open/Join/Spline/Decurve/eXit]:', 'prompt');
+            if (state.cmdOptions.peditMode === 'editvertex') {
+                const sub = input.toLowerCase();
+                const pts = target.points;
+                let vi = state.cmdOptions.vertexIndex || 0;
+
+                if (sub === 'n' || sub === 'next') {
+                    vi = (vi + 1) % pts.length;
+                    state.cmdOptions.vertexIndex = vi;
+                    UI.log(`Vertex ${vi} of ${pts.length} (${pts[vi].x.toFixed(2)}, ${pts[vi].y.toFixed(2)}). [N/P/M/I/D/X]:`,'prompt');
+                } else if (sub === 'p' || sub === 'previous') {
+                    vi = (vi - 1 + pts.length) % pts.length;
+                    state.cmdOptions.vertexIndex = vi;
+                    UI.log(`Vertex ${vi} of ${pts.length} (${pts[vi].x.toFixed(2)}, ${pts[vi].y.toFixed(2)}). [N/P/M/I/D/X]:`,'prompt');
+                } else if (sub === 'm' || sub === 'move') {
+                    state.cmdOptions.peditMode = 'movevertex';
+                    UI.log(`Move vertex ${vi}: specify new location:`, 'prompt');
+                } else if (sub === 'd' || sub === 'delete') {
+                    if (pts.length > 2) {
+                        CAD.saveUndoState('PEDIT Delete vertex');
+                        pts.splice(vi, 1);
+                        if (vi >= pts.length) state.cmdOptions.vertexIndex = pts.length - 1;
+                        CAD.updateEntity(target.id, target, true);
+                        UI.log(`Vertex deleted. ${pts.length} vertices remaining. [N/P/M/I/D/X]:`, 'prompt');
+                        Renderer.draw();
+                    } else {
+                        UI.log('Cannot delete: minimum 2 vertices required.', 'error');
+                    }
+                } else if (sub === 'x' || sub === 'exit') {
+                    this.finishCommand();
+                } else {
+                    UI.log('Edit vertex: [Next/Previous/Move/Delete/eXit]:', 'prompt');
+                }
+                return true;
+            }
+
+            UI.log('PEDIT: Unknown option. [Close/Open/Join/Width/Edit vertex/Spline/Decurve/eXit]:', 'prompt');
             return true;
         }
 

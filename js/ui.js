@@ -446,7 +446,7 @@ const UI = {
             return;
         }
 
-        // F3 - Toggle Object Snap (OSNAP - endpoint, midpoint, center, etc.)
+        // F3 - Toggle Object Snap (OSNAP - endpoint, midpoint, center, quadrant, node, etc.)
         if (e.key === 'F3') {
             e.preventDefault();
             CAD.osnapEnabled = !CAD.osnapEnabled;
@@ -489,6 +489,15 @@ const UI = {
             CAD.polarEnabled = !CAD.polarEnabled;
             this.log(`Polar: ${CAD.polarEnabled ? 'ON' : 'OFF'}`);
             this.updateStatusBar();
+            return;
+        }
+
+        // F12 - Toggle Dynamic Input
+        if (e.key === 'F12') {
+            e.preventDefault();
+            CAD.dynamicInputEnabled = !CAD.dynamicInputEnabled;
+            this.log(`Dynamic Input: ${CAD.dynamicInputEnabled ? 'ON' : 'OFF'}`);
+            Renderer.draw();
             return;
         }
 
@@ -805,7 +814,7 @@ LISP:
         }
     },
 
-    // Toggle Object Snap (F3) - endpoint, midpoint, center, nearest, etc.
+    // Toggle Object Snap (F3) - endpoint, midpoint, center, nearest, quadrant, node, etc.
     toggleOsnap() {
         CAD.osnapEnabled = !CAD.osnapEnabled;
         this.log(`Object Snap (OSNAP): ${CAD.osnapEnabled ? 'ON' : 'OFF'}`);

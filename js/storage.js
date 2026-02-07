@@ -1380,6 +1380,227 @@ const Storage = {
     },
 
     // ==========================================
+    // FILE EXPORT - PDF
+    // ==========================================
+
+    exportPDF() {
+        try {
+            const blob = this.generatePDFBlob();
+            if (blob) {
+                this.downloadBlob(blob, `${CAD.drawingName || 'drawing'}.pdf`);
+                UI.log('Drawing exported as PDF.');
+            }
+        } catch (e) {
+            UI.log('Error exporting PDF: ' + e.message, 'error');
+            console.error('PDF export error:', e);
+        }
+    },
+
+    generatePDFBlob() {
+        // 1. Get drawing extents
+        const extents = this.getDrawingExtents();
+        const padding = 20;
+        const drawWidth = extents.maxX - extents.minX + padding * 2;
+        const drawHeight = extents.maxY - extents.minY + padding * 2;
+
+        if (drawWidth <= 0 || drawHeight <= 0) {
+            UI.log('PDF Export: No geometry to export.', 'error');
+            return null;
+        }
+
+        // 2. Determine page size and orientation (A4 in points: 595.28 x 841.89)
+        const pageW = 595.28;
+        const pageH = 841.89;
+        const landscape = drawWidth > drawHeight;
+        const pW = landscape ? pageH : pageW;
+        const pH = landscape ? pageW : pageH;
+
+        // 3. Calculate scale to fit drawing on page with margins
+        const marginPt = 36; // 0.5 inch margin
+        const availW = pW - marginPt * 2;
+        const availH = pH - marginPt * 2;
+
+        // 4. Canvas resolution: scale drawing to fill the available page area
+        const dpi = 150;
+        const ptToPixel = dpi / 72;
+        const canvasW = Math.round(availW * ptToPixel);
+        const canvasH = Math.round(availH * ptToPixel);
+
+        // The zoom factor maps world units to canvas pixels
+        const renderZoom = Math.min(canvasW / drawWidth, canvasH / drawHeight);
+
+        // 5. Create offscreen canvas and render
+        const canvas = document.createElement('canvas');
+        canvas.width = canvasW;
+        canvas.height = canvasH;
+        const ctx = canvas.getContext('2d');
+
+        // White background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvasW, canvasH);
+
+        // Center the drawing on the canvas
+        const renderedW = drawWidth * renderZoom;
+        const renderedH = drawHeight * renderZoom;
+        const offsetX = (canvasW - renderedW) / 2;
+        const offsetY = (canvasH - renderedH) / 2;
+
+        // Save renderer state and swap in our offscreen context
+        const prevCtx = Renderer.ctx;
+        const prevCanvas = Renderer.canvas;
+
+        Renderer.ctx = ctx;
+        Renderer.canvas = canvas;
+
+        // Apply transformation: translate to center, then scale, then offset to drawing origin
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.translate(offsetX, offsetY);
+        ctx.scale(renderZoom, renderZoom);
+        ctx.translate(-(extents.minX - padding), -(extents.minY - padding));
+
+        // Render all entities using the existing drawEntityList (no selection highlighting)
+        Renderer.drawEntityList(CAD.entities, { zoom: renderZoom, includeSelection: false });
+
+        // Restore renderer
+        Renderer.ctx = prevCtx;
+        Renderer.canvas = prevCanvas;
+
+        // 6. Get JPEG bytes from canvas
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        const jpegBytes = this._dataUrlToUint8Array(dataUrl);
+
+        // 7. Build the raw PDF
+        const pdfBytes = this._buildPDF(jpegBytes, canvasW, canvasH, pW, pH, marginPt);
+        return new Blob([pdfBytes], { type: 'application/pdf' });
+    },
+
+    _dataUrlToUint8Array(dataUrl) {
+        const base64 = dataUrl.split(',')[1];
+        const binaryStr = atob(base64);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+            bytes[i] = binaryStr.charCodeAt(i);
+        }
+        return bytes;
+    },
+
+    _buildPDF(jpegBytes, imgW, imgH, pageW, pageH, margin) {
+        // Minimal PDF 1.4 builder with one page containing one JPEG image.
+        // Objects:
+        //   1 - Catalog
+        //   2 - Pages
+        //   3 - Page
+        //   4 - Image XObject (the JPEG)
+        //   5 - Content stream (draws the image)
+        //   6 - Resources dictionary (optional, kept inline on Page)
+
+        const enc = new TextEncoder();
+        const parts = [];   // collect Uint8Arrays
+        const offsets = []; // byte offset of each object (1-indexed, offsets[0] unused)
+        let pos = 0;
+
+        function write(str) {
+            const bytes = enc.encode(str);
+            parts.push(bytes);
+            pos += bytes.length;
+        }
+
+        function writeRaw(bytes) {
+            parts.push(bytes);
+            pos += bytes.length;
+        }
+
+        function startObj(id) {
+            offsets[id] = pos;
+            write(`${id} 0 obj\n`);
+        }
+
+        function endObj() {
+            write('endobj\n');
+        }
+
+        // Header
+        write('%PDF-1.4\n');
+        // Binary comment to mark as binary PDF (recommended)
+        write('%\xE2\xE3\xCF\xD3\n');
+
+        // Object 1: Catalog
+        startObj(1);
+        write('<< /Type /Catalog /Pages 2 0 R >>\n');
+        endObj();
+
+        // Object 2: Pages
+        startObj(2);
+        write(`<< /Type /Pages /Kids [3 0 R] /Count 1 >>\n`);
+        endObj();
+
+        // Image placement: fit the image within the printable area, centered
+        const availW = pageW - margin * 2;
+        const availH = pageH - margin * 2;
+        const scaleImg = Math.min(availW / imgW, availH / imgH);
+        const dispW = imgW * scaleImg;
+        const dispH = imgH * scaleImg;
+        const imgX = margin + (availW - dispW) / 2;
+        const imgY = margin + (availH - dispH) / 2;
+
+        // Object 5: Content stream - draws the image
+        // PDF coordinate system: origin at bottom-left
+        // cm operator: [sx 0 0 sy tx ty] scales and translates
+        const contentStr = `q\n${dispW.toFixed(2)} 0 0 ${dispH.toFixed(2)} ${imgX.toFixed(2)} ${imgY.toFixed(2)} cm\n/Img1 Do\nQ\n`;
+
+        startObj(5);
+        write(`<< /Length ${contentStr.length} >>\nstream\n`);
+        write(contentStr);
+        write('\nendstream\n');
+        endObj();
+
+        // Object 3: Page
+        startObj(3);
+        write(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW.toFixed(2)} ${pageH.toFixed(2)}] `);
+        write(`/Contents 5 0 R `);
+        write(`/Resources << /XObject << /Img1 4 0 R >> >> >>\n`);
+        endObj();
+
+        // Object 4: Image XObject (JPEG)
+        startObj(4);
+        write(`<< /Type /XObject /Subtype /Image /Width ${imgW} /Height ${imgH} `);
+        write(`/ColorSpace /DeviceRGB /BitsPerComponent 8 `);
+        write(`/Filter /DCTDecode /Length ${jpegBytes.length} >>\n`);
+        write('stream\n');
+        writeRaw(jpegBytes);
+        write('\nendstream\n');
+        endObj();
+
+        // Cross-reference table
+        const xrefPos = pos;
+        const numObjs = 6; // 0 through 5
+        write('xref\n');
+        write(`0 ${numObjs}\n`);
+        write('0000000000 65535 f \n');
+        for (let i = 1; i < numObjs; i++) {
+            const off = (offsets[i] || 0).toString().padStart(10, '0');
+            write(`${off} 00000 n \n`);
+        }
+
+        // Trailer
+        write('trailer\n');
+        write(`<< /Size ${numObjs} /Root 1 0 R >>\n`);
+        write('startxref\n');
+        write(`${xrefPos}\n`);
+        write('%%EOF\n');
+
+        // Combine all parts into one Uint8Array
+        const totalLen = parts.reduce((sum, p) => sum + p.length, 0);
+        const result = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const part of parts) {
+            result.set(part, offset);
+            offset += part.length;
+        }
+        return result;
+    },
+
+    // ==========================================
     // FILE IMPORT
     // ==========================================
 
