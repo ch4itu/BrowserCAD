@@ -2657,7 +2657,7 @@ class Hatch {
                 // 45° diagonal thick (plastic/rubber)
                 return { families: [
                     { angle: 45, spacing: 6.35 },
-                    { angle: 45, spacing: 6.35, phase: 1.0 }
+                    { angle: 45, spacing: 6.35, phase: 3.175 }
                 ]};
             case 'ansi35':
                 // 135° reverse diagonal (fire brick)
