@@ -2881,7 +2881,11 @@ const Commands = {
             'ANSI35', 'ANSI36', 'ANSI37', 'ANSI38',
             'brick', 'honey', 'earth', 'grass',
             'steel', 'insul', 'net', 'net3', 'dash',
-            'square', 'zigzag'
+            'square', 'zigzag',
+            'ar-b816', 'ar-brstd', 'ar-b88', 'ar-brelm', 'ar-conc', 'ar-hbone',
+            'ar-parq1', 'ar-rroof', 'ar-rshke', 'ar-sand',
+            'brass', 'clay', 'cork', 'flex', 'gravel', 'hex', 'sacncr',
+            'trans', 'dolmit', 'plast', 'line', 'triang'
         ].join('/');
     },
 
@@ -2890,7 +2894,11 @@ const Commands = {
         'ansi31', 'ansi32', 'ansi33', 'ansi34', 'ansi35', 'ansi36', 'ansi37', 'ansi38',
         'brick', 'earth', 'grass', 'honey',
         'steel', 'insul', 'net', 'net3',
-        'dash', 'square', 'zigzag'
+        'dash', 'square', 'zigzag',
+        'ar-b816', 'ar-brstd', 'ar-b88', 'ar-brelm', 'ar-conc', 'ar-hbone',
+        'ar-parq1', 'ar-rroof', 'ar-rshke', 'ar-sand',
+        'brass', 'clay', 'cork', 'flex', 'gravel', 'hex', 'sacncr',
+        'trans', 'dolmit', 'plast', 'line', 'triang'
     ],
 
     hatchPatternAliases: {

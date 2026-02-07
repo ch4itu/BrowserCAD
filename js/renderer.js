@@ -533,20 +533,19 @@ const Renderer = {
     },
 
     getHatchPattern(pattern, color) {
-        const zoomKey = Math.round(CAD.zoom * 100);
-        const key = `${pattern}-${color}-${zoomKey}`;
+        const key = `${pattern}-${color}`;
         if (this.hatchPatterns.has(key)) {
             return this.hatchPatterns.get(key);
         }
 
-        const size = Math.max(4, 8 / CAD.zoom);
+        const size = 8;
         const canvas = document.createElement('canvas');
         canvas.width = size;
         canvas.height = size;
         const ctx = canvas.getContext('2d');
         ctx.strokeStyle = color;
         ctx.fillStyle = color;
-        ctx.lineWidth = Math.max(0.5, 1 / CAD.zoom);
+        ctx.lineWidth = 1;
 
         switch (pattern) {
             case 'diagonal':
@@ -574,7 +573,7 @@ const Renderer = {
                 ctx.stroke();
                 break;
             case 'ansi34': // Diagonal thick
-                ctx.lineWidth = Math.max(1, 2 / CAD.zoom);
+                ctx.lineWidth = 2;
                 ctx.beginPath();
                 ctx.moveTo(0, size);
                 ctx.lineTo(size, 0);
@@ -767,16 +766,17 @@ const Renderer = {
         ctx.closePath();
         ctx.clip();
 
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        boundaryPoints.forEach(p => {
+            if (p.x < minX) minX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y > maxY) maxY = p.y;
+        });
+        const pad = Math.max(maxX - minX, maxY - minY) * 0.1;
+
         if (patternLower === 'solid') {
             // Solid fill — semi-transparent color
-            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            boundaryPoints.forEach(p => {
-                if (p.x < minX) minX = p.x;
-                if (p.y < minY) minY = p.y;
-                if (p.x > maxX) maxX = p.x;
-                if (p.y > maxY) maxY = p.y;
-            });
-            const pad = Math.max(maxX - minX, maxY - minY) * 0.1;
             ctx.fillStyle = color;
             ctx.globalAlpha = 0.25;
             ctx.fillRect(minX - pad, minY - pad, (maxX - minX) + pad * 2, (maxY - minY) + pad * 2);
@@ -784,7 +784,7 @@ const Renderer = {
             // Draw geometric render lines (proper world-space patterns)
             ctx.beginPath();
             ctx.strokeStyle = color;
-            ctx.lineWidth = Math.max(0.5, 1 / zoom);
+            ctx.lineWidth = Math.max(1, 1 / zoom);
             ctx.globalAlpha = 1.0;
             entity.renderLines.forEach(seg => {
                 if (!seg || !seg.p1 || !seg.p2) return;
@@ -792,6 +792,11 @@ const Renderer = {
                 ctx.lineTo(seg.p2.x, seg.p2.y);
             });
             ctx.stroke();
+        } else {
+            // Fallback to screen-space pattern fill if render lines are missing
+            ctx.fillStyle = this.getHatchPattern(patternLower, color);
+            ctx.globalAlpha = 0.6;
+            ctx.fillRect(minX - pad, minY - pad, (maxX - minX) + pad * 2, (maxY - minY) + pad * 2);
         }
 
         ctx.restore();

@@ -686,6 +686,7 @@
                 <input type="text" id="cmdInput" class="command-input"
                        placeholder="Type command here..." autocomplete="off" autofocus>
             </div>
+            <div class="desktop-hatch-swatches" id="desktopHatchSwatches"></div>
         </div>
 
         <!-- Mobile Drawing Interface -->
@@ -770,7 +771,7 @@
                 <button class="mobile-tool-btn" onclick="App.executeCommand('ellipse')"><i class="m-icon">&#11053;</i><span class="m-label">Ellipse</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('polygon')"><i class="m-icon">&#11039;</i><span class="m-label">Polygon</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('text')"><i class="m-icon">A</i><span class="m-label">Text</span></button>
-                <button class="mobile-tool-btn" onclick="App.executeCommand('hatch')"><i class="m-icon">&#9618;</i><span class="m-label">Hatch</span></button>
+                <button class="mobile-tool-btn" data-cmd="hatch" onclick="App.executeCommand('hatch')"><i class="m-icon">&#9618;</i><span class="m-label">Hatch</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('donut')"><i class="m-icon">&#9678;</i><span class="m-label">Donut</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('spline')"><i class="m-icon">&#8767;</i><span class="m-label">Spline</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('point')"><i class="m-icon">&#8226;</i><span class="m-label">Point</span></button>
