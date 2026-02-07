@@ -2140,15 +2140,19 @@ const Storage = {
                 }));
                 // Negate bulge values to compensate for Y-flip
                 const bulges = (entity.points || []).map(point => -(point.bulge || 0));
-                const resolvedPoints = this.expandBulgePolyline(points, bulges, entity.closed);
-                return {
+                const hasBulges = bulges.some(b => Math.abs(b) > 1e-10);
+                const result = {
                     type: 'polyline',
                     layer: entity.layer || '0',
                     color: entity.trueColor || undefined,
                     lineType: entity.lineType ? entity.lineType.toLowerCase() : undefined,
-                    points: resolvedPoints,
+                    points: points,
                     closed: entity.closed || false
                 };
+                if (hasBulges) {
+                    result.bulges = bulges;
+                }
+                return result;
             }
             case 'spline': {
                 const points = (entity.points || []).map(point => ({
@@ -3040,13 +3044,16 @@ const Storage = {
 
             const flags = parseInt(data[70]) || 0;
             const closed = (flags & 1) !== 0;
-            const resolvedPoints = this.expandBulgePolyline(points, bulges, closed);
+            const hasBulges = bulges.some(b => Math.abs(b) > 1e-10);
 
             const entity = {
                 type: 'polyline',
-                points: resolvedPoints,
+                points: points,
                 closed: closed
             };
+            if (hasBulges) {
+                entity.bulges = bulges;
+            }
             this.applyDXFEntityStyle(entity, data);
 
             return { entity, nextIndex: i };
@@ -3073,13 +3080,16 @@ const Storage = {
         // Check closed flag (group code 70, bit 1)
         const flags = parseInt(data[70]) || 0;
         const closed = (flags & 1) !== 0;
-        const resolvedPoints = this.expandBulgePolyline(points, bulges, closed);
+        const hasBulges = bulges.some(b => Math.abs(b) > 1e-10);
 
         const entity = {
             type: 'polyline',
-            points: resolvedPoints,
+            points: points,
             closed: closed
         };
+        if (hasBulges) {
+            entity.bulges = bulges;
+        }
         this.applyDXFEntityStyle(entity, data);
 
         return { entity, nextIndex };

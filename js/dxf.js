@@ -1007,21 +1007,24 @@ const DXF = (() => {
 
     const writeEntityLwPolyline = (out, entity) => {
         const points = entity.points || [];
+        const bulges = entity.bulges || [];
         const closedFlag = entity.closed ? 1 : 0;
         out.push('0', 'LWPOLYLINE');
         out.push('8', entity.layer || '0');
         writeCommonStyle(out, entity);
         out.push('90', String(points.length));
         out.push('70', String(closedFlag));
-        points.forEach(point => {
+        points.forEach((point, idx) => {
             out.push('10', formatNumber(point.x));
             out.push('20', formatNumber(fy(point.y)));
             if (point.z !== undefined) {
                 out.push('30', formatNumber(point.z));
             }
-            if (point.bulge) {
+            // Check both point.bulge and entity.bulges array
+            const bulge = point.bulge || bulges[idx] || 0;
+            if (Math.abs(bulge) > 1e-10) {
                 // Negate bulge to compensate for Y-flip
-                out.push('42', formatNumber(-point.bulge));
+                out.push('42', formatNumber(-bulge));
             }
         });
     };
@@ -1071,11 +1074,18 @@ const DXF = (() => {
     };
 
     const writeEntitySpline = (out, entity) => {
-        const points = entity.points || [];
+        let points = entity.points || [];
         if (points.length < 2) return;
-        const isSpline = entity.isSpline;
         const degree = 3;
         const closed = entity.closed ? 1 : 0;
+
+        // For closed splines, remove the duplicate closing point
+        if (closed && points.length >= 3) {
+            const first = points[0], last = points[points.length - 1];
+            if (Math.abs(first.x - last.x) < 1e-6 && Math.abs(first.y - (last.y)) < 1e-6) {
+                points = points.slice(0, -1);
+            }
+        }
 
         out.push('0', 'SPLINE');
         out.push('8', entity.layer || '0');

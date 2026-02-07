@@ -921,7 +921,7 @@ const Renderer = {
             case 'polyline': {
                 if (entity.points.length > 0) {
                     if (entity.isSpline && entity.points.length >= 2) {
-                        this.drawSplineCurve(entity.points, ctx);
+                        this.drawSplineCurve(entity.points, ctx, entity.closed);
                     } else {
                         const hasBulges = entity.bulges && entity.bulges.length > 0;
                         ctx.moveTo(entity.points[0].x, entity.points[0].y);
@@ -994,7 +994,7 @@ const Renderer = {
                         // Wide polyline: draw as filled polygon outline
                         this._drawWidePolyline(entity, ctx);
                     } else if (entity.isSpline && entity.points.length >= 2) {
-                        this.drawSplineCurve(entity.points, ctx);
+                        this.drawSplineCurve(entity.points, ctx, entity.closed);
                     } else {
                         const hasBulges = entity.bulges && entity.bulges.length > 0;
                         ctx.moveTo(entity.points[0].x, entity.points[0].y);
@@ -1410,6 +1410,21 @@ const Renderer = {
         const insertY = insertRef.insertPoint?.y ?? insertRef.y ?? 0;
 
         ctx.save();
+
+        // Apply XCLIP boundary if present and enabled
+        if (insertRef.xclip && insertRef.xclip.enabled && insertRef.xclip.boundary) {
+            const clipBoundary = insertRef.xclip.boundary;
+            if (clipBoundary.length >= 3) {
+                ctx.beginPath();
+                ctx.moveTo(clipBoundary[0].x, clipBoundary[0].y);
+                for (let i = 1; i < clipBoundary.length; i++) {
+                    ctx.lineTo(clipBoundary[i].x, clipBoundary[i].y);
+                }
+                ctx.closePath();
+                ctx.clip();
+            }
+        }
+
         ctx.translate(insertX, insertY);
         if (rotation) {
             ctx.rotate(rotation);
@@ -1429,6 +1444,26 @@ const Renderer = {
         });
 
         ctx.restore();
+
+        // Draw XCLIP boundary outline (dashed)
+        if (insertRef.xclip && insertRef.xclip.enabled && insertRef.xclip.boundary) {
+            const clipBoundary = insertRef.xclip.boundary;
+            if (clipBoundary.length >= 3) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(clipBoundary[0].x, clipBoundary[0].y);
+                for (let i = 1; i < clipBoundary.length; i++) {
+                    ctx.lineTo(clipBoundary[i].x, clipBoundary[i].y);
+                }
+                ctx.closePath();
+                ctx.strokeStyle = '#808080';
+                ctx.lineWidth = 1 / (CAD.zoom || 1);
+                ctx.setLineDash([6 / (CAD.zoom || 1), 4 / (CAD.zoom || 1)]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.restore();
+            }
+        }
     },
 
     drawHatchRenderLines(entity, color, zoom = CAD.zoom) {
@@ -1712,8 +1747,8 @@ const Renderer = {
         const lastPoint = state.points.length ? state.points[state.points.length - 1] : null;
         let endPoint = state.tempEnd || state.cursor;
 
-        // Apply ortho if enabled
-        if (state.orthoEnabled && state.points.length > 0) {
+        // Apply ortho if enabled (F8 toggle) or Shift key held (temporary ortho)
+        if ((state.orthoEnabled || state.shiftOrtho) && state.points.length > 0) {
             endPoint = Utils.applyOrtho(lastPoint, endPoint);
         }
 
@@ -1723,12 +1758,14 @@ const Renderer = {
                 ctx.lineTo(endPoint.x, endPoint.y);
                 break;
 
-            case 'polyline':
-                // Draw confirmed segments solid
+            case 'polyline': {
+                // Draw confirmed segments solid (with arcs for bulges)
+                const plBulges = state.cmdOptions.polylineBulges || [];
                 ctx.setLineDash([]);
                 ctx.moveTo(state.points[0].x, state.points[0].y);
                 for (let i = 1; i < state.points.length; i++) {
-                    ctx.lineTo(state.points[i].x, state.points[i].y);
+                    const bulge = plBulges[i - 1] || 0;
+                    this._drawPolylineSegment(ctx, state.points[i - 1], state.points[i], bulge, false);
                 }
                 ctx.stroke();
 
@@ -1738,6 +1775,7 @@ const Renderer = {
                 ctx.moveTo(lastPoint.x, lastPoint.y);
                 ctx.lineTo(endPoint.x, endPoint.y);
                 break;
+            }
 
             case 'spline': {
                 if (state.points.length === 1) {
@@ -2622,7 +2660,7 @@ const Renderer = {
         }
     },
 
-    drawSplineCurve(points, ctx) {
+    drawSplineCurve(points, ctx, isClosed) {
         if (points.length < 2) return;
 
         if (points.length === 2) {
@@ -2631,10 +2669,32 @@ const Renderer = {
             return;
         }
 
-        // Pad the control points array: duplicate first and last for open curves
-        const pts = [points[0], ...points, points[points.length - 1]];
+        // Detect if the spline is closed (last point == first point)
+        const closed = isClosed || (points.length >= 3 &&
+            Math.abs(points[0].x - points[points.length - 1].x) < 1e-6 &&
+            Math.abs(points[0].y - points[points.length - 1].y) < 1e-6);
 
-        ctx.moveTo(points[0].x, points[0].y);
+        let pts;
+        if (closed) {
+            // For closed splines, strip duplicated closing point and wrap around
+            let cp = points;
+            if (Math.abs(cp[0].x - cp[cp.length - 1].x) < 1e-6 &&
+                Math.abs(cp[0].y - cp[cp.length - 1].y) < 1e-6) {
+                cp = cp.slice(0, -1);
+            }
+            if (cp.length < 3) {
+                ctx.moveTo(points[0].x, points[0].y);
+                for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+                return;
+            }
+            // Wrap: last, ...all, first, second
+            pts = [cp[cp.length - 1], ...cp, cp[0], cp[1]];
+        } else {
+            // Pad the control points array: duplicate first and last for open curves
+            pts = [points[0], ...points, points[points.length - 1]];
+        }
+
+        ctx.moveTo(pts[1].x, pts[1].y);
 
         for (let i = 1; i < pts.length - 2; i++) {
             const p0 = pts[i - 1];
@@ -2660,12 +2720,27 @@ const Renderer = {
      * Generate interpolated points along a Catmull-Rom spline.
      * Used for DXF export and hit testing.
      */
-    getSplinePoints(controlPoints, segments) {
+    getSplinePoints(controlPoints, segments, isClosed) {
         if (controlPoints.length < 2) return [...controlPoints];
 
         const segsPerSpan = segments || 20;
         const result = [];
-        const pts = [controlPoints[0], ...controlPoints, controlPoints[controlPoints.length - 1]];
+
+        const closed = isClosed || (controlPoints.length >= 3 &&
+            Math.abs(controlPoints[0].x - controlPoints[controlPoints.length - 1].x) < 1e-6 &&
+            Math.abs(controlPoints[0].y - controlPoints[controlPoints.length - 1].y) < 1e-6);
+
+        let pts;
+        if (closed) {
+            let cp = controlPoints;
+            if (Math.abs(cp[0].x - cp[cp.length - 1].x) < 1e-6 &&
+                Math.abs(cp[0].y - cp[cp.length - 1].y) < 1e-6) {
+                cp = cp.slice(0, -1);
+            }
+            pts = [cp[cp.length - 1], ...cp, cp[0], cp[1]];
+        } else {
+            pts = [controlPoints[0], ...controlPoints, controlPoints[controlPoints.length - 1]];
+        }
 
         for (let i = 1; i < pts.length - 2; i++) {
             const p0 = pts[i - 1];
@@ -2673,7 +2748,7 @@ const Renderer = {
             const p2 = pts[i + 1];
             const p3 = pts[i + 2];
 
-            const numSegs = (i === pts.length - 3) ? segsPerSpan : segsPerSpan;
+            const numSegs = segsPerSpan;
             for (let j = 0; j <= (i === pts.length - 3 ? numSegs : numSegs - 1); j++) {
                 const t = j / numSegs;
                 const t2 = t * t;

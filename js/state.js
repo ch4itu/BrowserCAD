@@ -383,6 +383,17 @@ class StateManager {
     // ENTITY MANAGEMENT
     // ==========================================
 
+    // Get the entity list for the current working space
+    getActiveEntityList() {
+        if (this.activeSpace === 'PAPER' && !this.activeViewportId) {
+            const layout = this.getLayout(this.currentLayout);
+            if (layout && layout.type === 'paper') {
+                return layout.entities;
+            }
+        }
+        return this.entities;
+    }
+
     addEntity(data, skipUndo = false) {
         const entity = {
             id: generateId(),
@@ -396,20 +407,30 @@ class StateManager {
             this.saveUndoState('Add Entity');
         }
 
-        this.entities.push(entity);
+        const list = this.getActiveEntityList();
+        list.push(entity);
         this.modified = true;
         return entity;
     }
 
     removeEntity(id, skipUndo = false) {
-        const index = this.entities.findIndex(e => e.id === id);
+        // Search in both model space and current layout
+        let list = this.entities;
+        let index = list.findIndex(e => e.id === id);
+        if (index === -1) {
+            const layout = this.getLayout(this.currentLayout);
+            if (layout && layout.entities) {
+                list = layout.entities;
+                index = list.findIndex(e => e.id === id);
+            }
+        }
         if (index === -1) return null;
 
         if (!skipUndo) {
             this.saveUndoState('Remove Entity');
         }
 
-        const removed = this.entities.splice(index, 1)[0];
+        const removed = list.splice(index, 1)[0];
         this.modified = true;
         return removed;
     }
@@ -422,6 +443,7 @@ class StateManager {
         }
 
         const removed = [];
+        // Remove from model space entities
         this.entities = this.entities.filter(e => {
             if (ids.includes(e.id)) {
                 removed.push(e);
@@ -429,13 +451,31 @@ class StateManager {
             }
             return true;
         });
+        // Also remove from current layout entities
+        const layout = this.getLayout(this.currentLayout);
+        if (layout && layout.entities) {
+            layout.entities = layout.entities.filter(e => {
+                if (ids.includes(e.id)) {
+                    removed.push(e);
+                    return false;
+                }
+                return true;
+            });
+        }
 
         this.modified = true;
         return removed;
     }
 
     getEntity(id) {
-        return this.entities.find(e => e.id === id);
+        const found = this.entities.find(e => e.id === id);
+        if (found) return found;
+        // Also search in current layout entities
+        const layout = this.getLayout(this.currentLayout);
+        if (layout && layout.entities) {
+            return layout.entities.find(e => e.id === id);
+        }
+        return null;
     }
 
     updateEntity(id, updates, skipUndo = false) {
@@ -457,14 +497,16 @@ class StateManager {
     }
 
     getVisibleEntities() {
-        return this.entities.filter(e => {
+        const list = this.getActiveEntityList();
+        return list.filter(e => {
             if (e._hidden) return false;
             return this.isLayerVisible(e.layer);
         });
     }
 
     getEditableEntities() {
-        return this.entities.filter(e => {
+        const list = this.getActiveEntityList();
+        return list.filter(e => {
             if (e._hidden) return false;
             const layer = this.getLayer(e.layer);
             return layer && layer.visible && !layer.frozen && !layer.locked;

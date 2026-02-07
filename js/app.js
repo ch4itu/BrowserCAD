@@ -97,7 +97,9 @@ const App = {
             : CAD.zoom;
 
         // Middle mouse button - start pan or zoom extents on double-click
-        if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+        // Shift+Click: if a drawing command is active, use as ortho constraint;
+        // otherwise, start panning
+        if (e.button === 1 || (e.button === 0 && e.shiftKey && !CAD.activeCmd)) {
             e.preventDefault();
 
             // Check for double middle click
@@ -119,9 +121,16 @@ const App = {
         if (e.button === 0) {
             if (!world) return;
 
+            // Apply ortho constraint when Shift is held during drawing commands
+            let clickPoint = world;
+            if (e.shiftKey && CAD.activeCmd && CAD.points.length > 0) {
+                const lastPoint = CAD.points[CAD.points.length - 1];
+                clickPoint = Utils.applyOrtho(lastPoint, world);
+            }
+
             // Check if clicking on a grip point (only when no active command and has selection)
             if (!CAD.activeCmd && CAD.selectedIds.length > 0) {
-                const gripHit = this.hitTestGrip(world);
+                const gripHit = this.hitTestGrip(clickPoint);
                 if (gripHit) {
                     CAD.saveUndoState('Grip Edit');
                     CAD.gripDragging = true;
@@ -132,7 +141,7 @@ const App = {
                 }
             }
 
-            Commands.handleClick(world);
+            Commands.handleClick(clickPoint);
             UI.updatePropertiesPanel();
         }
     },
@@ -140,11 +149,18 @@ const App = {
     onMouseMove(e) {
         const paperPoint = this.screenToPaper(e.offsetX, e.offsetY);
         const world = this.screenToActiveSpace(paperPoint);
-        const cursorPoint = world || paperPoint;
+        let cursorPoint = world || paperPoint;
         const activeViewport = this.getActiveViewport();
         const effectiveZoom = this.isModelSpaceInLayout() && activeViewport
             ? CAD.zoom * activeViewport.viewScale
             : CAD.zoom;
+
+        // Apply Shift-ortho: constrain cursor to orthogonal when Shift is held during drawing
+        CAD.shiftOrtho = e.shiftKey;
+        if (e.shiftKey && CAD.activeCmd && CAD.points.length > 0 && cursorPoint) {
+            const lastPoint = CAD.points[CAD.points.length - 1];
+            cursorPoint = Utils.applyOrtho(lastPoint, cursorPoint);
+        }
 
         // Update cursor position
         CAD.cursor = cursorPoint;
