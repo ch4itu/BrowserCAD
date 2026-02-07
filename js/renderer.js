@@ -503,7 +503,24 @@ const Renderer = {
         if (rotation) {
             ctx.rotate(rotation);
         }
-        ctx.drawImage(image, 0, 0, width, height);
+        // Apply image clipping if enabled
+        if (entity.clipEnabled && entity.clipBoundary) {
+            ctx.save();
+            ctx.beginPath();
+            const cb = entity.clipBoundary;
+            if (cb.type === 'rect') {
+                const cx1 = cb.p1.x - minX;
+                const cy1 = cb.p1.y - minY;
+                const cx2 = cb.p2.x - minX;
+                const cy2 = cb.p2.y - minY;
+                ctx.rect(cx1, cy1, cx2 - cx1, cy2 - cy1);
+            }
+            ctx.clip();
+            ctx.drawImage(image, 0, 0, width, height);
+            ctx.restore();
+        } else {
+            ctx.drawImage(image, 0, 0, width, height);
+        }
         ctx.restore();
 
         if (isSelected || isHovered) {
@@ -1128,6 +1145,139 @@ const Renderer = {
             case 'hatch':
                 // Hatch entities are rendered via drawHatchFill in drawEntityList
                 break;
+
+            case 'mleader': {
+                if (entity.points && entity.points.length > 0) {
+                    // Draw leader line segments
+                    ctx.moveTo(entity.points[0].x, entity.points[0].y);
+                    for (let i = 1; i < entity.points.length; i++) {
+                        ctx.lineTo(entity.points[i].x, entity.points[i].y);
+                    }
+                    // Draw landing line (dogleg)
+                    const lastPt = entity.points[entity.points.length - 1];
+                    const textPos = entity.textPosition || lastPt;
+                    if (entity.doglegLength && textPos) {
+                        const dir = textPos.x >= lastPt.x ? 1 : -1;
+                        const landingEnd = { x: lastPt.x + dir * (entity.doglegLength || 8), y: lastPt.y };
+                        ctx.lineTo(landingEnd.x, landingEnd.y);
+                    }
+                }
+                // Draw arrowhead at first point
+                if (entity.points && entity.points.length >= 2) {
+                    ctx.stroke();
+                    ctx.beginPath();
+                    const p0 = entity.points[0];
+                    const p1 = entity.points[1];
+                    const angle = Math.atan2(p0.y - p1.y, p0.x - p1.x);
+                    const arrowSize = (entity.arrowSize || 3) / CAD.zoom * CAD.zoom;
+                    const arrowType = entity.arrowType || 'closed';
+                    if (arrowType !== 'none') {
+                        ctx.save();
+                        ctx.translate(p0.x, p0.y);
+                        ctx.rotate(angle);
+                        if (arrowType === 'dot') {
+                            ctx.arc(0, 0, arrowSize / 2, 0, Math.PI * 2);
+                            ctx.fillStyle = ctx.strokeStyle;
+                            ctx.fill();
+                        } else {
+                            ctx.moveTo(0, 0);
+                            ctx.lineTo(-arrowSize, arrowSize / 3);
+                            ctx.lineTo(-arrowSize, -arrowSize / 3);
+                            ctx.closePath();
+                            ctx.fillStyle = ctx.strokeStyle;
+                            ctx.fill();
+                        }
+                        ctx.restore();
+                    }
+                    ctx.beginPath();
+                }
+                // Draw text
+                if (entity.text) {
+                    ctx.save();
+                    const tStyle = this._getTextFont ? this._getTextFont(entity) : { prefix: '', font: 'Arial, sans-serif' };
+                    const h = entity.height || entity.textHeight || 2.5;
+                    ctx.font = `${tStyle.prefix}${h}px ${tStyle.font}`;
+                    ctx.fillStyle = ctx.strokeStyle;
+                    const tp = entity.textPosition || entity.points[entity.points.length - 1];
+                    if (tp) {
+                        const lines = entity.text.split('\n');
+                        const lineHeight = h * 1.2;
+                        lines.forEach((line, index) => {
+                            ctx.fillText(line, tp.x, tp.y + h * 0.3 + index * lineHeight);
+                        });
+                    }
+                    ctx.restore();
+                }
+                break;
+            }
+
+            case 'tolerance': {
+                ctx.save();
+                const pos = entity.position || { x: 0, y: 0 };
+                const h = entity.height || 5;
+                const frames = entity.frames || [];
+                ctx.font = `${h}px Arial`;
+                ctx.fillStyle = ctx.strokeStyle;
+                ctx.textBaseline = 'middle';
+
+                let xOff = 0;
+                const frameH = h * 1.6;
+                const cellPad = h * 0.3;
+
+                frames.forEach(frame => {
+                    const cells = [];
+                    if (frame.symbol) cells.push(frame.symbol);
+                    let tolText = '';
+                    if (frame.diameterSymbol) tolText += '\u2300';
+                    tolText += (frame.tolerance1 || '');
+                    cells.push(tolText);
+                    if (frame.tolerance2) cells.push(frame.tolerance2);
+                    if (frame.datum1) cells.push(frame.datum1);
+                    if (frame.datum2) cells.push(frame.datum2);
+                    if (frame.datum3) cells.push(frame.datum3);
+
+                    cells.forEach(cellText => {
+                        const tw = ctx.measureText(cellText).width + cellPad * 2;
+                        ctx.strokeRect(pos.x + xOff, pos.y - frameH / 2, tw, frameH);
+                        ctx.fillText(cellText, pos.x + xOff + cellPad, pos.y);
+                        xOff += tw;
+                    });
+                    xOff += cellPad;
+                });
+
+                ctx.restore();
+                break;
+            }
+
+            case 'trace': {
+                if (entity.points && entity.points.length >= 4) {
+                    ctx.moveTo(entity.points[0].x, entity.points[0].y);
+                    for (let i = 1; i < entity.points.length; i++) {
+                        ctx.lineTo(entity.points[i].x, entity.points[i].y);
+                    }
+                    ctx.closePath();
+                    ctx.fillStyle = ctx.strokeStyle;
+                    ctx.fill();
+                }
+                break;
+            }
+
+            case 'field': {
+                ctx.save();
+                const fh = entity.height || 10;
+                ctx.font = `${fh}px Arial`;
+                const fp = entity.position || { x: 0, y: 0 };
+                const displayText = entity.evaluatedText || entity.fieldExpression || '---';
+                const textW = ctx.measureText(displayText).width;
+                // Draw gray background
+                ctx.fillStyle = 'rgba(180,180,180,0.25)';
+                ctx.fillRect(fp.x, fp.y - fh, textW + 4, fh * 1.3);
+                // Draw text
+                ctx.fillStyle = ctx.strokeStyle;
+                ctx.fillText(displayText, fp.x + 2, fp.y);
+                ctx.restore();
+                break;
+            }
         }
     },
 

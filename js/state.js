@@ -159,6 +159,47 @@ class StateManager {
         // { blockName: { name, basePoint, entities: [...], description } }
         this.blocks = {};
 
+        // MLeader styles (MLEADERSTYLE)
+        this.mleaderStyles = [{
+            name: 'Standard',
+            arrowType: 'closed',  // closed, open, dot, none
+            arrowSize: 3,
+            landingGap: 2,
+            textHeight: 2.5,
+            doglegLength: 8,
+            contentType: 'mtext'  // mtext, block, none
+        }];
+        this.currentMLeaderStyle = 'Standard';
+
+        // Multiline styles (MLSTYLE)
+        this.multilineStyles = [{
+            name: 'Standard',
+            elements: [
+                { offset: 0.5, color: '#ffffff', linetype: 'Continuous' },
+                { offset: -0.5, color: '#ffffff', linetype: 'Continuous' }
+            ],
+            showJoints: true,
+            startCap: 'none',
+            endCap: 'none'
+        }];
+        this.currentMultilineStyle = 'Standard';
+
+        // Page setup defaults
+        this.defaultPageSetup = {
+            paperSize: 'ISO A3',
+            paperWidth: 420,
+            paperHeight: 297,
+            orientation: 'Landscape',
+            plotScale: 'Fit',
+            plotScaleCustom: 1,
+            margins: { top: 10, right: 10, bottom: 10, left: 10 },
+            plotArea: 'Layout',  // Layout, Extents, Window
+            plotOffset: { x: 0, y: 0 }
+        };
+
+        // Dynamic fields
+        this.fields = [];  // Active field references { id, type, entityId, format }
+
         // Named views { name: { pan: {x,y}, zoom: number } }
         this.namedViews = {};
 
@@ -1201,6 +1242,27 @@ class StateManager {
         this.entities = [];
         this.selectedIds = [];
         this.modified = true;
+    }
+
+    getMLeaderStyle(name) {
+        return this.mleaderStyles.find(s => s.name === (name || this.currentMLeaderStyle)) || this.mleaderStyles[0];
+    }
+
+    getMultilineStyle(name) {
+        return this.multilineStyles.find(s => s.name === (name || this.currentMultilineStyle)) || this.multilineStyles[0];
+    }
+
+    getPageSetup(layoutName) {
+        const layout = this.getLayout(layoutName || this.currentLayout);
+        return (layout && layout.pageSetup) || { ...this.defaultPageSetup };
+    }
+
+    setPageSetup(layoutName, setup) {
+        const layout = this.getLayout(layoutName || this.currentLayout);
+        if (layout) {
+            layout.pageSetup = { ...setup };
+            this.modified = true;
+        }
     }
 
     newDrawing() {

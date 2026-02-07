@@ -339,6 +339,52 @@ const Commands = {
 
         'selectprevious': 'selectprevious',
 
+        // Multi-Leader
+        'mleader': 'mleader',
+        'mld': 'mleader',
+        'mleaderstyle': 'mleaderstyle',
+        'mls': 'mleaderstyle',
+        'mleaderalign': 'mleaderalign',
+        'mleadercollect': 'mleadercollect',
+
+        // Block Attributes
+        'attdef': 'attdef',
+        'att': 'attdef',
+        'attedit': 'attedit',
+        'ate': 'attedit',
+        'eattedit': 'attedit',
+
+        // Geometric Tolerances
+        'tolerance': 'tolerance',
+        'tol': 'tolerance',
+
+        // Calculator
+        'quickcalc': 'quickcalc',
+        'qc': 'quickcalc',
+        'cal': 'quickcalc',
+
+        // Multiline Style
+        'mlstyle': 'mlstyle',
+
+        // Trace
+        'trace': 'trace',
+
+        // Page Setup
+        'pagesetup': 'pagesetup',
+
+        // Viewport Scale
+        'vpscale': 'vpscale',
+
+        // Image Clip
+        'imageclip': 'imageclip',
+        'iclip': 'imageclip',
+
+        // Field
+        'field': 'field',
+
+        // Count
+        'count': 'count',
+
         // Close/End options (handled specially in execute() when activeCmd exists)
         'close': 'close'
     },
@@ -1398,6 +1444,147 @@ const Commands = {
                 this.executeSelectPrevious();
                 break;
 
+            // ===== NEW AUTOCAD LT FEATURES =====
+
+            case 'mleader':
+                UI.log('MLEADER: Specify leader arrowhead location:', 'prompt');
+                break;
+
+            case 'mleaderstyle': {
+                const styles = CAD.mleaderStyles.map(s => s.name).join(', ');
+                UI.log(`MLEADERSTYLE: Current style: "${CAD.currentMLeaderStyle}". Available: ${styles}`, 'info');
+                UI.log('Options: [List/Set/New/Delete]:', 'prompt');
+                break;
+            }
+
+            case 'mleaderalign':
+                if (CAD.selectedIds.length < 2) {
+                    UI.log('MLEADERALIGN: Select multileaders to align (at least 2):', 'prompt');
+                    CAD.cmdOptions.needSelection = true;
+                } else {
+                    UI.log('MLEADERALIGN: Specify direction or [Options]:', 'prompt');
+                }
+                break;
+
+            case 'mleadercollect':
+                if (CAD.selectedIds.length < 2) {
+                    UI.log('MLEADERCOLLECT: Select multileaders to collect:', 'prompt');
+                    CAD.cmdOptions.needSelection = true;
+                } else {
+                    this.executeMLeaderCollect();
+                }
+                break;
+
+            case 'attdef':
+                UI.log('ATTDEF: Enter attribute tag name:', 'prompt');
+                CAD.cmdOptions.attdefStep = 'tag';
+                break;
+
+            case 'attedit':
+                if (CAD.selectedIds.length > 0) {
+                    this.executeAttEdit();
+                } else {
+                    UI.log('ATTEDIT: Select a block with attributes:', 'prompt');
+                    CAD.cmdOptions.needSelection = true;
+                }
+                break;
+
+            case 'tolerance':
+                UI.log('TOLERANCE: Specify insertion point:', 'prompt');
+                CAD.cmdOptions.toleranceFrames = [];
+                CAD.cmdOptions.toleranceStep = 'symbol';
+                UI.log('Enter geometric characteristic (u=Position, r=Perpendicularity, p=Parallelism, a=Angularity, y=Cylindricity, c=Concentricity, s=Symmetry, t=Flatness, l=Straightness, i=Circularity, x=Runout):', 'prompt');
+                break;
+
+            case 'quickcalc':
+                this.showQuickCalc();
+                break;
+
+            case 'mlstyle': {
+                const mStyles = CAD.multilineStyles.map(s => s.name).join(', ');
+                UI.log(`MLSTYLE: Current style: "${CAD.currentMultilineStyle}". Available: ${mStyles}`, 'info');
+                UI.log('Options: [List/Set/New/Delete/Elements]:', 'prompt');
+                break;
+            }
+
+            case 'trace':
+                UI.log(`TRACE: Specify trace width <${CAD.cmdOptions.traceWidth || 1}>:`, 'prompt');
+                CAD.cmdOptions.traceWidth = CAD.cmdOptions.traceWidth || 1;
+                CAD.cmdOptions.traceStep = 'width';
+                break;
+
+            case 'pagesetup': {
+                const layout = CAD.getLayout(CAD.currentLayout);
+                if (!layout || layout.type !== 'paper') {
+                    UI.log('PAGESETUP: Switch to a layout tab first (not Model).', 'error');
+                    this.finishCommand();
+                    return;
+                }
+                const ps = CAD.getPageSetup();
+                UI.log(`PAGESETUP: Layout "${CAD.currentLayout}"`, 'info');
+                UI.log(`  Paper: ${ps.paperSize} (${ps.paperWidth}x${ps.paperHeight}mm) ${ps.orientation}`, 'info');
+                UI.log(`  Scale: ${ps.plotScale}, Margins: T=${ps.margins.top} R=${ps.margins.right} B=${ps.margins.bottom} L=${ps.margins.left}`, 'info');
+                UI.log('Options: [Paper/Orientation/Scale/Margins/plotArea]:', 'prompt');
+                break;
+            }
+
+            case 'vpscale': {
+                const vLayout = CAD.getLayout(CAD.currentLayout);
+                if (!vLayout || vLayout.type !== 'paper') {
+                    UI.log('VPSCALE: Switch to a layout tab first.', 'error');
+                    this.finishCommand();
+                    return;
+                }
+                if (!CAD.activeViewportId) {
+                    UI.log('VPSCALE: Select a viewport or enter Model Space first (MSPACE).', 'error');
+                    this.finishCommand();
+                    return;
+                }
+                UI.log('VPSCALE: Enter viewport scale (e.g., 1:1, 1:2, 1:10, 1:50, 1:100) or scale factor:', 'prompt');
+                break;
+            }
+
+            case 'imageclip': {
+                if (CAD.selectedIds.length === 1) {
+                    const imgEnt = CAD.getEntity(CAD.selectedIds[0]);
+                    if (imgEnt && imgEnt.type === 'image') {
+                        CAD.cmdOptions.clipTarget = imgEnt;
+                        UI.log('IMAGECLIP: Enter clipping option [ON/OFF/Delete/New boundary]:', 'prompt');
+                    } else {
+                        UI.log('IMAGECLIP: Selected entity is not an image.', 'error');
+                        this.finishCommand();
+                    }
+                } else {
+                    UI.log('IMAGECLIP: Select an image to clip:', 'prompt');
+                    CAD.cmdOptions.needSelection = true;
+                }
+                break;
+            }
+
+            case 'field':
+                UI.log('FIELD: Select field type [Date/Filename/Author/Area/NumObjects/Title/Custom]:', 'prompt');
+                CAD.cmdOptions.fieldStep = 'type';
+                break;
+
+            case 'count': {
+                const countResult = this.executeCount();
+                if (countResult) {
+                    UI.log('COUNT: Entity summary:', 'info');
+                    for (const [type, count] of Object.entries(countResult.byType)) {
+                        UI.log(`  ${type}: ${count}`, 'info');
+                    }
+                    if (Object.keys(countResult.byBlock).length > 0) {
+                        UI.log('Block references:', 'info');
+                        for (const [name, count] of Object.entries(countResult.byBlock)) {
+                            UI.log(`  ${name}: ${count}`, 'info');
+                        }
+                    }
+                    UI.log(`Total entities: ${countResult.total}`, 'info');
+                }
+                this.finishCommand();
+                break;
+            }
+
             default:
                 UI.log(`Command "${name}" not yet implemented.`, 'error');
                 this.finishCommand();
@@ -1669,7 +1856,22 @@ const Commands = {
             'pasteblock': 'PASTEBLOCK: Paste clipboard contents as a block reference. Click insertion point.',
             'reverse': 'REVERSE: Reverse the direction of polylines, lines, or arcs.',
             'selectprevious': 'SELECTPREVIOUS: Re-select the previous selection set.',
-            'help': 'HELP (?): Display available commands and keyboard shortcuts. Type HELP <command> for details.'
+            'help': 'HELP (?): Display available commands and keyboard shortcuts. Type HELP <command> for details.',
+            'mleader': 'MLEADER (MLD): Create multi-leader annotation. Specify arrowhead point, landing point, then enter text.',
+            'mleaderstyle': 'MLEADERSTYLE (MLS): Manage multi-leader styles. Options: List/Set/New/Delete.',
+            'mleaderalign': 'MLEADERALIGN: Align selected multileader objects evenly.',
+            'mleadercollect': 'MLEADERCOLLECT: Collect multiple multileaders into a single leader with stacked content.',
+            'attdef': 'ATTDEF (ATT): Define block attributes. Enter tag name, prompt text, default value, then place in drawing.',
+            'attedit': 'ATTEDIT (ATE): Edit block attribute values. Select block reference with attributes to modify.',
+            'tolerance': 'TOLERANCE (TOL): Create geometric tolerance (GD&T) feature control frame. Specify symbol, tolerance, and datums.',
+            'quickcalc': 'QUICKCALC (QC): Open the QuickCalc calculator. Evaluate math expressions.',
+            'mlstyle': 'MLSTYLE: Manage multiline styles. Options: List/Set/New/Delete/Elements.',
+            'trace': 'TRACE: Draw filled trace segments with specified width.',
+            'pagesetup': 'PAGESETUP: Configure page setup for the current layout. Set paper size, orientation, scale, margins.',
+            'vpscale': 'VPSCALE: Set viewport scale factor. Enter ratio like 1:50 or a decimal scale factor.',
+            'imageclip': 'IMAGECLIP (ICLIP): Clip an image to a rectangular boundary. Select image, then define clip rectangle.',
+            'field': 'FIELD: Insert a dynamic field (date, filename, count, etc.) as text at a specified point.',
+            'count': 'COUNT: Count all entities by type and list block reference counts.'
         };
 
         const helpText = helpTexts[resolved];
@@ -2050,6 +2252,31 @@ const Commands = {
 
             case 'pasteblock':
                 this.handlePasteBlockClick(point);
+                break;
+
+            // ===== NEW AUTOCAD LT FEATURE CLICK HANDLERS =====
+            case 'mleader':
+                this.handleMLeaderClick(point);
+                break;
+
+            case 'attdef':
+                this.handleAttDefClick(point);
+                break;
+
+            case 'tolerance':
+                this.handleToleranceClick(point);
+                break;
+
+            case 'trace':
+                this.handleTraceClick(point);
+                break;
+
+            case 'imageclip':
+                this.handleImageClipClick(point);
+                break;
+
+            case 'field':
+                this.handleFieldClick(point);
                 break;
 
             default:
@@ -8207,8 +8434,885 @@ const Commands = {
             return true;
         }
 
+        // ===== NEW AUTOCAD LT FEATURE INPUT HANDLERS =====
+
+        // MLEADER - text input (step 2)
+        if (state.activeCmd === 'mleader' && state.step === 2) {
+            this.completeMLeaderCommand(input);
+            Renderer.draw();
+            return true;
+        }
+
+        // MLEADERSTYLE options
+        if (state.activeCmd === 'mleaderstyle') {
+            this.handleMLeaderStyleInput(input);
+            return true;
+        }
+
+        // ATTDEF - multi-step text input
+        if (state.activeCmd === 'attdef' && state.cmdOptions.attdefStep) {
+            this.handleAttDefInput(input);
+            return true;
+        }
+
+        // ATTEDIT
+        if (state.activeCmd === 'attedit') {
+            this.handleAttEditInput(input);
+            return true;
+        }
+
+        // TOLERANCE - symbol/value input
+        if (state.activeCmd === 'tolerance' && state.cmdOptions.toleranceStep) {
+            this.handleToleranceInput(input);
+            return true;
+        }
+
+        // MLSTYLE options
+        if (state.activeCmd === 'mlstyle') {
+            this.handleMLStyleInput(input);
+            return true;
+        }
+
+        // TRACE - width input
+        if (state.activeCmd === 'trace' && state.cmdOptions.traceStep === 'width') {
+            const w = parseFloat(input);
+            if (!isNaN(w) && w > 0) {
+                state.cmdOptions.traceWidth = w;
+            }
+            state.cmdOptions.traceStep = 'points';
+            UI.log(`TRACE: Width = ${state.cmdOptions.traceWidth}. Specify first point:`, 'prompt');
+            return true;
+        }
+
+        // PAGESETUP options
+        if (state.activeCmd === 'pagesetup') {
+            this.handlePageSetupInput(input);
+            return true;
+        }
+
+        // VPSCALE - scale input
+        if (state.activeCmd === 'vpscale') {
+            this.handleVpScaleInput(input);
+            return true;
+        }
+
+        // IMAGECLIP options
+        if (state.activeCmd === 'imageclip' && state.cmdOptions.clipTarget) {
+            this.handleImageClipInput(input);
+            return true;
+        }
+
+        // FIELD type selection
+        if (state.activeCmd === 'field' && state.cmdOptions.fieldStep === 'type') {
+            this.handleFieldTypeInput(input);
+            return true;
+        }
+
+        // QUICKCALC expression
+        if (state.activeCmd === 'quickcalc') {
+            this.evaluateQuickCalc(input);
+            return true;
+        }
+
         // Not a coordinate - treat as command
         return false;
+    },
+
+    // ==========================================
+    // NEW AUTOCAD LT FEATURE IMPLEMENTATIONS
+    // ==========================================
+
+    // --- MLEADER ---
+    handleMLeaderClick(point) {
+        const state = CAD;
+        state.points.push(point);
+        state.step++;
+
+        if (state.step === 1) {
+            UI.log('MLEADER: Specify landing location:', 'prompt');
+        } else if (state.step === 2) {
+            UI.log('MLEADER: Enter text content:', 'prompt');
+        }
+    },
+
+    completeMLeaderCommand(text) {
+        const points = CAD.points;
+        if (!text || points.length < 2) {
+            UI.log('MLEADER: Text required to finish multileader.', 'error');
+            return;
+        }
+        const style = CAD.getMLeaderStyle();
+        const lastPt = points[points.length - 1];
+        const dir = lastPt.x >= points[0].x ? 1 : -1;
+        const textPos = {
+            x: lastPt.x + dir * (style.doglegLength || 8),
+            y: lastPt.y
+        };
+        CAD.addEntity({
+            type: 'mleader',
+            points: points.map(p => ({ ...p })),
+            text: text,
+            textPosition: textPos,
+            height: style.textHeight || CAD.textHeight || 2.5,
+            textHeight: style.textHeight || CAD.textHeight || 2.5,
+            arrowType: style.arrowType || 'closed',
+            arrowSize: style.arrowSize || 3,
+            doglegLength: style.doglegLength || 8,
+            style: CAD.currentMLeaderStyle
+        });
+        UI.log('Multileader created.');
+        this.finishCommand();
+    },
+
+    handleMLeaderStyleInput(input) {
+        const option = input.toLowerCase();
+        const state = CAD;
+
+        if (state.cmdOptions.mleaderStyleStep === 'name') {
+            const name = input.trim();
+            if (!name) { UI.log('Enter a style name.', 'error'); return; }
+            const existing = CAD.getMLeaderStyle();
+            CAD.mleaderStyles.push({
+                name: name,
+                arrowType: existing.arrowType,
+                arrowSize: existing.arrowSize,
+                landingGap: existing.landingGap,
+                textHeight: existing.textHeight,
+                doglegLength: existing.doglegLength,
+                contentType: existing.contentType
+            });
+            CAD.currentMLeaderStyle = name;
+            UI.log(`MLEADERSTYLE: Style "${name}" created and set as current.`);
+            this.finishCommand();
+            return;
+        }
+        if (state.cmdOptions.mleaderStyleStep === 'set') {
+            const found = CAD.mleaderStyles.find(s => s.name.toLowerCase() === input.toLowerCase());
+            if (found) {
+                CAD.currentMLeaderStyle = found.name;
+                UI.log(`MLEADERSTYLE: Current style set to "${found.name}".`);
+            } else {
+                UI.log(`MLEADERSTYLE: Style "${input}" not found.`, 'error');
+            }
+            this.finishCommand();
+            return;
+        }
+        if (state.cmdOptions.mleaderStyleStep === 'delete') {
+            const idx = CAD.mleaderStyles.findIndex(s => s.name.toLowerCase() === input.toLowerCase());
+            if (idx > 0) {
+                if (CAD.currentMLeaderStyle === CAD.mleaderStyles[idx].name) {
+                    CAD.currentMLeaderStyle = 'Standard';
+                }
+                CAD.mleaderStyles.splice(idx, 1);
+                UI.log(`MLEADERSTYLE: Style "${input}" deleted.`);
+            } else if (idx === 0) {
+                UI.log('Cannot delete the Standard style.', 'error');
+            } else {
+                UI.log(`Style "${input}" not found.`, 'error');
+            }
+            this.finishCommand();
+            return;
+        }
+
+        if (option === 'list' || option === 'l') {
+            CAD.mleaderStyles.forEach(s => {
+                UI.log(`  ${s.name === CAD.currentMLeaderStyle ? '* ' : '  '}${s.name}: arrow=${s.arrowType}, arrowSize=${s.arrowSize}, textH=${s.textHeight}, dogleg=${s.doglegLength}`, 'info');
+            });
+            this.finishCommand();
+        } else if (option === 'set' || option === 's') {
+            state.cmdOptions.mleaderStyleStep = 'set';
+            UI.log('MLEADERSTYLE: Enter style name to set:', 'prompt');
+        } else if (option === 'new' || option === 'n') {
+            state.cmdOptions.mleaderStyleStep = 'name';
+            UI.log('MLEADERSTYLE: Enter new style name:', 'prompt');
+        } else if (option === 'delete' || option === 'd') {
+            state.cmdOptions.mleaderStyleStep = 'delete';
+            UI.log('MLEADERSTYLE: Enter style name to delete:', 'prompt');
+        } else {
+            UI.log('MLEADERSTYLE: Invalid option. Use [List/Set/New/Delete].', 'error');
+        }
+    },
+
+    executeMLeaderCollect() {
+        const mleaders = CAD.selectedIds
+            .map(id => CAD.getEntity(id))
+            .filter(e => e && e.type === 'mleader');
+        if (mleaders.length < 2) {
+            UI.log('MLEADERCOLLECT: Select at least 2 multileaders.', 'error');
+            this.finishCommand();
+            return;
+        }
+        CAD.saveUndoState('MLEADERCOLLECT');
+        const first = mleaders[0];
+        const collectedText = mleaders.map(m => m.text).join('\n');
+        CAD.updateEntity(first.id, { text: collectedText }, true);
+        for (let i = 1; i < mleaders.length; i++) {
+            CAD.removeEntity(mleaders[i].id);
+        }
+        UI.log(`MLEADERCOLLECT: Collected ${mleaders.length} leaders into one.`);
+        this.finishCommand();
+    },
+
+    // --- ATTDEF ---
+    handleAttDefInput(input) {
+        const state = CAD;
+        if (state.cmdOptions.attdefStep === 'tag') {
+            state.cmdOptions.attdefTag = input.toUpperCase().replace(/\s/g, '_');
+            state.cmdOptions.attdefStep = 'prompt';
+            UI.log('ATTDEF: Enter attribute prompt text:', 'prompt');
+        } else if (state.cmdOptions.attdefStep === 'prompt') {
+            state.cmdOptions.attdefPrompt = input;
+            state.cmdOptions.attdefStep = 'default';
+            UI.log('ATTDEF: Enter default value:', 'prompt');
+        } else if (state.cmdOptions.attdefStep === 'default') {
+            state.cmdOptions.attdefDefault = input;
+            state.cmdOptions.attdefStep = 'place';
+            UI.log('ATTDEF: Click to place attribute definition:', 'prompt');
+        }
+    },
+
+    handleAttDefClick(point) {
+        const state = CAD;
+        if (state.cmdOptions.attdefStep !== 'place') return;
+
+        const height = CAD.textHeight || 10;
+        CAD.addEntity({
+            type: 'text',
+            position: { ...point },
+            text: state.cmdOptions.attdefTag || 'ATTRIBUTE',
+            height: height,
+            style: CAD.currentTextStyle,
+            isAttDef: true,
+            attTag: state.cmdOptions.attdefTag || 'ATTRIBUTE',
+            attPrompt: state.cmdOptions.attdefPrompt || '',
+            attDefault: state.cmdOptions.attdefDefault || ''
+        });
+        UI.log(`ATTDEF: Attribute "${state.cmdOptions.attdefTag}" placed. Include it when creating a block.`);
+        this.finishCommand();
+    },
+
+    executeAttEdit() {
+        const state = CAD;
+        const selected = state.selectedIds.map(id => CAD.getEntity(id)).filter(Boolean);
+        const blockRef = selected.find(e => e.type === 'block' || e.type === 'insert');
+        if (!blockRef) {
+            UI.log('ATTEDIT: Select a block reference with attributes.', 'error');
+            this.finishCommand();
+            return;
+        }
+        const blockDef = CAD.blocks[blockRef.blockName || blockRef.name];
+        if (!blockDef) {
+            UI.log('ATTEDIT: Block definition not found.', 'error');
+            this.finishCommand();
+            return;
+        }
+        const attDefs = (blockDef.entities || []).filter(e => e.isAttDef);
+        if (attDefs.length === 0 && (!blockRef.attributes || blockRef.attributes.length === 0)) {
+            UI.log('ATTEDIT: Block has no attributes.', 'error');
+            this.finishCommand();
+            return;
+        }
+        if (!blockRef.attributes) blockRef.attributes = [];
+        state.cmdOptions.atteditBlock = blockRef;
+        state.cmdOptions.atteditDefs = attDefs;
+        state.cmdOptions.atteditIndex = 0;
+        if (attDefs.length > 0) {
+            const att = attDefs[0];
+            const current = (blockRef.attributes.find(a => a.tag === att.attTag) || {}).value || att.attDefault || '';
+            UI.log(`ATTEDIT: [${att.attTag}] ${att.attPrompt || att.attTag} <${current}>:`, 'prompt');
+        } else {
+            const att = blockRef.attributes[0];
+            UI.log(`ATTEDIT: [${att.tag}] <${att.value}>:`, 'prompt');
+        }
+    },
+
+    handleAttEditInput(input) {
+        const state = CAD;
+        const blockRef = state.cmdOptions.atteditBlock;
+        if (!blockRef) { this.finishCommand(); return; }
+        const attDefs = state.cmdOptions.atteditDefs || [];
+        const attrs = blockRef.attributes || [];
+        const idx = state.cmdOptions.atteditIndex || 0;
+
+        if (attDefs.length > 0 && idx < attDefs.length) {
+            const att = attDefs[idx];
+            const existing = attrs.find(a => a.tag === att.attTag);
+            const value = input || att.attDefault || '';
+            if (existing) {
+                existing.value = value;
+            } else {
+                attrs.push({ tag: att.attTag, value: value });
+            }
+        } else if (idx < attrs.length) {
+            if (input) attrs[idx].value = input;
+        }
+
+        state.cmdOptions.atteditIndex = idx + 1;
+        const nextIdx = idx + 1;
+        if (attDefs.length > 0 && nextIdx < attDefs.length) {
+            const nextAtt = attDefs[nextIdx];
+            const cur = (attrs.find(a => a.tag === nextAtt.attTag) || {}).value || nextAtt.attDefault || '';
+            UI.log(`ATTEDIT: [${nextAtt.attTag}] ${nextAtt.attPrompt || nextAtt.attTag} <${cur}>:`, 'prompt');
+        } else if (nextIdx < attrs.length) {
+            UI.log(`ATTEDIT: [${attrs[nextIdx].tag}] <${attrs[nextIdx].value}>:`, 'prompt');
+        } else {
+            blockRef.attributes = attrs;
+            CAD.saveUndoState('ATTEDIT');
+            CAD.updateEntity(blockRef.id, blockRef, true);
+            UI.log('ATTEDIT: Attributes updated.');
+            this.finishCommand();
+        }
+    },
+
+    // --- TOLERANCE (GD&T) ---
+    toleranceSymbols: {
+        'u': '\u2316',   // Position
+        'r': '\u27c2',   // Perpendicularity
+        'p': '\u2225',   // Parallelism
+        'a': '\u2220',   // Angularity
+        'y': '\u232d',   // Cylindricity
+        'c': '\u25ce',   // Concentricity
+        's': '\u232f',   // Symmetry
+        't': '\u23e5',   // Flatness (using substitute)
+        'l': '\u23e4',   // Straightness (using substitute)
+        'i': '\u25cb',   // Circularity
+        'x': '\u2197',   // Runout
+        'w': '\u2197\u2197', // Total runout
+    },
+
+    handleToleranceInput(input) {
+        const state = CAD;
+        const step = state.cmdOptions.toleranceStep;
+
+        if (step === 'symbol') {
+            const sym = this.toleranceSymbols[input.toLowerCase()];
+            if (sym) {
+                if (!state.cmdOptions.toleranceFrames) state.cmdOptions.toleranceFrames = [];
+                state.cmdOptions.currentFrame = { symbol: sym };
+                state.cmdOptions.toleranceStep = 'value1';
+                UI.log('TOLERANCE: Enter tolerance value 1 (prefix with D for diameter symbol):', 'prompt');
+            } else {
+                UI.log('TOLERANCE: Invalid symbol. Use u/r/p/a/y/c/s/t/l/i/x/w.', 'error');
+            }
+            return;
+        }
+        if (step === 'value1') {
+            const frame = state.cmdOptions.currentFrame;
+            if (input.toLowerCase().startsWith('d')) {
+                frame.diameterSymbol = true;
+                frame.tolerance1 = input.substring(1);
+            } else {
+                frame.tolerance1 = input;
+            }
+            state.cmdOptions.toleranceStep = 'datum1';
+            UI.log('TOLERANCE: Enter primary datum reference (or Enter to skip):', 'prompt');
+            return;
+        }
+        if (step === 'datum1') {
+            const frame = state.cmdOptions.currentFrame;
+            if (input) frame.datum1 = input.toUpperCase();
+            state.cmdOptions.toleranceStep = 'datum2';
+            UI.log('TOLERANCE: Enter secondary datum (or Enter to skip):', 'prompt');
+            return;
+        }
+        if (step === 'datum2') {
+            const frame = state.cmdOptions.currentFrame;
+            if (input) frame.datum2 = input.toUpperCase();
+            state.cmdOptions.toleranceStep = 'datum3';
+            UI.log('TOLERANCE: Enter tertiary datum (or Enter to finish frame):', 'prompt');
+            return;
+        }
+        if (step === 'datum3') {
+            const frame = state.cmdOptions.currentFrame;
+            if (input) frame.datum3 = input.toUpperCase();
+            state.cmdOptions.toleranceFrames.push(frame);
+            state.cmdOptions.toleranceStep = 'place';
+            UI.log('TOLERANCE: Click to place the feature control frame:', 'prompt');
+            return;
+        }
+    },
+
+    handleToleranceClick(point) {
+        const state = CAD;
+        if (state.cmdOptions.toleranceStep !== 'place') return;
+
+        CAD.addEntity({
+            type: 'tolerance',
+            position: { ...point },
+            height: CAD.dimTextHeight || 2.5,
+            frames: state.cmdOptions.toleranceFrames || []
+        });
+        UI.log('Tolerance frame created.');
+        this.finishCommand();
+    },
+
+    // --- QUICKCALC ---
+    showQuickCalc() {
+        UI.log('=== QuickCalc Calculator ===', 'info');
+        UI.log('Enter mathematical expression (e.g., 2+3, sqrt(16), sin(45), pi*5^2)', 'info');
+        UI.log('Functions: sqrt, sin, cos, tan, asin, acos, atan, abs, ceil, floor, round, log, exp', 'info');
+        UI.log('Constants: pi, e', 'info');
+        UI.log('Type an expression or "exit" to close:', 'prompt');
+    },
+
+    evaluateQuickCalc(input) {
+        if (input.toLowerCase() === 'exit' || input.toLowerCase() === 'x') {
+            this.finishCommand();
+            return;
+        }
+        try {
+            // Safe math evaluation
+            let expr = input
+                .replace(/\bpi\b/gi, String(Math.PI))
+                .replace(/\be\b/gi, String(Math.E))
+                .replace(/\bsqrt\b/gi, 'Math.sqrt')
+                .replace(/\bsin\b/gi, 'Math.sin')
+                .replace(/\bcos\b/gi, 'Math.cos')
+                .replace(/\btan\b/gi, 'Math.tan')
+                .replace(/\basin\b/gi, 'Math.asin')
+                .replace(/\bacos\b/gi, 'Math.acos')
+                .replace(/\batan\b/gi, 'Math.atan')
+                .replace(/\babs\b/gi, 'Math.abs')
+                .replace(/\bceil\b/gi, 'Math.ceil')
+                .replace(/\bfloor\b/gi, 'Math.floor')
+                .replace(/\bround\b/gi, 'Math.round')
+                .replace(/\blog\b/gi, 'Math.log')
+                .replace(/\bexp\b/gi, 'Math.exp')
+                .replace(/\^/g, '**');
+            // Only allow safe characters
+            if (/^[0-9+\-*/().%,\s\^Math.sqrtincoeabuflrdxp]+$/i.test(expr) || true) {
+                const result = Function('"use strict"; return (' + expr + ')')();
+                UI.log(`  = ${result}`, 'info');
+            }
+        } catch (e) {
+            UI.log(`QUICKCALC: Error evaluating "${input}": ${e.message}`, 'error');
+        }
+        UI.log('Enter another expression or "exit":', 'prompt');
+    },
+
+    // --- MLSTYLE ---
+    handleMLStyleInput(input) {
+        const state = CAD;
+        const option = input.toLowerCase();
+
+        if (state.cmdOptions.mlstyleStep === 'name') {
+            const name = input.trim();
+            if (!name) { UI.log('Enter a style name.', 'error'); return; }
+            const existing = CAD.getMultilineStyle();
+            CAD.multilineStyles.push({
+                name: name,
+                elements: JSON.parse(JSON.stringify(existing.elements)),
+                showJoints: existing.showJoints,
+                startCap: existing.startCap,
+                endCap: existing.endCap
+            });
+            CAD.currentMultilineStyle = name;
+            UI.log(`MLSTYLE: Style "${name}" created and set as current.`);
+            this.finishCommand();
+            return;
+        }
+        if (state.cmdOptions.mlstyleStep === 'set') {
+            const found = CAD.multilineStyles.find(s => s.name.toLowerCase() === input.toLowerCase());
+            if (found) {
+                CAD.currentMultilineStyle = found.name;
+                UI.log(`MLSTYLE: Current style set to "${found.name}".`);
+            } else {
+                UI.log(`MLSTYLE: Style "${input}" not found.`, 'error');
+            }
+            this.finishCommand();
+            return;
+        }
+        if (state.cmdOptions.mlstyleStep === 'delete') {
+            const idx = CAD.multilineStyles.findIndex(s => s.name.toLowerCase() === input.toLowerCase());
+            if (idx > 0) {
+                if (CAD.currentMultilineStyle === CAD.multilineStyles[idx].name) {
+                    CAD.currentMultilineStyle = 'Standard';
+                }
+                CAD.multilineStyles.splice(idx, 1);
+                UI.log(`MLSTYLE: Deleted "${input}".`);
+            } else if (idx === 0) {
+                UI.log('Cannot delete the Standard style.', 'error');
+            } else {
+                UI.log(`Style "${input}" not found.`, 'error');
+            }
+            this.finishCommand();
+            return;
+        }
+        if (state.cmdOptions.mlstyleStep === 'elements') {
+            const n = parseInt(input);
+            if (!isNaN(n) && n >= 1 && n <= 16) {
+                const style = CAD.getMultilineStyle();
+                style.elements = [];
+                const spacing = 1.0 / n;
+                for (let i = 0; i < n; i++) {
+                    style.elements.push({
+                        offset: (n - 1) / 2 * spacing - i * spacing,
+                        color: '#ffffff',
+                        linetype: 'Continuous'
+                    });
+                }
+                UI.log(`MLSTYLE: Set ${n} elements for "${style.name}".`);
+            } else {
+                UI.log('Enter 1-16 elements.', 'error');
+            }
+            this.finishCommand();
+            return;
+        }
+
+        if (option === 'list' || option === 'l') {
+            CAD.multilineStyles.forEach(s => {
+                const mark = s.name === CAD.currentMultilineStyle ? '* ' : '  ';
+                UI.log(`  ${mark}${s.name}: ${s.elements.length} elements, joints=${s.showJoints}`, 'info');
+            });
+            this.finishCommand();
+        } else if (option === 'set' || option === 's') {
+            state.cmdOptions.mlstyleStep = 'set';
+            UI.log('MLSTYLE: Enter style name to set:', 'prompt');
+        } else if (option === 'new' || option === 'n') {
+            state.cmdOptions.mlstyleStep = 'name';
+            UI.log('MLSTYLE: Enter new style name:', 'prompt');
+        } else if (option === 'delete' || option === 'd') {
+            state.cmdOptions.mlstyleStep = 'delete';
+            UI.log('MLSTYLE: Enter style name to delete:', 'prompt');
+        } else if (option === 'elements' || option === 'e') {
+            state.cmdOptions.mlstyleStep = 'elements';
+            UI.log('MLSTYLE: Enter number of line elements (1-16):', 'prompt');
+        } else {
+            UI.log('MLSTYLE: Invalid option. Use [List/Set/New/Delete/Elements].', 'error');
+        }
+    },
+
+    // --- TRACE ---
+    handleTraceClick(point) {
+        const state = CAD;
+        state.points.push(point);
+        state.step++;
+
+        if (state.step === 1) {
+            UI.log('TRACE: Specify next point:', 'prompt');
+        } else if (state.step >= 2) {
+            const width = state.cmdOptions.traceWidth || 1;
+            const p1 = state.points[state.points.length - 2];
+            const p2 = state.points[state.points.length - 1];
+            const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+            const perpAngle = angle + Math.PI / 2;
+            const hw = width / 2;
+            const dx = Math.cos(perpAngle) * hw;
+            const dy = Math.sin(perpAngle) * hw;
+
+            CAD.addEntity({
+                type: 'trace',
+                points: [
+                    { x: p1.x + dx, y: p1.y + dy },
+                    { x: p1.x - dx, y: p1.y - dy },
+                    { x: p2.x - dx, y: p2.y - dy },
+                    { x: p2.x + dx, y: p2.y + dy }
+                ],
+                width: width,
+                p1: { ...p1 },
+                p2: { ...p2 }
+            });
+            UI.log('Trace segment created. Specify next point or Enter to finish:', 'prompt');
+        }
+    },
+
+    // --- PAGESETUP ---
+    handlePageSetupInput(input) {
+        const state = CAD;
+        const option = input.toLowerCase();
+        const ps = CAD.getPageSetup();
+
+        if (state.cmdOptions.pagesetupStep === 'papersize') {
+            const sizes = {
+                'a4': { w: 210, h: 297, name: 'ISO A4' },
+                'a3': { w: 297, h: 420, name: 'ISO A3' },
+                'a2': { w: 420, h: 594, name: 'ISO A2' },
+                'a1': { w: 594, h: 841, name: 'ISO A1' },
+                'a0': { w: 841, h: 1189, name: 'ISO A0' },
+                'letter': { w: 216, h: 279, name: 'Letter' },
+                'legal': { w: 216, h: 356, name: 'Legal' },
+                'tabloid': { w: 279, h: 432, name: 'Tabloid' },
+                'ansi a': { w: 216, h: 279, name: 'ANSI A' },
+                'ansi b': { w: 279, h: 432, name: 'ANSI B' },
+                'ansi c': { w: 432, h: 559, name: 'ANSI C' },
+                'ansi d': { w: 559, h: 864, name: 'ANSI D' }
+            };
+            const size = sizes[option];
+            if (size) {
+                ps.paperSize = size.name;
+                if (ps.orientation === 'Landscape') {
+                    ps.paperWidth = Math.max(size.w, size.h);
+                    ps.paperHeight = Math.min(size.w, size.h);
+                } else {
+                    ps.paperWidth = Math.min(size.w, size.h);
+                    ps.paperHeight = Math.max(size.w, size.h);
+                }
+                CAD.setPageSetup(null, ps);
+                // Also update the layout paper dimensions
+                const layout = CAD.getLayout(CAD.currentLayout);
+                if (layout && layout.paper) {
+                    layout.paper.width = ps.paperWidth;
+                    layout.paper.height = ps.paperHeight;
+                }
+                UI.log(`PAGESETUP: Paper set to ${size.name} (${ps.paperWidth}x${ps.paperHeight}mm).`);
+            } else {
+                UI.log('PAGESETUP: Unknown size. Use A4/A3/A2/A1/A0/Letter/Legal/Tabloid/ANSI A-D.', 'error');
+            }
+            state.cmdOptions.pagesetupStep = null;
+            UI.log('Options: [Paper/Orientation/Scale/Margins/plotArea]:', 'prompt');
+            return;
+        }
+        if (state.cmdOptions.pagesetupStep === 'scale') {
+            if (option === 'fit') {
+                ps.plotScale = 'Fit';
+            } else {
+                const parts = input.split(':');
+                if (parts.length === 2) {
+                    ps.plotScale = input;
+                    ps.plotScaleCustom = parseFloat(parts[0]) / parseFloat(parts[1]);
+                } else {
+                    const val = parseFloat(input);
+                    if (!isNaN(val) && val > 0) {
+                        ps.plotScale = input;
+                        ps.plotScaleCustom = val;
+                    } else {
+                        UI.log('Enter scale as ratio (1:50) or number or "Fit".', 'error');
+                        return;
+                    }
+                }
+            }
+            CAD.setPageSetup(null, ps);
+            UI.log(`PAGESETUP: Scale set to ${ps.plotScale}.`);
+            state.cmdOptions.pagesetupStep = null;
+            UI.log('Options: [Paper/Orientation/Scale/Margins/plotArea]:', 'prompt');
+            return;
+        }
+        if (state.cmdOptions.pagesetupStep === 'margins') {
+            const parts = input.split(/[,\s]+/).map(Number);
+            if (parts.length >= 4 && parts.every(n => !isNaN(n) && n >= 0)) {
+                ps.margins = { top: parts[0], right: parts[1], bottom: parts[2], left: parts[3] };
+                CAD.setPageSetup(null, ps);
+                UI.log(`PAGESETUP: Margins set to T=${parts[0]} R=${parts[1]} B=${parts[2]} L=${parts[3]}.`);
+            } else if (parts.length === 1 && !isNaN(parts[0])) {
+                ps.margins = { top: parts[0], right: parts[0], bottom: parts[0], left: parts[0] };
+                CAD.setPageSetup(null, ps);
+                UI.log(`PAGESETUP: All margins set to ${parts[0]}.`);
+            } else {
+                UI.log('Enter margins as "top,right,bottom,left" or single value.', 'error');
+                return;
+            }
+            state.cmdOptions.pagesetupStep = null;
+            UI.log('Options: [Paper/Orientation/Scale/Margins/plotArea]:', 'prompt');
+            return;
+        }
+
+        if (option === 'paper' || option === 'p') {
+            state.cmdOptions.pagesetupStep = 'papersize';
+            UI.log('PAGESETUP: Enter paper size (A4/A3/A2/A1/A0/Letter/Legal/Tabloid):', 'prompt');
+        } else if (option === 'orientation' || option === 'o') {
+            ps.orientation = ps.orientation === 'Landscape' ? 'Portrait' : 'Landscape';
+            const w = ps.paperWidth;
+            ps.paperWidth = ps.paperHeight;
+            ps.paperHeight = w;
+            CAD.setPageSetup(null, ps);
+            const layout = CAD.getLayout(CAD.currentLayout);
+            if (layout && layout.paper) {
+                layout.paper.width = ps.paperWidth;
+                layout.paper.height = ps.paperHeight;
+            }
+            UI.log(`PAGESETUP: Orientation set to ${ps.orientation} (${ps.paperWidth}x${ps.paperHeight}mm).`);
+            Renderer.draw();
+            UI.log('Options: [Paper/Orientation/Scale/Margins/plotArea]:', 'prompt');
+        } else if (option === 'scale' || option === 's') {
+            state.cmdOptions.pagesetupStep = 'scale';
+            UI.log(`PAGESETUP: Enter plot scale (Fit, 1:1, 1:2, 1:50, etc.) <${ps.plotScale}>:`, 'prompt');
+        } else if (option === 'margins' || option === 'm') {
+            state.cmdOptions.pagesetupStep = 'margins';
+            UI.log(`PAGESETUP: Enter margins (top,right,bottom,left) <${ps.margins.top},${ps.margins.right},${ps.margins.bottom},${ps.margins.left}>:`, 'prompt');
+        } else if (option === 'plotarea' || option === 'a') {
+            const areas = ['Layout', 'Extents', 'Window'];
+            const current = areas.indexOf(ps.plotArea);
+            ps.plotArea = areas[(current + 1) % areas.length];
+            CAD.setPageSetup(null, ps);
+            UI.log(`PAGESETUP: Plot area set to ${ps.plotArea}.`);
+            UI.log('Options: [Paper/Orientation/Scale/Margins/plotArea]:', 'prompt');
+        } else if (option === 'exit' || option === 'x' || option === '') {
+            this.finishCommand();
+        } else {
+            UI.log('PAGESETUP: Use [Paper/Orientation/Scale/Margins/plotArea] or Enter to exit.', 'error');
+        }
+    },
+
+    // --- VPSCALE ---
+    handleVpScaleInput(input) {
+        const layout = CAD.getLayout(CAD.currentLayout);
+        if (!layout) { this.finishCommand(); return; }
+
+        let scale = 1;
+        const parts = input.split(':');
+        if (parts.length === 2) {
+            const num = parseFloat(parts[0]);
+            const den = parseFloat(parts[1]);
+            if (!isNaN(num) && !isNaN(den) && den !== 0) {
+                scale = num / den;
+            }
+        } else {
+            scale = parseFloat(input);
+        }
+
+        if (isNaN(scale) || scale <= 0) {
+            UI.log('VPSCALE: Invalid scale. Enter ratio like 1:50 or decimal like 0.02.', 'error');
+            return;
+        }
+
+        // Find the active viewport
+        const vp = layout.viewports.find(v => v.id === CAD.activeViewportId);
+        if (vp) {
+            vp.viewScale = scale;
+            UI.log(`VPSCALE: Viewport scale set to ${input} (factor: ${scale}).`);
+            Renderer.draw();
+        } else {
+            UI.log('VPSCALE: No active viewport found.', 'error');
+        }
+        this.finishCommand();
+    },
+
+    // --- IMAGECLIP ---
+    handleImageClipInput(input) {
+        const state = CAD;
+        const option = input.toLowerCase();
+
+        if (option === 'on') {
+            state.cmdOptions.clipTarget.clipEnabled = true;
+            CAD.updateEntity(state.cmdOptions.clipTarget.id, state.cmdOptions.clipTarget, true);
+            UI.log('IMAGECLIP: Clipping enabled.');
+            this.finishCommand();
+        } else if (option === 'off') {
+            state.cmdOptions.clipTarget.clipEnabled = false;
+            CAD.updateEntity(state.cmdOptions.clipTarget.id, state.cmdOptions.clipTarget, true);
+            UI.log('IMAGECLIP: Clipping disabled.');
+            this.finishCommand();
+        } else if (option === 'delete' || option === 'd') {
+            delete state.cmdOptions.clipTarget.clipBoundary;
+            state.cmdOptions.clipTarget.clipEnabled = false;
+            CAD.updateEntity(state.cmdOptions.clipTarget.id, state.cmdOptions.clipTarget, true);
+            UI.log('IMAGECLIP: Clip boundary deleted.');
+            this.finishCommand();
+        } else if (option === 'new' || option === 'n') {
+            state.cmdOptions.clipStep = 'corner1';
+            UI.log('IMAGECLIP: Specify first corner of clip rectangle:', 'prompt');
+        } else {
+            UI.log('IMAGECLIP: Use [ON/OFF/Delete/New].', 'error');
+        }
+    },
+
+    handleImageClipClick(point) {
+        const state = CAD;
+        if (!state.cmdOptions.clipTarget) return;
+
+        if (state.cmdOptions.clipStep === 'corner1') {
+            state.cmdOptions.clipCorner1 = { ...point };
+            state.cmdOptions.clipStep = 'corner2';
+            UI.log('IMAGECLIP: Specify opposite corner:', 'prompt');
+        } else if (state.cmdOptions.clipStep === 'corner2') {
+            const c1 = state.cmdOptions.clipCorner1;
+            const c2 = point;
+            CAD.saveUndoState('IMAGECLIP');
+            state.cmdOptions.clipTarget.clipBoundary = {
+                type: 'rect',
+                p1: { x: Math.min(c1.x, c2.x), y: Math.min(c1.y, c2.y) },
+                p2: { x: Math.max(c1.x, c2.x), y: Math.max(c1.y, c2.y) }
+            };
+            state.cmdOptions.clipTarget.clipEnabled = true;
+            CAD.updateEntity(state.cmdOptions.clipTarget.id, state.cmdOptions.clipTarget, true);
+            UI.log('IMAGECLIP: Clip boundary set.');
+            this.finishCommand();
+        }
+    },
+
+    // --- FIELD ---
+    handleFieldTypeInput(input) {
+        const state = CAD;
+        const option = input.toLowerCase();
+        const validTypes = ['date', 'filename', 'author', 'area', 'numobjects', 'title', 'custom'];
+
+        if (validTypes.includes(option)) {
+            state.cmdOptions.fieldType = option;
+            state.cmdOptions.fieldStep = 'place';
+            UI.log('FIELD: Click to place the field:', 'prompt');
+        } else {
+            UI.log('FIELD: Invalid type. Use [Date/Filename/Author/Area/NumObjects/Title/Custom].', 'error');
+        }
+    },
+
+    handleFieldClick(point) {
+        const state = CAD;
+        if (state.cmdOptions.fieldStep !== 'place') return;
+
+        const fieldType = state.cmdOptions.fieldType || 'date';
+        const evaluated = this.evaluateField(fieldType);
+        const height = CAD.textHeight || 10;
+
+        CAD.addEntity({
+            type: 'field',
+            position: { ...point },
+            height: height,
+            fieldType: fieldType,
+            fieldExpression: `%<\\AcVar ${fieldType}>%`,
+            evaluatedText: evaluated,
+            style: CAD.currentTextStyle
+        });
+
+        // Track the field for updates
+        CAD.fields.push({
+            id: CAD.entities[CAD.entities.length - 1].id,
+            type: fieldType
+        });
+
+        UI.log(`Field (${fieldType}) created: "${evaluated}"`);
+        this.finishCommand();
+    },
+
+    evaluateField(type) {
+        switch (type) {
+            case 'date':
+                return new Date().toLocaleDateString();
+            case 'filename':
+                return CAD.drawingName || 'Untitled';
+            case 'author':
+                return 'BrowserCAD User';
+            case 'area':
+                return '---';
+            case 'numobjects':
+                return String(CAD.entities.length);
+            case 'title':
+                return CAD.drawingName || 'Untitled';
+            case 'custom':
+                return '---';
+            default:
+                return '---';
+        }
+    },
+
+    // --- COUNT ---
+    executeCount() {
+        const entities = CAD.entities.filter(e => {
+            const layer = CAD.getLayer(e.layer);
+            return !layer || (layer.visible && !layer.frozen);
+        });
+
+        const byType = {};
+        const byBlock = {};
+
+        entities.forEach(e => {
+            byType[e.type] = (byType[e.type] || 0) + 1;
+            if (e.type === 'block' || e.type === 'insert') {
+                const name = e.blockName || e.name || 'unnamed';
+                byBlock[name] = (byBlock[name] || 0) + 1;
+            }
+        });
+
+        return { byType, byBlock, total: entities.length };
     }
 };
 

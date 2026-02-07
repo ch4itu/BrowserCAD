@@ -695,6 +695,54 @@ const Geometry = {
                 // Also check insertion point
                 return Utils.dist(point, entity.insertPoint) < tolerance;
 
+            case 'mleader':
+                if (entity.points) {
+                    for (let i = 0; i < entity.points.length - 1; i++) {
+                        if (Utils.distToSegment(point, entity.points[i], entity.points[i + 1]) < tolerance) {
+                            return true;
+                        }
+                    }
+                }
+                if (entity.text && entity.textPosition) {
+                    const mh = entity.height || entity.textHeight || 10;
+                    const mtw = entity.text.length * mh * 0.6;
+                    const mtp = entity.textPosition;
+                    if (point.x >= mtp.x && point.x <= mtp.x + mtw &&
+                        point.y >= mtp.y - mh && point.y <= mtp.y + mh) {
+                        return true;
+                    }
+                }
+                return false;
+
+            case 'tolerance':
+                if (entity.position) {
+                    const th = entity.height || 5;
+                    const tw = (entity.frames || []).length * th * 8;
+                    return point.x >= entity.position.x &&
+                           point.x <= entity.position.x + tw &&
+                           point.y >= entity.position.y - th &&
+                           point.y <= entity.position.y + th;
+                }
+                return false;
+
+            case 'trace':
+                if (entity.points && entity.points.length >= 3) {
+                    return Utils.pointInPolygon(point, entity.points);
+                }
+                return false;
+
+            case 'field':
+                if (entity.position) {
+                    const fh = entity.height || 10;
+                    const ft = entity.evaluatedText || '---';
+                    const fw = ft.length * fh * 0.6;
+                    return point.x >= entity.position.x &&
+                           point.x <= entity.position.x + fw &&
+                           point.y >= entity.position.y - fh &&
+                           point.y <= entity.position.y;
+                }
+                return false;
+
             default:
                 return false;
         }
@@ -1198,6 +1246,31 @@ const Geometry = {
                 });
                 return lgrips;
             }
+            case 'mleader': {
+                const mlgrips = [];
+                (entity.points || []).forEach((p, i) => {
+                    mlgrips.push({ point: { ...p }, type: 'vertex', index: i });
+                });
+                if (entity.textPosition) {
+                    mlgrips.push({ point: { ...entity.textPosition }, type: 'text', index: mlgrips.length });
+                }
+                return mlgrips;
+            }
+            case 'tolerance':
+                return [
+                    { point: { ...(entity.position || { x: 0, y: 0 }) }, type: 'insertion', index: 0 }
+                ];
+            case 'trace': {
+                const tgrips = [];
+                (entity.points || []).forEach((p, i) => {
+                    tgrips.push({ point: { ...p }, type: 'vertex', index: i });
+                });
+                return tgrips;
+            }
+            case 'field':
+                return [
+                    { point: { ...(entity.position || { x: 0, y: 0 }) }, type: 'insertion', index: 0 }
+                ];
             default:
                 return [];
         }
@@ -1340,6 +1413,30 @@ const Geometry = {
                 }
                 break;
             }
+            case 'mleader': {
+                const mlpts = [...(entity.points || []).map(p => ({ ...p }))];
+                if (gripIndex >= 0 && gripIndex < mlpts.length) {
+                    mlpts[gripIndex] = { ...newPoint };
+                    return { points: mlpts };
+                }
+                // Text position grip
+                if (gripIndex === mlpts.length && entity.textPosition) {
+                    return { textPosition: { ...newPoint } };
+                }
+                break;
+            }
+            case 'tolerance':
+                return { position: { ...newPoint } };
+            case 'trace': {
+                const trPts = [...(entity.points || []).map(p => ({ ...p }))];
+                if (gripIndex >= 0 && gripIndex < trPts.length) {
+                    trPts[gripIndex] = { ...newPoint };
+                    return { points: trPts };
+                }
+                break;
+            }
+            case 'field':
+                return { position: { ...newPoint } };
         }
         return null;
     },
