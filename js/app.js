@@ -2,38 +2,66 @@
    BrowserCAD - Main Application Module
    ============================================ */
 
-const App = {
-    // ==========================================
-    // INITIALIZATION
-    // ==========================================
+// =============================================
+// BCAD NAMESPACE — single global entry point
+// Prevents global scope pollution by gathering
+// all sub-modules under one object.
+// =============================================
+window.BCAD = {
+    // Sub-module references (populated during init)
+    state: null,
+    renderer: null,
+    ui: null,
+    commands: null,
+    geometry: null,
+    storage: null,
+    utils: null,
+    lisp: null,
+    app: null,
 
+    /** Formal initialization — called from DOMContentLoaded */
     init() {
-        // Initialize modules
+        // 1. Register sub-modules on the namespace
+        this.utils     = typeof Utils     !== 'undefined' ? Utils     : null;
+        this.state     = typeof CAD       !== 'undefined' ? CAD       : null;
+        this.geometry  = typeof Geometry  !== 'undefined' ? Geometry  : null;
+        this.renderer  = typeof Renderer  !== 'undefined' ? Renderer  : null;
+        this.commands  = typeof Commands  !== 'undefined' ? Commands  : null;
+        this.lisp      = typeof Lisp      !== 'undefined' ? Lisp      : null;
+        this.ui        = typeof UI        !== 'undefined' ? UI        : null;
+        this.storage   = typeof Storage   !== 'undefined' ? Storage   : null;
+        this.app       = typeof App       !== 'undefined' ? App       : null;
+
+        // 2. Initialize in dependency order
         Renderer.init('canvas', 'viewport');
         UI.init();
-
-        // Load saved settings
         Storage.loadSettings();
+        App.setupViewportEvents();
 
-        // Setup viewport event handlers
-        this.setupViewportEvents();
-
-        // Initial draw
+        // 3. Initial render
         Renderer.draw();
 
-        // Welcome message
+        // 4. Welcome messages
         UI.log('BrowserCAD initialized. Type commands or use toolbar buttons.');
         UI.log('Press F1 for help, F2 for grid, F3 for snap, F8 for ortho.');
 
-        // Check for saved drawing
         if (Storage.hasSavedDrawing()) {
             UI.log('Saved drawing found. Type "open" to load it.');
         }
 
-        // Center the view
-        this.centerView();
-
+        App.centerView();
         console.log('BrowserCAD initialized successfully.');
+    }
+};
+
+const App = {
+    // ==========================================
+    // INITIALIZATION (legacy — delegates to BCAD.init)
+    // ==========================================
+
+    init() {
+        // Delegate to the formal BCAD.init() sequence
+        BCAD.init();
     },
 
     // ==========================================
@@ -126,11 +154,26 @@ const App = {
 
         // Handle grip dragging
         if (CAD.gripDragging && CAD.activeGrip) {
-            // Compute snap during grip drag
-            if (CAD.osnapEnabled && world) {
+            // Compute snap during grip drag (both OSNAP and grid snap)
+            if ((CAD.osnapEnabled || CAD.gridSnapEnabled) && world) {
                 const entities = this.getSnapEntities(world);
                 const snapTolerance = 15 / effectiveZoom;
-                const snap = Geometry.findSnapPoints(world, entities, CAD.snapModes, snapTolerance, CAD.gridSize, null);
+                // Build effective snap modes — same logic as normal drawing
+                const effectiveSnapModes = {
+                    endpoint: CAD.osnapEnabled && CAD.snapModes.endpoint,
+                    midpoint: CAD.osnapEnabled && CAD.snapModes.midpoint,
+                    center: CAD.osnapEnabled && CAD.snapModes.center,
+                    intersection: CAD.osnapEnabled && CAD.snapModes.intersection,
+                    perpendicular: CAD.osnapEnabled && CAD.snapModes.perpendicular,
+                    tangent: CAD.osnapEnabled && CAD.snapModes.tangent,
+                    nearest: CAD.osnapEnabled && CAD.snapModes.nearest,
+                    quadrant: CAD.osnapEnabled && CAD.snapModes.quadrant,
+                    node: CAD.osnapEnabled && CAD.snapModes.node,
+                    extension: CAD.osnapEnabled && CAD.snapModes.extension,
+                    appint: CAD.osnapEnabled && CAD.snapModes.appint,
+                    grid: CAD.gridSnapEnabled
+                };
+                const snap = Geometry.findSnapPoints(world, entities, effectiveSnapModes, snapTolerance, CAD.gridSize, null);
                 if (snap) {
                     CAD.snapPoint = snap.point;
                     CAD.snapType = snap.type;
@@ -172,7 +215,7 @@ const App = {
                 activeViewport.viewCenter.y -= paperDy / activeViewport.viewScale;
             } else {
                 CAD.pan.x += dx;
-                CAD.pan.y += dy;
+                CAD.pan.y -= dy;  // Y-flip: screen down movement = pan.y decreases
             }
             CAD.panStart = { x: e.offsetX, y: e.offsetY };
         }
@@ -324,7 +367,7 @@ const App = {
     },
 
     screenToPaper(x, y) {
-        return Utils.screenToWorld(x, y, CAD.pan, CAD.zoom);
+        return Renderer.screenToWorld(x, y);
     },
 
     paperToModel(point, viewport) {
@@ -415,15 +458,16 @@ const App = {
             return;
         }
 
-        const worldBefore = Utils.screenToWorld(e.offsetX, e.offsetY, CAD.pan, CAD.zoom);
+        const worldBefore = Renderer.screenToWorld(e.offsetX, e.offsetY);
         CAD.zoom *= zoomFactor;
 
         // Clamp zoom level
         CAD.zoom = Utils.clamp(CAD.zoom, 0.01, 100);
 
-        // Adjust pan to zoom around cursor
+        // Adjust pan to zoom around cursor (inverse of screenToWorld)
+        const H = Renderer.canvas ? Renderer.canvas.height : 0;
         CAD.pan.x = e.offsetX - worldBefore.x * CAD.zoom;
-        CAD.pan.y = e.offsetY - worldBefore.y * CAD.zoom;
+        CAD.pan.y = H - e.offsetY - worldBefore.y * CAD.zoom;
 
         Renderer.draw();
     },
@@ -536,7 +580,7 @@ const App = {
                 this.touchState.isPanning = true;
             }
 
-            const world = Utils.screenToWorld(x, y, CAD.pan, CAD.zoom);
+            const world = Renderer.screenToWorld(x, y);
             CAD.cursor = world;
             CAD.cursorWorld = world;
             CAD.tempEnd = world;
@@ -576,15 +620,15 @@ const App = {
             }
 
             if (this.touchState.isPanning || (this.touchState.moved && this.touchState.panModeActive)) {
-                // Pan the view
+                // Pan the view (Y-flip: screen down movement = pan.y decreases)
                 CAD.pan.x += (x - this.touchState.startX);
-                CAD.pan.y += (y - this.touchState.startY);
+                CAD.pan.y -= (y - this.touchState.startY);
                 this.touchState.startX = x;
                 this.touchState.startY = y;
                 this.touchState.isPanning = true;
             } else {
                 // Update cursor and temp line for drawing
-                const world = Utils.screenToWorld(x, y, CAD.pan, CAD.zoom);
+                const world = Renderer.screenToWorld(x, y);
                 CAD.cursor = world;
                 CAD.cursorWorld = world;
                 CAD.tempEnd = world;
@@ -604,11 +648,12 @@ const App = {
                 const x = newCenterX - rect.left;
                 const y = newCenterY - rect.top;
 
-                const worldBefore = Utils.screenToWorld(x, y, CAD.pan, CAD.zoom);
+                const worldBefore = Renderer.screenToWorld(x, y);
                 CAD.zoom *= scale;
                 CAD.zoom = Utils.clamp(CAD.zoom, 0.01, 100);
+                const H = Renderer.canvas ? Renderer.canvas.height : 0;
                 CAD.pan.x = x - worldBefore.x * CAD.zoom;
-                CAD.pan.y = y - worldBefore.y * CAD.zoom;
+                CAD.pan.y = H - y - worldBefore.y * CAD.zoom;
             }
 
             // Two-finger pan (movement of center point)
@@ -616,7 +661,7 @@ const App = {
                 const panDx = newCenterX - this.touchState.pinchCenterX;
                 const panDy = newCenterY - this.touchState.pinchCenterY;
                 CAD.pan.x += panDx;
-                CAD.pan.y += panDy;
+                CAD.pan.y -= panDy;  // Y-flip: screen down = world up
             }
 
             this.touchState.lastDistance = distance;
@@ -643,7 +688,7 @@ const App = {
                 const rect = e.target.getBoundingClientRect();
                 const x = this.touchState.startX;
                 const y = this.touchState.startY;
-                const world = Utils.screenToWorld(x, y, CAD.pan, CAD.zoom);
+                const world = Renderer.screenToWorld(x, y);
                 CAD.cursor = world;
                 CAD.cursorWorld = world;
                 CAD.tempEnd = world;
@@ -695,6 +740,10 @@ const App = {
         const canvas = Renderer.canvas;
         if (!canvas) return;
 
+        // With Y-flip: pan places world origin at center of canvas
+        // screenToWorld(W/2, H/2) should equal (0,0)
+        // (W/2 - panX)/zoom = 0 → panX = W/2
+        // (H - H/2 - panY)/zoom = 0 → panY = H/2
         CAD.pan.x = canvas.width / 2;
         CAD.pan.y = canvas.height / 2;
         Renderer.draw();

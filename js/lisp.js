@@ -55,7 +55,7 @@ const Lisp = {
                 continue;
             }
 
-            // Strings
+            // Strings — handles nested parens, escape sequences, and unterminated strings
             if (char === '"') {
                 let str = '';
                 i++; // Skip opening quote
@@ -70,9 +70,14 @@ const Lisp = {
                             default: str += code[i];
                         }
                     } else {
+                        // All characters (including parens) are literal inside strings
                         str += code[i];
                     }
                     i++;
+                }
+                if (i >= code.length) {
+                    // Unterminated string — report gracefully instead of crashing
+                    throw new Error('Unterminated string literal');
                 }
                 i++; // Skip closing quote
                 tokens.push({ type: 'string', value: str });
@@ -149,7 +154,16 @@ const Lisp = {
     // EVALUATOR
     // ==========================================
 
+    // Step counter for runaway-loop protection
+    _evalSteps: 0,
+    _maxEvalSteps: 100000,
+
     async evaluate(expr, env = this.globalEnv) {
+        // Runaway protection — bail after _maxEvalSteps recursive evals
+        if (++this._evalSteps > this._maxEvalSteps) {
+            throw new Error('Execution limit exceeded (possible infinite loop)');
+        }
+
         // Null/undefined
         if (expr === null || expr === undefined) {
             return null;
@@ -1047,17 +1061,27 @@ const Lisp = {
     // ==========================================
 
     async execute(code) {
+        // Reset step counter for each top-level execution
+        this._evalSteps = 0;
         try {
             this.history.push(code);
             const tokens = this.tokenize(code);
             const expressions = this.parse(tokens);
 
-            let result = null;
-            for (const expr of expressions) {
-                result = await this.evaluate(expr);
-            }
+            // Race the evaluation against a 10-second timeout
+            const evalPromise = (async () => {
+                let result = null;
+                for (const expr of expressions) {
+                    result = await this.evaluate(expr);
+                }
+                return result;
+            })();
 
-            return result;
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Execution timed out (10s limit)')), 10000)
+            );
+
+            return await Promise.race([evalPromise, timeoutPromise]);
         } catch (error) {
             UI.log(`; error: ${error.message}`, 'error');
             console.error('LISP Error:', error);

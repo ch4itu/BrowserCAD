@@ -17,7 +17,6 @@ class StateManager {
         this.points = [];
         this.tempEnd = null;
         this.lineChainStart = null;
-        this.offsetDist = 10;
         this.targetId = null;
         this.cmdOptions = {};
 
@@ -150,7 +149,6 @@ class StateManager {
         // Drawing info
         this.drawingName = 'Untitled';
         this.modified = false;
-        this.lastLinearDim = null;
 
         // Clipboard for copy/paste
         this.clipboard = [];
@@ -1023,6 +1021,11 @@ class StateManager {
         const scaleY = (canvasHeight - padding * 2) / height;
         this.zoom = Math.min(scaleX, scaleY, 10);
 
+        // With Y-flip: screenX = worldX * zoom + panX
+        //              screenY = H - (worldY * zoom + panY)
+        // To center (centerX, centerY) at screen (W/2, H/2):
+        //   W/2 = centerX * zoom + panX  → panX = W/2 - centerX * zoom
+        //   H/2 = H - (centerY * zoom + panY) → panY = H/2 - centerY * zoom
         this.pan.x = canvasWidth / 2 - centerX * this.zoom;
         this.pan.y = canvasHeight / 2 - centerY * this.zoom;
     }
@@ -1239,8 +1242,12 @@ class StateManager {
                 gridSize: this.gridSize,
                 gridSpacing: this.gridSpacing,
                 snapEnabled: this.snapEnabled,
+                osnapEnabled: this.osnapEnabled,
+                gridSnapEnabled: this.gridSnapEnabled,
                 snapModes: this.snapModes,
                 orthoEnabled: this.orthoEnabled,
+                polarEnabled: this.polarEnabled,
+                polarAngle: this.polarAngle,
                 dimPrecision: this.dimPrecision,
                 lineType: this.lineType,
                 lineTypeScale: this.lineTypeScale
@@ -1276,8 +1283,12 @@ class StateManager {
                 this.gridSize = data.settings.gridSize || this.gridSize;
                 this.gridSpacing = data.settings.gridSpacing || this.gridSpacing;
                 this.snapEnabled = data.settings.snapEnabled !== false;
+                if (data.settings.osnapEnabled !== undefined) this.osnapEnabled = data.settings.osnapEnabled;
+                if (data.settings.gridSnapEnabled !== undefined) this.gridSnapEnabled = data.settings.gridSnapEnabled;
                 this.snapModes = { ...this.snapModes, ...data.settings.snapModes };
                 this.orthoEnabled = data.settings.orthoEnabled || false;
+                this.polarEnabled = data.settings.polarEnabled || false;
+                this.polarAngle = data.settings.polarAngle ?? this.polarAngle;
                 this.dimPrecision = data.settings.dimPrecision ?? this.dimPrecision;
                 this.lineType = data.settings.lineType || this.lineType;
                 this.lineTypeScale = data.settings.lineTypeScale || this.lineTypeScale;

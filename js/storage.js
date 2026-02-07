@@ -110,6 +110,8 @@ const Storage = {
         try {
             const settings = {
                 snapEnabled: CAD.snapEnabled,
+                osnapEnabled: CAD.osnapEnabled,
+                gridSnapEnabled: CAD.gridSnapEnabled,
                 snapModes: CAD.snapModes,
                 orthoEnabled: CAD.orthoEnabled,
                 polarEnabled: CAD.polarEnabled,
@@ -141,6 +143,9 @@ const Storage = {
             if (snapModes) {
                 CAD.snapModes = { ...CAD.snapModes, ...snapModes };
             }
+            // Explicitly restore snap toggles (may be missing in older settings)
+            if (settings.osnapEnabled !== undefined) CAD.osnapEnabled = settings.osnapEnabled;
+            if (settings.gridSnapEnabled !== undefined) CAD.gridSnapEnabled = settings.gridSnapEnabled;
             UI.updateStatusBar();
             return true;
         } catch (e) {
