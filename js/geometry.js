@@ -821,6 +821,15 @@ const Geometry = {
                     }
                 }
             }
+
+            // Extension snap - extends lines/arcs beyond endpoints
+            if (snapModes.extension) {
+                const extPt = this._getExtensionPoint(point, entity, tolerance);
+                if (extPt) {
+                    const d = Utils.dist(point, extPt);
+                    snaps.push({ point: extPt, type: 'extension', distance: d });
+                }
+            }
         });
 
         // Intersection snap
@@ -838,6 +847,21 @@ const Geometry = {
             }
         }
 
+        // Apparent Intersection snap - intersections of extended entities
+        if (snapModes.appint) {
+            for (let i = 0; i < entities.length; i++) {
+                for (let j = i + 1; j < entities.length; j++) {
+                    const appInts = this._findApparentIntersections(entities[i], entities[j]);
+                    appInts.forEach(ip => {
+                        const d = Utils.dist(point, ip);
+                        if (d < tolerance) {
+                            snaps.push({ point: ip, type: 'appint', distance: d });
+                        }
+                    });
+                }
+            }
+        }
+
         // Sort by priority then distance and return best snap
         const priority = {
             intersection: 0,
@@ -848,8 +872,10 @@ const Geometry = {
             node: 5,
             perpendicular: 6,
             tangent: 7,
-            nearest: 8,
-            grid: 9
+            extension: 8,
+            appint: 9,
+            nearest: 10,
+            grid: 11
         };
 
         snaps.sort((a, b) => {
@@ -859,6 +885,74 @@ const Geometry = {
             return a.distance - b.distance;
         });
         return snaps.length > 0 ? snaps[0] : null;
+    },
+
+    _getExtensionPoint(point, entity, tolerance) {
+        // Extend lines and arcs beyond their endpoints
+        if (entity.type === 'line') {
+            const dx = entity.p2.x - entity.p1.x;
+            const dy = entity.p2.y - entity.p1.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            if (len < 1e-10) return null;
+            // Project point onto the infinite line
+            const t = ((point.x - entity.p1.x) * dx + (point.y - entity.p1.y) * dy) / (len * len);
+            // Only snap to extension (beyond endpoints, not between them)
+            if (t >= 0 && t <= 1) return null;
+            const proj = { x: entity.p1.x + t * dx, y: entity.p1.y + t * dy };
+            const d = Utils.dist(point, proj);
+            if (d < tolerance) return proj;
+        }
+        if (entity.type === 'arc') {
+            // Extend arc beyond its start/end angles
+            const d = Utils.dist(point, entity.center);
+            if (Math.abs(d - entity.r) > tolerance) return null;
+            const angle = Math.atan2(point.y - entity.center.y, point.x - entity.center.x);
+            // Check if angle is OUTSIDE the arc range
+            let s = entity.start, e = entity.end;
+            // Normalize
+            const inArc = this._angleInArc(angle, s, e);
+            if (inArc) return null; // Already on the arc, not an extension
+            return {
+                x: entity.center.x + entity.r * Math.cos(angle),
+                y: entity.center.y + entity.r * Math.sin(angle)
+            };
+        }
+        return null;
+    },
+
+    _angleInArc(angle, start, end) {
+        // Normalize angles to [0, 2PI)
+        const PI2 = Math.PI * 2;
+        let a = ((angle % PI2) + PI2) % PI2;
+        let s = ((start % PI2) + PI2) % PI2;
+        let e = ((end % PI2) + PI2) % PI2;
+        if (s <= e) return a >= s && a <= e;
+        return a >= s || a <= e; // Wraps around
+    },
+
+    _findApparentIntersections(ent1, ent2) {
+        // Find intersections of entities extended as infinite lines/circles
+        const results = [];
+        if (ent1.type === 'line' && ent2.type === 'line') {
+            const ip = this.lineLineIntersection(ent1.p1, ent1.p2, ent2.p1, ent2.p2);
+            if (ip) {
+                // Check that it's NOT already a real intersection (at least one entity needs extending)
+                const t1 = this._paramOnSegment(ip, ent1.p1, ent1.p2);
+                const t2 = this._paramOnSegment(ip, ent2.p1, ent2.p2);
+                if (t1 < 0 || t1 > 1 || t2 < 0 || t2 > 1) {
+                    results.push(ip);
+                }
+            }
+        }
+        return results;
+    },
+
+    _paramOnSegment(point, p1, p2) {
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const len2 = dx * dx + dy * dy;
+        if (len2 < 1e-10) return 0;
+        return ((point.x - p1.x) * dx + (point.y - p1.y) * dy) / len2;
     },
 
     getEndpoints(entity) {
@@ -2647,6 +2741,157 @@ class Hatch {
                 ], complex: true };
             case 'solid':
                 return { solid: true, families: [] };
+            // ANSI patterns (industry standard)
+            case 'ansi31':
+                return { families: [{ angle: 45, spacing: 3.175 }] };
+            case 'ansi32':
+                return { families: [
+                    { angle: 45, spacing: 3.175 },
+                    { angle: 45, spacing: 3.175, phase: 1.5875 }
+                ]};
+            case 'ansi33':
+                return { families: [
+                    { angle: 45, spacing: 5 },
+                    { angle: 45, spacing: 5, phase: 1.67 },
+                    { angle: 45, spacing: 5, phase: 3.34 }
+                ]};
+            case 'ansi34':
+                return { families: [
+                    { angle: 45, spacing: 6.35 },
+                    { angle: -45, spacing: 6.35 }
+                ]};
+            case 'ansi35':
+                return { families: [
+                    { angle: 45, spacing: 6.35 },
+                    { angle: 0, spacing: 6.35 }
+                ]};
+            case 'ansi36':
+                return { families: [
+                    { angle: 45, spacing: 5 },
+                    { angle: -45, spacing: 5, dashes: [6, 1.5] }
+                ]};
+            case 'ansi37':
+                return { families: [
+                    { angle: 45, spacing: 3.175 },
+                    { angle: 135, spacing: 3.175 }
+                ]};
+            case 'ansi38':
+                return { families: [
+                    { angle: 45, spacing: 3.175 },
+                    { angle: 135, spacing: 6.35 }
+                ]};
+            // Architectural patterns
+            case 'ar-b816':
+            case 'ar-brstd':
+                return { families: [
+                    { angle: 0, spacing: 8 },
+                    { angle: 90, spacing: 16, dashes: [8, 0], phase: 0 }
+                ]};
+            case 'ar-b88':
+                return { families: [
+                    { angle: 0, spacing: 8 },
+                    { angle: 90, spacing: 8, dashes: [8, 0] }
+                ]};
+            case 'ar-brelm':
+                return { families: [
+                    { angle: 0, spacing: 5 },
+                    { angle: 0, spacing: 5, phase: 2.5 },
+                    { angle: 90, spacing: 10, dashes: [5, 0] }
+                ]};
+            case 'ar-conc':
+                return { families: [
+                    { angle: 0, spacing: 6, dashes: [4, 2] },
+                    { angle: 60, spacing: 6, dashes: [2, 4] },
+                    { angle: 120, spacing: 6, dashes: [2, 4] }
+                ]};
+            case 'ar-hbone':
+                return { families: [
+                    { angle: 45, spacing: 4 },
+                    { angle: -45, spacing: 4, phase: 2 }
+                ]};
+            case 'ar-parq1':
+                return { families: [
+                    { angle: 0, spacing: 8, dashes: [8, 0] },
+                    { angle: 90, spacing: 8, dashes: [8, 0] },
+                    { angle: 0, spacing: 8, phase: 4, dashes: [8, 0] }
+                ]};
+            case 'ar-rroof':
+                return { families: [
+                    { angle: 0, spacing: 4, dashes: [12, 2] },
+                    { angle: 0, spacing: 4, phase: 7, dashes: [12, 2] }
+                ]};
+            case 'ar-rshke':
+                return { families: [
+                    { angle: 0, spacing: 6 },
+                    { angle: 90, spacing: 12, dashes: [6, 6] }
+                ]};
+            case 'ar-sand':
+                return { families: [
+                    { angle: 0, spacing: 2, dashes: [0.01, 2] },
+                    { angle: 60, spacing: 3, dashes: [0.01, 3] },
+                    { angle: 120, spacing: 4, dashes: [0.01, 4] }
+                ], complex: true };
+            // Material patterns
+            case 'brass':
+                return { families: [
+                    { angle: 0, spacing: 3.175 },
+                    { angle: 0, spacing: 3.175, phase: 1.5875, dashes: [3, 2] }
+                ]};
+            case 'clay':
+                return { families: [
+                    { angle: 0, spacing: 3 },
+                    { angle: 0, spacing: 3, phase: 1.5 },
+                    { angle: 0, spacing: 3, phase: 0.75 }
+                ]};
+            case 'cork':
+                return { families: [
+                    { angle: 45, spacing: 3 },
+                    { angle: 135, spacing: 3, dashes: [3, 2] }
+                ]};
+            case 'flex':
+                return { families: [
+                    { angle: 0, spacing: 4, dashes: [6, 1.5, 0.01, 1.5] }
+                ]};
+            case 'gravel':
+                return { families: [
+                    { angle: 0, spacing: 4, dashes: [0.01, 2, 0.01, 1] },
+                    { angle: 60, spacing: 5, dashes: [0.01, 3, 0.01, 1.5] },
+                    { angle: 120, spacing: 4.5, dashes: [0.01, 2.5, 0.01, 1] }
+                ], complex: true };
+            case 'hex':
+                return { families: [
+                    { angle: 0, spacing: 5 },
+                    { angle: 60, spacing: 5 },
+                    { angle: 120, spacing: 5 }
+                ]};
+            case 'sacncr':
+                return { families: [
+                    { angle: 45, spacing: 4, dashes: [4, 1.5, 0.01, 1.5] },
+                    { angle: -45, spacing: 4, dashes: [4, 1.5, 0.01, 1.5] }
+                ]};
+            case 'trans':
+                return { families: [
+                    { angle: 0, spacing: 3 },
+                    { angle: 90, spacing: 6, dashes: [3, 3] }
+                ]};
+            case 'dolmit':
+                return { families: [
+                    { angle: 0, spacing: 4 },
+                    { angle: 45, spacing: 4, dashes: [4, 2] }
+                ]};
+            case 'plast':
+                return { families: [
+                    { angle: 0, spacing: 3 },
+                    { angle: 60, spacing: 3, dashes: [4, 2] }
+                ]};
+            case 'line':
+                return { families: [{ angle: 0, spacing: 3.175 }] };
+            case 'triang':
+                return { families: [
+                    { angle: 60, spacing: 5, dashes: [5, 0] },
+                    { angle: 120, spacing: 5, dashes: [5, 0] },
+                    { angle: 0, spacing: 5, dashes: [5, 0] }
+                ]};
             default:
                 return { families: [{ angle: 45, spacing: 3.175 }] };
         }

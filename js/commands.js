@@ -191,6 +191,10 @@ const Commands = {
         'lt': 'linetype',
         'ltscale': 'ltscale',
 
+        // Text style
+        'style': 'style',
+        'textstyle': 'style',
+
         // Lisp
         'lisp': 'lisp',
         'vlisp': 'lisp',
@@ -1167,6 +1171,13 @@ const Commands = {
             case 'purge':
                 this.executePurge();
                 break;
+
+            case 'style': {
+                const styles = Object.keys(CAD.textStyles);
+                UI.log(`Text styles: ${styles.join(', ')}. Current: ${CAD.currentTextStyle}`, 'info');
+                UI.log('STYLE: Enter style name to set, or NEW to create:', 'prompt');
+                break;
+            }
 
             // Drawing
             case 'solid':
@@ -2298,7 +2309,8 @@ const Commands = {
                 position: { ...position },
                 text: text,
                 height: height,
-                rotation: rotation
+                rotation: rotation,
+                textStyle: CAD.currentTextStyle || 'Standard'
             });
             UI.log('Text created.');
         }
@@ -6714,6 +6726,40 @@ const Commands = {
             }
 
             return false;
+        }
+
+        if (state.activeCmd === 'style') {
+            if (state.cmdOptions.styleStep === 'font') {
+                // Setting font for new style
+                const styleName = state.cmdOptions.newStyleName;
+                CAD.textStyles[styleName] = { font: input || 'Arial, sans-serif', bold: false, italic: false };
+                CAD.currentTextStyle = styleName;
+                UI.log(`Style "${styleName}" created and set as current.`);
+                this.finishCommand();
+                return true;
+            }
+            const upper = input.toUpperCase();
+            if (upper === 'NEW') {
+                state.cmdOptions.styleStep = 'name';
+                UI.log('STYLE: Enter new style name:', 'prompt');
+                return true;
+            }
+            if (state.cmdOptions.styleStep === 'name') {
+                state.cmdOptions.newStyleName = input;
+                state.cmdOptions.styleStep = 'font';
+                UI.log('STYLE: Enter font family (e.g. Arial, Times New Roman, Courier New):', 'prompt');
+                return true;
+            }
+            // Try to set existing style
+            if (CAD.textStyles[input] || CAD.textStyles[upper]) {
+                const name = CAD.textStyles[input] ? input : upper;
+                CAD.currentTextStyle = name;
+                UI.log(`Text style set to "${name}" (${CAD.textStyles[name].font}).`);
+            } else {
+                UI.log(`Style "${input}" not found. Use NEW to create.`, 'error');
+            }
+            this.finishCommand();
+            return true;
         }
 
         if (state.activeCmd === 'dimstyle') {

@@ -1312,10 +1312,51 @@ const Storage = {
                 const rectFill = entity.hatch ? `fill="${color}" fill-opacity="0.2"` : 'fill="none"';
                 return `<rect x="${Math.min(entity.p1.x, entity.p2.x)}" y="${Math.min(entity.p1.y, entity.p2.y)}" width="${Math.abs(entity.p2.x - entity.p1.x)}" height="${Math.abs(entity.p2.y - entity.p1.y)}" stroke="${color}" stroke-width="1" ${rectFill}/>\n`;
 
-            case 'polyline':
-                const points = entity.points.map(p => `${p.x},${p.y}`).join(' ');
+            case 'polyline': {
+                const hasBulges = entity.bulges && entity.bulges.some(b => b && Math.abs(b) > 1e-10);
                 const polyFill = entity.hatch ? `fill="${color}" fill-opacity="0.2"` : 'fill="none"';
-                return `<polyline points="${points}" stroke="${color}" stroke-width="1" ${polyFill}/>\n`;
+                if (!hasBulges) {
+                    // Simple polyline without arcs
+                    const points = entity.points.map(p => `${p.x},${p.y}`).join(' ');
+                    if (entity.closed) {
+                        return `<polygon points="${points}" stroke="${color}" stroke-width="1" ${polyFill}/>\n`;
+                    }
+                    return `<polyline points="${points}" stroke="${color}" stroke-width="1" ${polyFill}/>\n`;
+                }
+                // Polyline with arc segments - use SVG path
+                let d = '';
+                if (entity.points.length > 0) {
+                    d += `M ${entity.points[0].x} ${entity.points[0].y}`;
+                    const numPts = entity.points.length;
+                    const numSegs = entity.closed ? numPts : numPts - 1;
+                    for (let i = 0; i < numSegs; i++) {
+                        const p1 = entity.points[i];
+                        const p2 = entity.points[(i + 1) % numPts];
+                        const bulge = entity.bulges[i] || 0;
+                        if (!bulge || Math.abs(bulge) < 1e-10) {
+                            d += ` L ${p2.x} ${p2.y}`;
+                        } else {
+                            // Compute arc parameters for SVG A command
+                            const s = bulge;
+                            const dx = p2.x - p1.x;
+                            const dy = p2.y - p1.y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            const r = dist * (1 + s * s) / (4 * Math.abs(s));
+                            // large-arc-flag: arc > 180 degrees when |bulge| > 1
+                            const largeArc = Math.abs(s) > 1 ? 1 : 0;
+                            // sweep-flag: SVG sweep=1 means clockwise
+                            // bulge > 0 means CCW arc, so sweep = 0
+                            // bulge < 0 means CW arc, so sweep = 1
+                            const sweep = s < 0 ? 1 : 0;
+                            d += ` A ${r} ${r} 0 ${largeArc} ${sweep} ${p2.x} ${p2.y}`;
+                        }
+                    }
+                    if (entity.closed) {
+                        d += ' Z';
+                    }
+                }
+                return `<path d="${d}" stroke="${color}" stroke-width="1" ${polyFill}/>\n`;
+            }
 
             case 'ellipse':
                 const rot = (entity.rotation || 0) * 180 / Math.PI;

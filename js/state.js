@@ -51,9 +51,11 @@ class StateManager {
             midpoint: true,
             center: true,
             intersection: true,
-            perpendicular: true,        // Enabled by default now
+            perpendicular: true,
             tangent: false,
-            nearest: true,              // Enabled by default now
+            nearest: true,
+            extension: true,
+            appint: false,              // Apparent intersection (extended entities)
             quadrant: true,
             node: true
         };
@@ -84,6 +86,19 @@ class StateManager {
         this.hatchPattern = 'solid';
         this.hatchScale = 1;
         this.hatchAngle = 0;
+
+        // Text styles
+        this.currentTextStyle = 'Standard';
+        this.textStyles = {
+            'Standard': { font: 'Arial, sans-serif', bold: false, italic: false },
+            'Romans': { font: '"Courier New", Courier, monospace', bold: false, italic: false },
+            'RomanD': { font: '"Times New Roman", Times, serif', bold: false, italic: false },
+            'Italic': { font: 'Arial, sans-serif', bold: false, italic: true },
+            'Bold': { font: 'Arial, sans-serif', bold: true, italic: false },
+            'Mono': { font: '"Courier New", Courier, monospace', bold: false, italic: false },
+            'Script': { font: '"Comic Sans MS", cursive', bold: false, italic: false },
+            'Gothic': { font: '"Century Gothic", sans-serif', bold: false, italic: false }
+        };
 
         // Offset settings
         this.offsetDist = 10;
