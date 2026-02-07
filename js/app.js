@@ -622,6 +622,9 @@ const App = {
             this.touchState.lastDistance = distance;
             this.touchState.pinchCenterX = newCenterX;
             this.touchState.pinchCenterY = newCenterY;
+
+            // Show zoom level indicator
+            MobileUI.showZoomLevel(CAD.zoom);
         }
 
         Renderer.draw();
@@ -644,6 +647,12 @@ const App = {
                 CAD.cursor = world;
                 CAD.cursorWorld = world;
                 CAD.tempEnd = world;
+
+                // Show tap ripple on canvas
+                if (CAD.activeCmd) {
+                    MobileUI.showTapRipple(x, y);
+                }
+
                 Commands.handleClick(world);
                 UI.updatePropertiesPanel();
                 Renderer.draw();
@@ -710,6 +719,11 @@ const MobileUI = {
     _numpadValue: '',
     _lastPrompt: '',
     _lastToolName: '',
+    _recentCommands: [],
+    _coordMode: 'abs',  // 'abs', 'rel', 'polar'
+    _zoomTimeout: null,
+    _swipeStartX: 0,
+    _tabNames: ['draw', 'modify', 'dims', 'view', 'snap'],
 
     // ==========================================
     // INITIALIZATION
@@ -718,6 +732,10 @@ const MobileUI = {
     init() {
         this.updateSnapButtons();
         this._cacheElements();
+        this._initSwipeTabs();
+        this._showGestureHintsIfFirstVisit();
+        this._updateStatusStrip();
+        this._updateRecentCommands();
     },
 
     _cacheElements() {
@@ -798,6 +816,9 @@ const MobileUI = {
             this._els.toolBadge.textContent = name;
             this._els.toolBadge.classList.add('visible');
             this._els.promptText.classList.add('active');
+
+            // Track for recent commands
+            this.trackCommand(CAD.activeCmd);
         } else {
             // Idle
             this._els.toolBadge.classList.remove('visible');
@@ -810,8 +831,13 @@ const MobileUI = {
             if (this._numpadOpen) {
                 this.hideNumpad();
             }
+
+            // Update recent commands visibility
+            this._updateRecentCommands();
         }
 
+        // Update status strip
+        this._updateStatusStrip();
         this.updateSubActions();
     },
 
@@ -999,7 +1025,16 @@ const MobileUI = {
     submitInput() {
         if (!this._els) return;
 
-        const value = this._numpadValue || this._els.cmdInput?.value || this._els.input?.value || '';
+        let value = this._numpadValue || this._els.cmdInput?.value || this._els.input?.value || '';
+
+        // Apply coordinate mode prefix if value looks like coordinates
+        if (value && CAD.activeCmd && /^[\d.,\-<]+$/.test(value)) {
+            if (this._coordMode === 'rel' && !value.startsWith('@')) {
+                value = '@' + value;
+            } else if (this._coordMode === 'polar' && !value.startsWith('@')) {
+                value = '@' + value;
+            }
+        }
 
         // Route through the main command input system
         if (this._els.cmdInput) {
@@ -1036,9 +1071,11 @@ const MobileUI = {
      * Cancel the current command and reset mobile UI state.
      */
     cancelCommand() {
+        const hadCmd = !!CAD.activeCmd;
         Commands.cancelCommand();
         this.hideNumpad();
         Renderer.draw();
+        if (hadCmd) this.showToast('Command cancelled', 'info');
     },
 
     /**
@@ -1220,6 +1257,15 @@ const MobileUI = {
             case 'polar': UI.togglePolar(); break;
         }
         this.updateSnapButtons();
+        this._updateStatusStrip();
+
+        // Show toast feedback
+        const states = {
+            osnap: CAD.osnapEnabled, grid: CAD.showGrid,
+            ortho: CAD.orthoEnabled, polar: CAD.polarEnabled
+        };
+        const name = type.toUpperCase();
+        this.showToast(`${name}: ${states[type] ? 'ON' : 'OFF'}`, 'info');
     },
 
     updateSnapButtons() {
@@ -1483,13 +1529,265 @@ const MobileUI = {
     togglePanMode() {
         App.touchState.panModeActive = !App.touchState.panModeActive;
         const viewport = document.getElementById('viewport');
+        const btn = document.getElementById('modeToggleBtn');
+        const label = document.getElementById('modeToggleLabel');
+        const icon = btn ? btn.querySelector('.mode-icon') : null;
+
         if (App.touchState.panModeActive) {
             viewport.style.cursor = 'grab';
-            UI.log('Pan mode: ON (tap to place points disabled)');
+            if (btn) btn.classList.add('pan-active');
+            if (label) label.textContent = 'Pan';
+            if (icon) icon.innerHTML = '&#9995;';
+            this.showToast('Pan mode ON', 'info');
         } else {
             viewport.style.cursor = 'crosshair';
-            UI.log('Pan mode: OFF (tap to draw/select)');
+            if (btn) btn.classList.remove('pan-active');
+            if (label) label.textContent = 'Draw';
+            if (icon) icon.innerHTML = '&#9997;';
+            this.showToast('Draw mode ON', 'info');
         }
+    },
+
+    // ==========================================
+    // TOAST NOTIFICATIONS
+    // ==========================================
+
+    showToast(message, type = 'info', duration = 1800) {
+        const container = document.getElementById('mobileToastContainer');
+        if (!container) return;
+
+        const toast = document.createElement('div');
+        toast.className = `mobile-toast toast-${type}`;
+        toast.textContent = message;
+        container.appendChild(toast);
+
+        setTimeout(() => {
+            toast.classList.add('toast-out');
+            setTimeout(() => toast.remove(), 200);
+        }, duration);
+
+        // Limit to 3 toasts visible
+        while (container.children.length > 3) {
+            container.removeChild(container.firstChild);
+        }
+    },
+
+    // ==========================================
+    // TAP RIPPLE EFFECT
+    // ==========================================
+
+    showTapRipple(screenX, screenY) {
+        const viewport = document.getElementById('viewport');
+        if (!viewport) return;
+
+        const ripple = document.createElement('div');
+        ripple.className = 'mobile-tap-ripple';
+        ripple.style.left = screenX + 'px';
+        ripple.style.top = screenY + 'px';
+        viewport.appendChild(ripple);
+
+        setTimeout(() => ripple.remove(), 450);
+    },
+
+    // ==========================================
+    // RECENT COMMANDS
+    // ==========================================
+
+    trackCommand(cmdName) {
+        if (!cmdName) return;
+        const name = cmdName.toLowerCase();
+        // Remove if already in list
+        this._recentCommands = this._recentCommands.filter(c => c !== name);
+        // Add to front
+        this._recentCommands.unshift(name);
+        // Keep max 8
+        if (this._recentCommands.length > 8) this._recentCommands.length = 8;
+        this._updateRecentCommands();
+    },
+
+    _updateRecentCommands() {
+        const row = document.getElementById('mdbRecentRow');
+        if (!row) return;
+
+        // Only show when idle (no active command)
+        const showRecent = !CAD.activeCmd && this._recentCommands.length > 0;
+        row.classList.toggle('visible', showRecent);
+        if (!showRecent) return;
+
+        // Keep the label, remove old buttons
+        const label = row.querySelector('.mdb-recent-label');
+        row.innerHTML = '';
+        if (label) row.appendChild(label);
+        else {
+            const newLabel = document.createElement('span');
+            newLabel.className = 'mdb-recent-label';
+            newLabel.textContent = 'Recent';
+            row.appendChild(newLabel);
+        }
+
+        this._recentCommands.forEach(cmd => {
+            const btn = document.createElement('button');
+            btn.className = 'mdb-recent-cmd';
+            btn.textContent = cmd.toUpperCase();
+            btn.addEventListener('click', () => App.executeCommand(cmd));
+            row.appendChild(btn);
+        });
+    },
+
+    // ==========================================
+    // LAYER/COLOR STATUS STRIP
+    // ==========================================
+
+    _updateStatusStrip() {
+        const layerVal = document.getElementById('mssLayerValue');
+        const colorVal = document.getElementById('mssColorValue');
+        const colorDot = document.getElementById('mssColorDot');
+
+        if (layerVal) layerVal.textContent = CAD.currentLayer || '0';
+
+        const layer = CAD.getLayer(CAD.currentLayer);
+        const color = layer ? layer.color : '#ffffff';
+        if (colorVal) colorVal.textContent = 'ByLayer';
+        if (colorDot) colorDot.style.background = color;
+
+        // Update snap badges
+        const osnapBadge = document.getElementById('mssBadgeOsnap');
+        const orthoBadge = document.getElementById('mssBadgeOrtho');
+        const gridBadge = document.getElementById('mssBadgeGrid');
+        if (osnapBadge) osnapBadge.className = 'mss-snap-badge ' + (CAD.osnapEnabled ? 'on' : 'off');
+        if (orthoBadge) orthoBadge.className = 'mss-snap-badge ' + (CAD.orthoEnabled ? 'on' : 'off');
+        if (gridBadge) gridBadge.className = 'mss-snap-badge ' + (CAD.showGrid ? 'on' : 'off');
+    },
+
+    cycleColor() {
+        // Quick cycle through common colors
+        const colors = ['ByLayer', '#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff', '#ffffff'];
+        const current = document.getElementById('mssColorValue');
+        if (!current) return;
+        const idx = colors.indexOf(current.textContent);
+        const next = colors[(idx + 1) % colors.length];
+        current.textContent = next;
+        const colorDot = document.getElementById('mssColorDot');
+        if (next === 'ByLayer') {
+            const layer = CAD.getLayer(CAD.currentLayer);
+            if (colorDot) colorDot.style.background = layer ? layer.color : '#ffffff';
+        } else {
+            if (colorDot) colorDot.style.background = next;
+            CAD.currentColor = next;
+        }
+        this.showToast('Color: ' + next, 'info');
+    },
+
+    // ==========================================
+    // GESTURE HINTS
+    // ==========================================
+
+    _showGestureHintsIfFirstVisit() {
+        if (!App.isMobile()) return;
+        try {
+            if (!localStorage.getItem('bcad_gestures_shown')) {
+                setTimeout(() => {
+                    this.showGestureHints();
+                }, 800);
+            }
+        } catch (e) { /* localStorage unavailable */ }
+    },
+
+    showGestureHints() {
+        const overlay = document.getElementById('gestureHintsOverlay');
+        if (overlay) overlay.classList.add('visible');
+    },
+
+    dismissGestureHints() {
+        const overlay = document.getElementById('gestureHintsOverlay');
+        if (overlay) overlay.classList.remove('visible');
+        try {
+            localStorage.setItem('bcad_gestures_shown', '1');
+        } catch (e) { /* ignore */ }
+    },
+
+    // ==========================================
+    // ZOOM LEVEL INDICATOR
+    // ==========================================
+
+    showZoomLevel(zoom) {
+        const indicator = document.getElementById('mobileZoomIndicator');
+        if (!indicator) return;
+
+        const pct = (zoom * 100).toFixed(0);
+        indicator.textContent = pct + '%';
+        indicator.classList.add('visible');
+
+        clearTimeout(this._zoomTimeout);
+        this._zoomTimeout = setTimeout(() => {
+            indicator.classList.remove('visible');
+        }, 800);
+    },
+
+    // ==========================================
+    // COORDINATE MODE (for numpad)
+    // ==========================================
+
+    setCoordMode(mode) {
+        this._coordMode = mode;
+        const abs = document.getElementById('numpadModeAbs');
+        const rel = document.getElementById('numpadModeRel');
+        const polar = document.getElementById('numpadModePolar');
+        if (abs) abs.classList.toggle('active', mode === 'abs');
+        if (rel) rel.classList.toggle('active', mode === 'rel');
+        if (polar) polar.classList.toggle('active', mode === 'polar');
+    },
+
+    // ==========================================
+    // SWIPE BETWEEN TABS
+    // ==========================================
+
+    _initSwipeTabs() {
+        const toolbar = document.getElementById('mobileToolbar');
+        if (!toolbar) return;
+
+        let startX = 0;
+        let startY = 0;
+        let swiping = false;
+
+        toolbar.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+                swiping = true;
+            }
+        }, { passive: true });
+
+        toolbar.addEventListener('touchmove', (e) => {
+            if (!swiping) return;
+            const dy = Math.abs(e.touches[0].clientY - startY);
+            if (dy > 30) swiping = false; // Vertical scroll, not swipe
+        }, { passive: true });
+
+        toolbar.addEventListener('touchend', (e) => {
+            if (!swiping) return;
+            swiping = false;
+            const endX = e.changedTouches[0].clientX;
+            const dx = endX - startX;
+            if (Math.abs(dx) < 50) return; // Too short
+
+            const activeTab = document.querySelector('.mobile-tab.active');
+            if (!activeTab) return;
+            const currentIdx = this._tabNames.indexOf(activeTab.dataset.mtab);
+            if (currentIdx === -1) return;
+
+            let newIdx;
+            if (dx < 0) {
+                // Swipe left = next tab
+                newIdx = Math.min(currentIdx + 1, this._tabNames.length - 1);
+            } else {
+                // Swipe right = previous tab
+                newIdx = Math.max(currentIdx - 1, 0);
+            }
+            if (newIdx !== currentIdx) {
+                this.switchTab(this._tabNames[newIdx]);
+            }
+        }, { passive: true });
     }
 };
 // Initialize app when DOM is ready

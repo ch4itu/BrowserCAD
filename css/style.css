@@ -2478,6 +2478,10 @@ body {
     .mobile-menu-btn { display: flex !important; }
     .mobile-quick-actions { display: flex !important; }
     .mobile-coords-overlay { display: block !important; }
+    .mobile-status-strip { display: flex !important; }
+    .mobile-mode-indicator { display: block !important; }
+    .mobile-help-btn { display: flex !important; }
+    .mobile-toast-container { display: flex !important; }
     
     /* Show Bottom Toolbar (unless numpad is open) */
     .mobile-toolbar { 
@@ -2518,4 +2522,530 @@ body {
         .title-bar { padding-top: env(safe-area-inset-top); }
         .mobile-menu-drawer { padding-bottom: env(safe-area-inset-bottom); }
     }
+}
+
+/* ============================================
+   MOBILE UX ENHANCEMENTS
+   ============================================ */
+
+/* --- Toast Notification System --- */
+.mobile-toast-container {
+    display: none;
+    position: fixed;
+    bottom: 120px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 5000;
+    pointer-events: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+@media (max-width: 768px) {
+    .mobile-toast-container { display: flex; }
+}
+
+.mobile-toast {
+    background: rgba(30, 30, 30, 0.95);
+    color: var(--text-bright);
+    padding: 10px 20px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-medium);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    animation: toastIn 0.25s ease-out;
+    white-space: nowrap;
+    max-width: 90vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mobile-toast.toast-success {
+    border-color: var(--accent-green);
+    background: rgba(16, 185, 129, 0.15);
+}
+
+.mobile-toast.toast-error {
+    border-color: var(--accent-red);
+    background: rgba(239, 68, 68, 0.15);
+}
+
+.mobile-toast.toast-info {
+    border-color: var(--accent-blue);
+}
+
+.mobile-toast.toast-out {
+    animation: toastOut 0.2s ease-in forwards;
+}
+
+@keyframes toastIn {
+    from { opacity: 0; transform: translateY(12px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes toastOut {
+    from { opacity: 1; transform: translateY(0) scale(1); }
+    to { opacity: 0; transform: translateY(-8px) scale(0.95); }
+}
+
+/* --- Tap Ripple Effect on Canvas --- */
+.mobile-tap-ripple {
+    position: absolute;
+    pointer-events: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid rgba(0, 122, 204, 0.8);
+    background: rgba(0, 122, 204, 0.15);
+    transform: translate(-50%, -50%) scale(0);
+    animation: tapRipple 0.4s ease-out forwards;
+    z-index: 30;
+}
+
+@keyframes tapRipple {
+    0% { transform: translate(-50%, -50%) scale(0); opacity: 1; }
+    70% { transform: translate(-50%, -50%) scale(1.5); opacity: 0.5; }
+    100% { transform: translate(-50%, -50%) scale(2); opacity: 0; }
+}
+
+/* --- Gesture Hints Overlay --- */
+.gesture-hints-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.85);
+    z-index: 6000;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 28px;
+    padding: 24px;
+    animation: fadeIn 0.3s ease;
+}
+
+.gesture-hints-overlay.visible {
+    display: flex;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.gesture-hint {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    max-width: 300px;
+    width: 100%;
+}
+
+.gesture-hint-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    background: rgba(0, 122, 204, 0.2);
+    border: 1px solid rgba(0, 122, 204, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    flex-shrink: 0;
+    color: var(--accent-blue-hover);
+}
+
+.gesture-hint-text {
+    flex: 1;
+}
+
+.gesture-hint-text strong {
+    display: block;
+    color: var(--text-bright);
+    font-size: 14px;
+    margin-bottom: 3px;
+}
+
+.gesture-hint-text span {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.gesture-hints-dismiss {
+    margin-top: 12px;
+    padding: 12px 32px;
+    border: none;
+    border-radius: 24px;
+    background: var(--accent-blue);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    -webkit-tap-highlight-color: transparent;
+    min-height: 48px;
+}
+
+.gesture-hints-dismiss:active {
+    transform: scale(0.95);
+    background: var(--accent-blue-hover);
+}
+
+/* --- Recent Commands Bar --- */
+.mdb-recent-row {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    border-bottom: 1px solid var(--border-dark);
+}
+
+.mdb-recent-row::-webkit-scrollbar { display: none; }
+
+@media (max-width: 768px) {
+    .mdb-recent-row.visible { display: flex; }
+}
+
+.mdb-recent-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+    font-weight: 600;
+}
+
+.mdb-recent-cmd {
+    padding: 5px 12px;
+    border: 1px solid var(--border-medium);
+    border-radius: 14px;
+    background: var(--bg-light);
+    color: var(--text-primary);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-family: inherit;
+    transition: all 0.1s ease;
+    min-height: 30px;
+    display: flex;
+    align-items: center;
+}
+
+.mdb-recent-cmd:active {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue-hover);
+    color: var(--text-bright);
+    transform: scale(0.95);
+}
+
+/* --- Layer/Color Quick Indicator --- */
+.mobile-status-strip {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+    background: var(--bg-dark);
+    border-bottom: 1px solid var(--border-dark);
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+.mobile-status-strip::-webkit-scrollbar { display: none; }
+
+@media (max-width: 768px) {
+    .mobile-status-strip { display: flex; }
+}
+
+.mss-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: var(--bg-light);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    flex-shrink: 0;
+    min-height: 28px;
+}
+
+.mss-item:active {
+    background: var(--bg-lighter);
+}
+
+.mss-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.mss-value {
+    font-size: 11px;
+    color: var(--text-bright);
+    font-weight: 600;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mss-color-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1px solid var(--border-light);
+    flex-shrink: 0;
+}
+
+.mss-snap-badges {
+    display: flex;
+    gap: 3px;
+    flex-shrink: 0;
+}
+
+.mss-snap-badge {
+    font-size: 9px;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+}
+
+.mss-snap-badge.on {
+    background: rgba(0, 122, 204, 0.25);
+    color: var(--accent-blue-hover);
+}
+
+.mss-snap-badge.off {
+    background: var(--bg-lighter);
+    color: var(--text-muted);
+}
+
+/* --- Improved Pan/Draw Mode Toggle --- */
+.mobile-mode-indicator {
+    display: none;
+    position: absolute;
+    top: 60px;
+    right: 8px;
+    z-index: 50;
+}
+
+@media (max-width: 768px) {
+    .mobile-mode-indicator { display: block; }
+}
+
+.mode-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 20px;
+    background: rgba(45, 45, 48, 0.92);
+    border: 1px solid var(--border-medium);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+    font-family: inherit;
+    min-height: 38px;
+}
+
+.mode-toggle-btn .mode-icon {
+    font-size: 16px;
+    font-style: normal;
+}
+
+.mode-toggle-btn.pan-active {
+    background: rgba(0, 122, 204, 0.25);
+    border-color: var(--accent-blue);
+    color: var(--accent-blue-hover);
+}
+
+.mode-toggle-btn:active {
+    transform: scale(0.93);
+}
+
+/* --- Improved Numpad --- */
+.numpad-mode-row {
+    display: flex;
+    gap: 4px;
+    padding: 0 10px 6px;
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.numpad-mode-btn {
+    flex: 1;
+    padding: 6px;
+    border: 1px solid var(--border-dark);
+    border-radius: 6px;
+    background: var(--bg-light);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    font-family: inherit;
+    min-height: 32px;
+}
+
+.numpad-mode-btn.active {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue-hover);
+    color: #fff;
+}
+
+.numpad-mode-btn:active {
+    transform: scale(0.95);
+}
+
+/* --- Improved Toolbar Tabs with swipe indicator --- */
+.mobile-toolbar-tabs {
+    position: relative;
+}
+
+.swipe-indicator {
+    position: absolute;
+    bottom: 0;
+    height: 3px;
+    background: var(--accent-blue);
+    border-radius: 3px 3px 0 0;
+    transition: left 0.25s ease, width 0.25s ease;
+}
+
+/* --- Zoom Level Indicator --- */
+.mobile-zoom-indicator {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 50;
+    background: rgba(0, 0, 0, 0.75);
+    color: var(--text-bright);
+    padding: 8px 18px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+    pointer-events: none;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: 1px solid var(--border-medium);
+    animation: zoomFade 0.3s ease;
+}
+
+.mobile-zoom-indicator.visible {
+    display: block;
+}
+
+@keyframes zoomFade {
+    from { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+    to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* --- Point Placement Marker --- */
+.mobile-point-marker {
+    position: absolute;
+    pointer-events: none;
+    z-index: 30;
+}
+
+.mobile-point-marker .marker-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.mobile-point-marker .marker-ring {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid var(--accent-blue);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    animation: markerPulse 0.6s ease-out;
+    opacity: 0;
+}
+
+@keyframes markerPulse {
+    0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(2); opacity: 0; }
+}
+
+/* --- Enhanced Mobile Quick Actions (repositioned) --- */
+@media (max-width: 768px) {
+    .mobile-quick-actions {
+        flex-direction: column;
+        top: auto;
+        bottom: 8px;
+        right: 8px;
+        top: 8px;
+        flex-direction: row;
+    }
+}
+
+/* --- Help button in title bar --- */
+.mobile-help-btn {
+    display: none;
+    background: transparent;
+    border: 1px solid var(--border-medium);
+    border-radius: 50%;
+    color: var(--text-secondary);
+    width: 32px;
+    height: 32px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    align-items: center;
+    justify-content: center;
+    margin-right: 6px;
+}
+
+@media (max-width: 768px) {
+    .mobile-help-btn { display: flex; }
+}
+
+.mobile-help-btn:active {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: #fff;
+}
+
+/* Landscape adjustments for new elements */
+@media (max-height: 600px) and (max-width: 900px) and (orientation: landscape) {
+    .mobile-status-strip { padding: 2px 10px; }
+    .mss-item { padding: 2px 8px; min-height: 24px; }
+    .mobile-toast-container { bottom: 80px; }
+    .mobile-mode-indicator { top: 40px; }
+    .mdb-recent-row { padding: 4px 10px; }
+    .mdb-recent-cmd { padding: 3px 10px; font-size: 10px; min-height: 26px; }
+    .gesture-hint-icon { width: 40px; height: 40px; font-size: 18px; border-radius: 10px; }
+    .gesture-hints-overlay { gap: 16px; padding: 16px; }
 }
