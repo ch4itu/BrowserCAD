@@ -126,10 +126,23 @@ const App = {
 
         // Handle grip dragging
         if (CAD.gripDragging && CAD.activeGrip) {
-            const snapPoint = CAD.snapPoint || cursorPoint;
+            // Compute snap during grip drag
+            if (CAD.osnapEnabled && world) {
+                const entities = this.getSnapEntities(world);
+                const snapTolerance = 15 / effectiveZoom;
+                const snap = Geometry.findSnapPoints(world, entities, CAD.snapModes, snapTolerance, CAD.gridSize, null);
+                if (snap) {
+                    CAD.snapPoint = snap.point;
+                    CAD.snapType = snap.type;
+                } else {
+                    CAD.snapPoint = null;
+                    CAD.snapType = null;
+                }
+            }
+            const dragPoint = CAD.snapPoint || cursorPoint;
             const entity = CAD.getEntity(CAD.activeGrip.entityId);
             if (entity) {
-                const updates = Geometry.moveGrip(entity, CAD.activeGrip.gripIndex, snapPoint);
+                const updates = Geometry.moveGrip(entity, CAD.activeGrip.gripIndex, dragPoint);
                 if (updates) {
                     Object.assign(entity, updates);
                     CAD.modified = true;

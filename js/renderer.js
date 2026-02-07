@@ -1713,10 +1713,15 @@ const Renderer = {
     drawGrips() {
         const ctx = this.ctx;
         const state = CAD;
-        if (state.selectedIds.length === 0 || state.activeCmd) return;
+        if (state.selectedIds.length === 0) return;
+        // Show grips when no command active, or during grip dragging
+        if (state.activeCmd && !state.gripDragging) return;
 
         const zoom = state.zoom;
-        const gripSize = 5 / zoom; // 5 pixels in screen space
+        const gripSize = 8 / zoom; // 8 pixels in screen space
+
+        // Reset line dash from entity drawing
+        ctx.setLineDash([]);
 
         state.selectedIds.forEach(id => {
             const entity = state.getEntity(id);

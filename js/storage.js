@@ -1448,9 +1448,29 @@ const Storage = {
         // Save renderer state and swap in our offscreen context
         const prevCtx = Renderer.ctx;
         const prevCanvas = Renderer.canvas;
+        const prevGetEntityColor = CAD.getEntityColor.bind(CAD);
 
         Renderer.ctx = ctx;
         Renderer.canvas = canvas;
+
+        // Override getEntityColor to invert light colors for white-background PDF
+        CAD.getEntityColor = function(entity) {
+            const color = prevGetEntityColor(entity);
+            // Convert white/light colors to black for printing
+            if (!color || color === '#ffffff' || color === '#fff' || color === 'white') return '#000000';
+            // Check if color is very light (would be invisible on white)
+            if (color.startsWith('#')) {
+                const hex = color.replace('#', '');
+                if (hex.length >= 6) {
+                    const r = parseInt(hex.substr(0, 2), 16);
+                    const g = parseInt(hex.substr(2, 2), 16);
+                    const b = parseInt(hex.substr(4, 2), 16);
+                    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+                    if (brightness > 200) return '#000000';
+                }
+            }
+            return color;
+        };
 
         // Apply transformation: translate to center, then scale, then offset to drawing origin
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1461,7 +1481,8 @@ const Storage = {
         // Render all entities using the existing drawEntityList (no selection highlighting)
         Renderer.drawEntityList(CAD.entities, { zoom: renderZoom, includeSelection: false });
 
-        // Restore renderer
+        // Restore renderer and color function
+        CAD.getEntityColor = prevGetEntityColor;
         Renderer.ctx = prevCtx;
         Renderer.canvas = prevCanvas;
 
