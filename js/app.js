@@ -856,11 +856,67 @@ const MobileUI = {
 
         actions.forEach(action => {
             const btn = document.createElement('button');
-            btn.className = 'mdb-btn mdb-subaction';
-            btn.textContent = action.label;
+            const isHatch = cmd === 'hatch';
+            btn.className = `mdb-btn mdb-subaction${isHatch ? ' mdb-hatch-swatch' : ''}`;
+            if (isHatch) {
+                const swatch = document.createElement('canvas');
+                swatch.className = 'hatch-swatch';
+                swatch.width = 24;
+                swatch.height = 24;
+                btn.appendChild(swatch);
+                const label = document.createElement('span');
+                label.className = 'hatch-swatch-label';
+                label.textContent = action.label;
+                btn.appendChild(label);
+                this.renderHatchSwatch(swatch, action.value);
+            } else {
+                btn.textContent = action.label;
+            }
             btn.addEventListener('click', () => this.submitValue(action.value));
             this._els.subActions.appendChild(btn);
         });
+    },
+
+    renderHatchSwatch(canvas, pattern) {
+        if (!canvas || typeof Geometry === 'undefined' || !Geometry.Hatch) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        const size = Math.min(canvas.width, canvas.height);
+        const rootStyle = getComputedStyle(document.documentElement);
+        const stroke = rootStyle.getPropertyValue('--text-bright').trim() || '#e2e8f0';
+        const bg = rootStyle.getPropertyValue('--bg-canvas').trim() || '#0f172a';
+
+        ctx.clearRect(0, 0, size, size);
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, size, size);
+
+        const inset = 2;
+        const boundary = [
+            { x: inset, y: inset },
+            { x: size - inset, y: inset },
+            { x: size - inset, y: size - inset },
+            { x: inset, y: size - inset }
+        ];
+
+        if (pattern === 'solid') {
+            ctx.fillStyle = stroke;
+            ctx.globalAlpha = 0.3;
+            ctx.fillRect(inset, inset, size - inset * 2, size - inset * 2);
+            ctx.globalAlpha = 1;
+            return;
+        }
+
+        const hatch = new Geometry.Hatch(boundary, pattern, 1, 0);
+        const lines = hatch.generateRenderLines();
+        ctx.beginPath();
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 1;
+        lines.forEach(seg => {
+            if (!seg || !seg.p1 || !seg.p2) return;
+            ctx.moveTo(seg.p1.x, seg.p1.y);
+            ctx.lineTo(seg.p2.x, seg.p2.y);
+        });
+        ctx.stroke();
     },
 
     // ==========================================

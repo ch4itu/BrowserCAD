@@ -1690,6 +1690,28 @@ body {
     color: var(--text-primary);
 }
 
+.mdb-hatch-swatch {
+    flex-direction: column;
+    padding: 6px 8px;
+    min-height: 64px;
+    min-width: 58px;
+    gap: 4px;
+}
+
+.mdb-hatch-swatch .hatch-swatch {
+    width: 26px;
+    height: 26px;
+    border-radius: 4px;
+    border: 1px solid var(--border-dark);
+    background: var(--bg-canvas);
+}
+
+.mdb-hatch-swatch .hatch-swatch-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+}
+
 .mdb-btn {
     display: flex;
     align-items: center;
