@@ -1611,7 +1611,7 @@ body {
 
 .mdb-prompt-text {
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: 14px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1705,7 +1705,7 @@ body {
     flex-shrink: 0;
     -webkit-tap-highlight-color: transparent;
     transition: all 0.1s ease;
-    min-height: 38px;
+    min-height: 44px;
 }
 
 .mdb-btn:active {
@@ -1873,11 +1873,11 @@ body {
 
 .mobile-tab {
     flex: 1;
-    padding: 10px 4px;
+    padding: 12px 6px;
     background: transparent;
     border: none;
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -1898,8 +1898,8 @@ body {
     display: none;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    padding: 6px 8px;
-    gap: 4px;
+    padding: 8px 10px;
+    gap: 6px;
     scrollbar-width: none;
     scroll-snap-type: x proximity;
 }
@@ -1912,8 +1912,9 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-width: 58px;
-    padding: 8px 6px;
+    min-width: 64px;
+    min-height: 60px;
+    padding: 10px 6px;
     background: var(--bg-light);
     border: 1px solid var(--border-dark);
     border-radius: 6px;
@@ -1939,13 +1940,13 @@ body {
 }
 
 .mobile-tool-btn .m-icon {
-    font-size: 22px;
+    font-size: 24px;
     font-style: normal;
     line-height: 1;
 }
 
 .mobile-tool-btn .m-label {
-    font-size: 10px;
+    font-size: 11px;
     margin-top: 3px;
     white-space: nowrap;
     font-weight: 500;
@@ -2269,8 +2270,8 @@ body {
 }
 
 .mobile-quick-btn {
-    width: 44px;
-    height: 44px;
+    width: 46px;
+    height: 46px;
     border-radius: 50%;
     background: rgba(45, 45, 48, 0.92);
     border: 1px solid var(--border-medium);
@@ -2365,12 +2366,12 @@ body {
     .google-signin-btn { padding: 3px 6px; font-size: 10px; }
     .google-signin-btn #googleSignInText { display: none; }
 
-    .mobile-tab { padding: 8px 2px; font-size: 9px; letter-spacing: 0; }
-    .mobile-tool-btn { min-width: 50px; padding: 6px 4px; }
-    .mobile-tool-btn .m-icon { font-size: 18px; }
-    .mobile-tool-btn .m-label { font-size: 8px; }
+    .mobile-tab { padding: 10px 2px; font-size: 10px; letter-spacing: 0; }
+    .mobile-tool-btn { min-width: 54px; min-height: 52px; padding: 8px 4px; }
+    .mobile-tool-btn .m-icon { font-size: 20px; }
+    .mobile-tool-btn .m-label { font-size: 9px; }
     .mobile-menu-drawer { width: 260px; }
-    .mobile-quick-btn { width: 38px; height: 38px; font-size: 17px; }
+    .mobile-quick-btn { width: 40px; height: 40px; font-size: 16px; }
 
     .mdb-btn { padding: 6px 10px; font-size: 12px; min-height: 34px; }
     .nk { padding: 10px 6px; font-size: 20px; min-height: 44px; }
