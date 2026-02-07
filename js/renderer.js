@@ -533,20 +533,19 @@ const Renderer = {
     },
 
     getHatchPattern(pattern, color) {
-        const zoomKey = Math.round(CAD.zoom * 100);
-        const key = `${pattern}-${color}-${zoomKey}`;
+        const key = `${pattern}-${color}`;
         if (this.hatchPatterns.has(key)) {
             return this.hatchPatterns.get(key);
         }
 
-        const size = Math.max(4, 8 / CAD.zoom);
+        const size = 8;
         const canvas = document.createElement('canvas');
         canvas.width = size;
         canvas.height = size;
         const ctx = canvas.getContext('2d');
         ctx.strokeStyle = color;
         ctx.fillStyle = color;
-        ctx.lineWidth = Math.max(0.5, 1 / CAD.zoom);
+        ctx.lineWidth = 1;
 
         switch (pattern) {
             case 'diagonal':
@@ -574,7 +573,7 @@ const Renderer = {
                 ctx.stroke();
                 break;
             case 'ansi34': // Diagonal thick
-                ctx.lineWidth = Math.max(1, 2 / CAD.zoom);
+                ctx.lineWidth = 2;
                 ctx.beginPath();
                 ctx.moveTo(0, size);
                 ctx.lineTo(size, 0);
