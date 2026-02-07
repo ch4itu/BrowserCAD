@@ -2873,18 +2873,32 @@ const Commands = {
         };
         return [
             underline('solid', 's'),
+            underline('diagonal', 'd'),
+            underline('cross', 'c'),
+            underline('dots', 'o'),
+            underline('angle', 'a'),
             'ANSI31', 'ANSI32', 'ANSI33', 'ANSI34',
             'ANSI35', 'ANSI36', 'ANSI37', 'ANSI38',
-            'AR-B816', 'AR-BRSTD', 'AR-B88', 'AR-BRELM', 'AR-CONC', 'AR-HBONE',
-            'AR-PARQ1', 'AR-RROOF', 'AR-RSHKE', 'AR-SAND'
+            'brick', 'honey', 'earth', 'grass',
+            'steel', 'insul', 'net', 'net3', 'dash',
+            'square', 'zigzag',
+            'ar-b816', 'ar-brstd', 'ar-b88', 'ar-brelm', 'ar-conc', 'ar-hbone',
+            'ar-parq1', 'ar-rroof', 'ar-rshke', 'ar-sand',
+            'brass', 'clay', 'cork', 'flex', 'gravel', 'hex', 'sacncr',
+            'trans', 'dolmit', 'plast', 'line', 'triang'
         ].join('/');
     },
 
     hatchPatterns: [
-        'solid',
+        'solid', 'diagonal', 'cross', 'dots', 'angle',
         'ansi31', 'ansi32', 'ansi33', 'ansi34', 'ansi35', 'ansi36', 'ansi37', 'ansi38',
+        'brick', 'earth', 'grass', 'honey',
+        'steel', 'insul', 'net', 'net3',
+        'dash', 'square', 'zigzag',
         'ar-b816', 'ar-brstd', 'ar-b88', 'ar-brelm', 'ar-conc', 'ar-hbone',
-        'ar-parq1', 'ar-rroof', 'ar-rshke', 'ar-sand'
+        'ar-parq1', 'ar-rroof', 'ar-rshke', 'ar-sand',
+        'brass', 'clay', 'cork', 'flex', 'gravel', 'hex', 'sacncr',
+        'trans', 'dolmit', 'plast', 'line', 'triang'
     ],
 
     hatchPatternAliases: {
