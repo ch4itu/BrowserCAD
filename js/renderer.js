@@ -825,11 +825,42 @@ const Renderer = {
 
         ctx.save();
 
-        // Build clip path from boundary
+        // Build clip path from boundary - use accurate geometry when available
         ctx.beginPath();
-        ctx.moveTo(boundaryPoints[0].x, boundaryPoints[0].y);
-        for (let i = 1; i < boundaryPoints.length; i++) {
-            ctx.lineTo(boundaryPoints[i].x, boundaryPoints[i].y);
+        if (entity.sourceCircle) {
+            // Circle: use native arc for perfect clip
+            const c = entity.sourceCircle;
+            ctx.arc(c.center.x, c.center.y, c.r, 0, Math.PI * 2);
+        } else if (entity.sourceEllipse) {
+            // Ellipse: use native ellipse for perfect clip
+            const e = entity.sourceEllipse;
+            ctx.save();
+            ctx.translate(e.center.x, e.center.y);
+            if (e.rotation) ctx.rotate(e.rotation);
+            ctx.scale(e.rx, e.ry);
+            ctx.arc(0, 0, 1, 0, Math.PI * 2);
+            ctx.restore();
+        } else if (entity.sourceBulges && entity.sourcePoints) {
+            // Polyline with arcs: trace arcs properly
+            const pts = entity.sourcePoints;
+            const bulges = entity.sourceBulges;
+            ctx.moveTo(pts[0].x, pts[0].y);
+            const numSegs = entity.sourceClosed ? pts.length : pts.length - 1;
+            for (let i = 0; i < numSegs; i++) {
+                const p1 = pts[i];
+                const p2 = pts[(i + 1) % pts.length];
+                const bulge = bulges[i] || 0;
+                this._drawPolylineSegment(ctx, p1, p2, bulge, false);
+            }
+        } else if (entity.sourceIsSpline && entity.sourcePoints) {
+            // Spline: use smooth Catmull-Rom curve
+            this.drawSplineCurve(entity.sourcePoints, ctx, entity.sourceClosed);
+        } else {
+            // Default: straight line segments between boundary points
+            ctx.moveTo(boundaryPoints[0].x, boundaryPoints[0].y);
+            for (let i = 1; i < boundaryPoints.length; i++) {
+                ctx.lineTo(boundaryPoints[i].x, boundaryPoints[i].y);
+            }
         }
         ctx.closePath();
         ctx.clip();

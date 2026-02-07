@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="description" content="BrowserCAD - Professional CAD application in pure HTML/CSS/JavaScript with CAD-like interface">
     <title>BrowserCAD - Web-Based CAD Application</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231a5fb4'/%3E%3Cpath d='M6 26L16 4l10 22' fill='none' stroke='%2362a0ea' stroke-width='2.5' stroke-linejoin='round'/%3E%3Ccircle cx='16' cy='14' r='5' fill='none' stroke='white' stroke-width='2'/%3E%3Cline x1='16' y1='9' x2='16' y2='4' stroke='white' stroke-width='1.5'/%3E%3Cline x1='8' y1='22' x2='24' y2='22' stroke='%2362a0ea' stroke-width='1.5' stroke-dasharray='2 2'/%3E%3C/svg%3E">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%23192a56'/%3E%3Crect x='3' y='3' width='26' height='26' rx='2' fill='none' stroke='%233498db' stroke-width='1'/%3E%3Cline x1='3' y1='16' x2='29' y2='16' stroke='%232c3e6b' stroke-width='.5'/%3E%3Cline x1='16' y1='3' x2='16' y2='29' stroke='%232c3e6b' stroke-width='.5'/%3E%3Cpolyline points='8,22 12,12 20,18 24,8' fill='none' stroke='%2300e676' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='8' cy='22' r='1.5' fill='%2300e676'/%3E%3Ccircle cx='24' cy='8' r='1.5' fill='%2300e676'/%3E%3Cline x1='24' y1='4' x2='24' y2='12' stroke='%23ff5252' stroke-width='.8'/%3E%3Cline x1='20' y1='8' x2='28' y2='8' stroke='%23ff5252' stroke-width='.8'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="css/style.css">
 
     <!-- BrowserCAD Google Drive Configuration -->
@@ -30,7 +30,7 @@
     <div class="app-container">
         <!-- Title Bar -->
         <div class="title-bar">
-            <div class="logo"><svg class="logo-icon" width="24" height="24" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#1a5fb4"/><path d="M6 26L16 4l10 22" fill="none" stroke="#62a0ea" stroke-width="2.5" stroke-linejoin="round"/><circle cx="16" cy="14" r="5" fill="none" stroke="white" stroke-width="2"/><line x1="16" y1="9" x2="16" y2="4" stroke="white" stroke-width="1.5"/><line x1="8" y1="22" x2="24" y2="22" stroke="#62a0ea" stroke-width="1.5" stroke-dasharray="2 2"/></svg>Browser<span>CAD</span></div>
+            <div class="logo"><svg class="logo-icon" width="24" height="24" viewBox="0 0 32 32"><rect width="32" height="32" rx="4" fill="#192a56"/><rect x="3" y="3" width="26" height="26" rx="2" fill="none" stroke="#3498db" stroke-width="1"/><line x1="3" y1="16" x2="29" y2="16" stroke="#2c3e6b" stroke-width=".5"/><line x1="16" y1="3" x2="16" y2="29" stroke="#2c3e6b" stroke-width=".5"/><polyline points="8,22 12,12 20,18 24,8" fill="none" stroke="#00e676" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="22" r="1.5" fill="#00e676"/><circle cx="24" cy="8" r="1.5" fill="#00e676"/><line x1="24" y1="4" x2="24" y2="12" stroke="#ff5252" stroke-width=".8"/><line x1="20" y1="8" x2="28" y2="8" stroke="#ff5252" stroke-width=".8"/></svg>Browser<span>CAD</span></div>
             <div class="menu-bar">
                 <div class="menu-item" onclick="Storage.openFile()">Open</div>
                 <div class="menu-item" onclick="Storage.saveToLocalStorage()">Save</div>
@@ -727,6 +727,20 @@
                         </button>
                     </div>
 
+                    <!-- Mobile floating action buttons -->
+                    <div class="mobile-fab-group" id="mobileFabGroup">
+                        <button class="mobile-fab fab-undo" onclick="Commands.undo(); Renderer.draw();" title="Undo">&#8630;</button>
+                        <button class="mobile-fab fab-redo" onclick="Commands.redo(); Renderer.draw();" title="Redo">&#8631;</button>
+                    </div>
+
+                    <!-- Mobile crosshair overlay for precision drawing -->
+                    <div class="mobile-crosshair" id="mobileCrosshair">
+                        <div class="crosshair-h"></div>
+                        <div class="crosshair-v"></div>
+                        <div class="crosshair-dot"></div>
+                        <div class="crosshair-coord" id="crosshairCoord"></div>
+                    </div>
+
                     <!-- Floating Canvas Selection Toolbar -->
                     <div class="canvas-selection-toolbar" id="canvasSelectionToolbar" style="display: none;">
                         <div class="cst-title">Select Objects:</div>
@@ -808,7 +822,7 @@
             </div>
             <div class="mdb-prompt-row" id="mdbPromptRow">
                 <span class="mdb-tool-badge" id="mdbToolBadge"></span>
-                <span class="mdb-prompt-text" id="mdbPromptText">Tap a tool to begin</span>
+                <span class="mdb-prompt-text" id="mdbPromptText">Tap a tool to begin drawing</span>
             </div>
             <div class="mdb-input-row" id="mdbInputRow">
                 <input type="text" class="mdb-input" id="mdbInput" readonly
@@ -823,18 +837,15 @@
                 <button class="mdb-btn mdb-close" id="mdbClose" onclick="MobileUI.submitValue('C')">
                     &#9634; Close
                 </button>
-                <button class="mdb-btn mdb-undo" onclick="Commands.undo(); Renderer.draw();">
-                    &#8630; Undo
-                </button>
-                <button class="mdb-btn mdb-redo" onclick="Commands.redo(); Renderer.draw();">
-                    &#8631; Redo
-                </button>
                 <button class="mdb-btn mdb-cancel" onclick="MobileUI.cancelCommand()">
-                    &#10005; Cancel
+                    &#10005;
                 </button>
                 <div class="mdb-spacer"></div>
+                <button class="mdb-btn mdb-ortho-toggle" id="mdbOrthoBtn" onclick="MobileUI.toggleSnap('ortho')">
+                    &#9482; Ortho
+                </button>
                 <button class="mdb-btn mdb-numpad-toggle" id="mdbNumpadBtn" onclick="MobileUI.toggleNumpad()">
-                    #
+                    123
                 </button>
                 <button class="mdb-btn mdb-kbd-toggle" onclick="MobileUI.showKeyboard()">
                     Aa
@@ -875,14 +886,24 @@
         <!-- Mobile Bottom Toolbar -->
         <div class="mobile-toolbar" id="mobileToolbar">
             <div class="mobile-toolbar-tabs">
-                <button class="mobile-tab active" data-mtab="draw" onclick="MobileUI.switchTab('draw')">Draw</button>
-                <button class="mobile-tab" data-mtab="modify" onclick="MobileUI.switchTab('modify')">Modify</button>
-                <button class="mobile-tab" data-mtab="dims" onclick="MobileUI.switchTab('dims')">Dims</button>
-                <button class="mobile-tab" data-mtab="view" onclick="MobileUI.switchTab('view')">View</button>
-                <button class="mobile-tab" data-mtab="snap" onclick="MobileUI.switchTab('snap')">Snap</button>
+                <button class="mobile-tab active" data-mtab="draw" onclick="MobileUI.switchTab('draw')">
+                    <span class="mtab-icon">&#9998;</span><span class="mtab-label">Draw</span>
+                </button>
+                <button class="mobile-tab" data-mtab="modify" onclick="MobileUI.switchTab('modify')">
+                    <span class="mtab-icon">&#9881;</span><span class="mtab-label">Modify</span>
+                </button>
+                <button class="mobile-tab" data-mtab="dims" onclick="MobileUI.switchTab('dims')">
+                    <span class="mtab-icon">&#8596;</span><span class="mtab-label">Dims</span>
+                </button>
+                <button class="mobile-tab" data-mtab="view" onclick="MobileUI.switchTab('view')">
+                    <span class="mtab-icon">&#128065;</span><span class="mtab-label">View</span>
+                </button>
+                <button class="mobile-tab" data-mtab="snap" onclick="MobileUI.switchTab('snap')">
+                    <span class="mtab-icon">&#9678;</span><span class="mtab-label">Snap</span>
+                </button>
             </div>
-            <!-- Draw tools -->
-            <div class="mobile-tool-row active" data-mtab="draw">
+            <!-- Draw tools - grid layout with 2 rows -->
+            <div class="mobile-tool-grid active" data-mtab="draw">
                 <button class="mobile-tool-btn" onclick="App.executeCommand('line')"><i class="m-icon">/</i><span class="m-label">Line</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('polyline')"><i class="m-icon">~</i><span class="m-label">Pline</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('circle')"><i class="m-icon">&#9675;</i><span class="m-label">Circle</span></button>
@@ -892,12 +913,12 @@
                 <button class="mobile-tool-btn" onclick="App.executeCommand('polygon')"><i class="m-icon">&#11039;</i><span class="m-label">Polygon</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('text')"><i class="m-icon">A</i><span class="m-label">Text</span></button>
                 <button class="mobile-tool-btn" data-cmd="hatch" onclick="App.executeCommand('hatch')"><i class="m-icon">&#9618;</i><span class="m-label">Hatch</span></button>
-                <button class="mobile-tool-btn" onclick="App.executeCommand('donut')"><i class="m-icon">&#9678;</i><span class="m-label">Donut</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('spline')"><i class="m-icon">&#8767;</i><span class="m-label">Spline</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('donut')"><i class="m-icon">&#9678;</i><span class="m-label">Donut</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('point')"><i class="m-icon">&#8226;</i><span class="m-label">Point</span></button>
             </div>
             <!-- Modify tools -->
-            <div class="mobile-tool-row" data-mtab="modify">
+            <div class="mobile-tool-grid" data-mtab="modify">
                 <button class="mobile-tool-btn" onclick="App.executeCommand('move')"><i class="m-icon">&#8680;</i><span class="m-label">Move</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('copy')"><i class="m-icon">&#8658;</i><span class="m-label">Copy</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('rotate')"><i class="m-icon">&#8635;</i><span class="m-label">Rotate</span></button>
@@ -912,7 +933,7 @@
                 <button class="mobile-tool-btn" onclick="App.executeCommand('array')"><i class="m-icon">&#9638;</i><span class="m-label">Array</span></button>
             </div>
             <!-- Dimension tools -->
-            <div class="mobile-tool-row" data-mtab="dims">
+            <div class="mobile-tool-grid" data-mtab="dims">
                 <button class="mobile-tool-btn" onclick="App.executeCommand('dimlinear')"><i class="m-icon">&#8596;</i><span class="m-label">Linear</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('dimaligned')"><i class="m-icon">&#8598;</i><span class="m-label">Aligned</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('dimangular')"><i class="m-icon">&#8736;</i><span class="m-label">Angular</span></button>
@@ -926,7 +947,7 @@
                 <button class="mobile-tool-btn" onclick="App.executeCommand('field')"><i class="m-icon">&#402;</i><span class="m-label">Field</span></button>
             </div>
             <!-- View tools -->
-            <div class="mobile-tool-row" data-mtab="view">
+            <div class="mobile-tool-grid" data-mtab="view">
                 <button class="mobile-tool-btn" onclick="Commands.zoomExtents()"><i class="m-icon">&#8703;</i><span class="m-label">Extents</span></button>
                 <button class="mobile-tool-btn" onclick="CAD.zoomIn(); Renderer.draw();"><i class="m-icon">+</i><span class="m-label">Zoom In</span></button>
                 <button class="mobile-tool-btn" onclick="CAD.zoomOut(); Renderer.draw();"><i class="m-icon">-</i><span class="m-label">Zoom Out</span></button>
@@ -935,19 +956,17 @@
                 <button class="mobile-tool-btn" onclick="App.executeCommand('list')"><i class="m-icon">&#9776;</i><span class="m-label">List</span></button>
                 <button class="mobile-tool-btn" onclick="MobileUI.showLayerPanel()"><i class="m-icon">&#9783;</i><span class="m-label">Layer</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('layout')"><i class="m-icon">&#128196;</i><span class="m-label">Layout</span></button>
-                <button class="mobile-tool-btn" onclick="App.executeCommand('dimstyle')"><i class="m-icon">&#128396;</i><span class="m-label">DimStyle</span></button>
-                <button class="mobile-tool-btn" onclick="App.executeCommand('layerstate')"><i class="m-icon">&#9776;</i><span class="m-label">LayerState</span></button>
-                <button class="mobile-tool-btn" onclick="App.executeCommand('help')"><i class="m-icon">?</i><span class="m-label">Help</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('count')"><i class="m-icon">&#9839;</i><span class="m-label">Count</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('quickcalc')"><i class="m-icon">&#9107;</i><span class="m-label">Calc</span></button>
-                <button class="mobile-tool-btn" onclick="App.executeCommand('pagesetup')"><i class="m-icon">&#128196;</i><span class="m-label">PageSetup</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('help')"><i class="m-icon">?</i><span class="m-label">Help</span></button>
+                <button class="mobile-tool-btn" onclick="App.executeCommand('pagesetup')"><i class="m-icon">&#128196;</i><span class="m-label">Page</span></button>
             </div>
             <!-- Snap controls -->
-            <div class="mobile-tool-row" data-mtab="snap">
-                <button class="mobile-tool-btn" id="mSnapOsnap" onclick="MobileUI.toggleSnap('osnap')"><i class="m-icon">&#9678;</i><span class="m-label">OSNAP</span></button>
-                <button class="mobile-tool-btn" id="mSnapGrid" onclick="MobileUI.toggleSnap('grid')"><i class="m-icon">#</i><span class="m-label">Grid</span></button>
-                <button class="mobile-tool-btn" id="mSnapOrtho" onclick="MobileUI.toggleSnap('ortho')"><i class="m-icon">&#9482;</i><span class="m-label">Ortho</span></button>
-                <button class="mobile-tool-btn" id="mSnapPolar" onclick="MobileUI.toggleSnap('polar')"><i class="m-icon">&#8737;</i><span class="m-label">Polar</span></button>
+            <div class="mobile-tool-grid" data-mtab="snap">
+                <button class="mobile-tool-btn snap-toggle-btn" id="mSnapOsnap" onclick="MobileUI.toggleSnap('osnap')"><i class="m-icon">&#9678;</i><span class="m-label">OSNAP</span></button>
+                <button class="mobile-tool-btn snap-toggle-btn" id="mSnapGrid" onclick="MobileUI.toggleSnap('grid')"><i class="m-icon">#</i><span class="m-label">Grid</span></button>
+                <button class="mobile-tool-btn snap-toggle-btn" id="mSnapOrtho" onclick="MobileUI.toggleSnap('ortho')"><i class="m-icon">&#9482;</i><span class="m-label">Ortho</span></button>
+                <button class="mobile-tool-btn snap-toggle-btn" id="mSnapPolar" onclick="MobileUI.toggleSnap('polar')"><i class="m-icon">&#8737;</i><span class="m-label">Polar</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('find')"><i class="m-icon">&#128269;</i><span class="m-label">Find</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('osnap')"><i class="m-icon">&#9881;</i><span class="m-label">Settings</span></button>
             </div>
@@ -1101,7 +1120,7 @@
     <div class="mobile-menu-overlay" id="mobileMenuOverlay" onclick="MobileUI.closeMenu(event)">
         <div class="mobile-menu-drawer" id="mobileMenuDrawer">
             <div class="mobile-menu-header">
-                <div class="logo"><svg class="logo-icon" width="20" height="20" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#1a5fb4"/><path d="M6 26L16 4l10 22" fill="none" stroke="#62a0ea" stroke-width="2.5" stroke-linejoin="round"/><circle cx="16" cy="14" r="5" fill="none" stroke="white" stroke-width="2"/><line x1="16" y1="9" x2="16" y2="4" stroke="white" stroke-width="1.5"/><line x1="8" y1="22" x2="24" y2="22" stroke="#62a0ea" stroke-width="1.5" stroke-dasharray="2 2"/></svg>Browser<span>CAD</span></div>
+                <div class="logo"><svg class="logo-icon" width="20" height="20" viewBox="0 0 32 32"><rect width="32" height="32" rx="4" fill="#192a56"/><rect x="3" y="3" width="26" height="26" rx="2" fill="none" stroke="#3498db" stroke-width="1"/><line x1="3" y1="16" x2="29" y2="16" stroke="#2c3e6b" stroke-width=".5"/><line x1="16" y1="3" x2="16" y2="29" stroke="#2c3e6b" stroke-width=".5"/><polyline points="8,22 12,12 20,18 24,8" fill="none" stroke="#00e676" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="22" r="1.5" fill="#00e676"/><circle cx="24" cy="8" r="1.5" fill="#00e676"/><line x1="24" y1="4" x2="24" y2="12" stroke="#ff5252" stroke-width=".8"/><line x1="20" y1="8" x2="28" y2="8" stroke="#ff5252" stroke-width=".8"/></svg>Browser<span>CAD</span></div>
                 <button class="mobile-menu-close" onclick="MobileUI.closeMenu()">&times;</button>
             </div>
             <div class="mobile-menu-section">
@@ -1149,18 +1168,19 @@
 
     <!-- Mobile Gesture Hints (shown on first visit) -->
     <div class="gesture-hints-overlay" id="gestureHintsOverlay">
+        <div class="gesture-hints-title">Welcome to BrowserCAD</div>
         <div class="gesture-hint">
-            <div class="gesture-hint-icon">&#9758;</div>
+            <div class="gesture-hint-icon">&#9997;</div>
             <div class="gesture-hint-text">
-                <strong>Tap to Draw</strong>
-                <span>Tap the canvas to place points and draw entities</span>
+                <strong>Select a Tool, Then Tap</strong>
+                <span>Pick a tool from the bottom bar, then tap the canvas to place points</span>
             </div>
         </div>
         <div class="gesture-hint">
             <div class="gesture-hint-icon">&#9995;</div>
             <div class="gesture-hint-text">
-                <strong>Two-Finger Pan</strong>
-                <span>Drag with two fingers to move the view around</span>
+                <strong>One-Finger Pan (no tool)</strong>
+                <span>When no tool is active, drag with one finger to pan the view</span>
             </div>
         </div>
         <div class="gesture-hint">
@@ -1173,18 +1193,18 @@
         <div class="gesture-hint">
             <div class="gesture-hint-icon">&#8634;</div>
             <div class="gesture-hint-text">
-                <strong>Double-Tap</strong>
-                <span>Double-tap the canvas to zoom to extents</span>
+                <strong>Double-Tap = Zoom Extents</strong>
+                <span>Double-tap the canvas to fit everything in view</span>
             </div>
         </div>
         <div class="gesture-hint">
             <div class="gesture-hint-icon">&#9776;</div>
             <div class="gesture-hint-text">
-                <strong>Long Press</strong>
-                <span>Press and hold for the context menu</span>
+                <strong>Long Press = Context Menu</strong>
+                <span>Press and hold for options like copy, paste, and more</span>
             </div>
         </div>
-        <button class="gesture-hints-dismiss" onclick="MobileUI.dismissGestureHints()">Got it!</button>
+        <button class="gesture-hints-dismiss" onclick="MobileUI.dismissGestureHints()">Start Drawing</button>
     </div>
 
     <!-- Load JavaScript Modules -->

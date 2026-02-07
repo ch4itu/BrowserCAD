@@ -591,10 +591,14 @@ const App = {
                 }
             }, 500);
 
-            // In pan mode or no active command: start panning
+            // Smart pan: pan mode, OR no active command and not selecting
+            // This makes single-finger drag pan when idle, draw when tool is active
             if (this.touchState.panModeActive || (!CAD.activeCmd && !CAD.selectionMode)) {
                 this.touchState.isPanning = true;
             }
+
+            // Show crosshair when command is active
+            MobileUI.updateCrosshair(x, y, world);
 
             const world = Renderer.screenToWorld(x, y);
             CAD.cursor = world;
@@ -649,6 +653,7 @@ const App = {
                 CAD.cursorWorld = world;
                 CAD.tempEnd = world;
                 UI.updateCoordinates(world.x, world.y);
+                MobileUI.updateCrosshair(x, y, world);
             }
         } else if (e.touches.length === 2) {
             // Pinch zoom + two-finger pan
@@ -721,6 +726,9 @@ const App = {
 
             this.touchState.isPanning = false;
             this.touchState.moved = false;
+
+            // Hide crosshair after draw completes
+            MobileUI.hideCrosshair();
         }
     },
 
@@ -858,6 +866,10 @@ const MobileUI = {
         // Update prompt text
         this._els.promptText.textContent = promptText || message;
         this._els.promptText.classList.toggle('active', !!CAD.activeCmd);
+        this._els.promptText.classList.remove('idle-hint');
+
+        // Update draw bar state
+        this._updateDrawBarState();
 
         // Show/hide Close button for polyline-like commands
         const closable = ['polyline', 'polygon', 'spline'].includes(CAD.activeCmd);
@@ -881,14 +893,16 @@ const MobileUI = {
             this._els.toolBadge.textContent = name;
             this._els.toolBadge.classList.add('visible');
             this._els.promptText.classList.add('active');
+            this._els.promptText.classList.remove('idle-hint');
 
             // Track for recent commands
             this.trackCommand(CAD.activeCmd);
         } else {
             // Idle
             this._els.toolBadge.classList.remove('visible');
-            this._els.promptText.textContent = 'Tap a tool to begin';
+            this._els.promptText.textContent = 'Tap a tool to begin drawing';
             this._els.promptText.classList.remove('active');
+            this._els.promptText.classList.add('idle-hint');
             this._lastToolName = '';
             this._lastPrompt = '';
 
@@ -899,7 +913,13 @@ const MobileUI = {
 
             // Update recent commands visibility
             this._updateRecentCommands();
+
+            // Hide crosshair when no command
+            this.hideCrosshair();
         }
+
+        // Update draw bar active state
+        this._updateDrawBarState();
 
         // Update status strip
         this._updateStatusStrip();
@@ -1251,7 +1271,7 @@ const MobileUI = {
         document.querySelectorAll('.mobile-tab').forEach(tab => {
             tab.classList.toggle('active', tab.dataset.mtab === tabName);
         });
-        document.querySelectorAll('.mobile-tool-row').forEach(row => {
+        document.querySelectorAll('.mobile-tool-row, .mobile-tool-grid').forEach(row => {
             row.classList.toggle('active', row.dataset.mtab === tabName);
         });
     },
@@ -1603,13 +1623,13 @@ const MobileUI = {
             if (btn) btn.classList.add('pan-active');
             if (label) label.textContent = 'Pan';
             if (icon) icon.innerHTML = '&#9995;';
-            this.showToast('Pan mode ON', 'info');
+            this.showToast('Pan mode: drag to move view', 'info');
         } else {
             viewport.style.cursor = 'crosshair';
             if (btn) btn.classList.remove('pan-active');
             if (label) label.textContent = 'Draw';
             if (icon) icon.innerHTML = '&#9997;';
-            this.showToast('Draw mode ON', 'info');
+            this.showToast('Draw mode: tap to place points', 'info');
         }
     },
 
@@ -1853,6 +1873,51 @@ const MobileUI = {
                 this.switchTab(this._tabNames[newIdx]);
             }
         }, { passive: true });
+    },
+
+    // ==========================================
+    // CROSSHAIR OVERLAY (precision drawing)
+    // ==========================================
+
+    updateCrosshair(screenX, screenY, world) {
+        if (!CAD.activeCmd) return;
+        const el = document.getElementById('mobileCrosshair');
+        if (!el) return;
+
+        el.classList.add('visible');
+        el.style.left = screenX + 'px';
+        el.style.top = screenY + 'px';
+
+        const coordEl = document.getElementById('crosshairCoord');
+        if (coordEl && world) {
+            coordEl.textContent = world.x.toFixed(2) + ', ' + world.y.toFixed(2);
+        }
+    },
+
+    hideCrosshair() {
+        const el = document.getElementById('mobileCrosshair');
+        if (el) el.classList.remove('visible');
+    },
+
+    // ==========================================
+    // DRAW BAR ACTIVE STATE
+    // ==========================================
+
+    _updateDrawBarState() {
+        const drawBar = document.getElementById('mobileDrawBar');
+        if (!drawBar) return;
+
+        if (CAD.activeCmd) {
+            drawBar.classList.add('cmd-active');
+        } else {
+            drawBar.classList.remove('cmd-active');
+        }
+
+        // Update ortho button state
+        const orthoBtn = document.getElementById('mdbOrthoBtn');
+        if (orthoBtn) {
+            orthoBtn.classList.toggle('active', !!CAD.orthoEnabled);
+        }
     }
 };
 // Initialize app when DOM is ready
