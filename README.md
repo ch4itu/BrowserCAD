@@ -63,6 +63,7 @@ BrowserCAD is a browser-based CAD experience inspired by industry-standard CAD w
 | BOUNDARY | `BO` | Detect enclosing boundary at click point and create a polyline. |
 | MLINE | `ML` | Draw multiple parallel lines. |
 | TABLE | `TB` | Create a table grid. |
+| TRACE | `TRACE` | Draw thick filled bands (pairs of points). |
 
 ### IMAGEATTACH workflow
 
@@ -129,6 +130,7 @@ Defaults for scale/rotation are reused when you press **Enter** or **Space**.
 | COPYBASE |  | Copy with a base point. |
 | PASTEBLOCK |  | Paste clipboard as a block reference. |
 | REVERSE |  | Reverse line/arc/polyline direction. |
+| IMAGECLIP | `ICL` | Clip an image to a rectangular boundary (New/ON/OFF/Delete). |
 
 ### MATCHPROP workflow
 
@@ -151,6 +153,8 @@ Defaults for scale/rotation are reused when you press **Enter** or **Space**.
 | --- | --- | --- |
 | BLOCK | `B`, `BMAKE` | Create a block from selected objects. |
 | INSERT | `I`, `DDINSERT` | Insert a block reference. |
+| ATTDEF | `ATT` | Define block attributes (tag, prompt, default value). |
+| ATTEDIT | `ATE` | Edit attribute values on block references. |
 
 ### BLOCK workflow
 
@@ -170,7 +174,23 @@ Defaults for scale/rotation are reused when you press **Enter** or **Space**.
 
 Block references can be moved, rotated, scaled, mirrored, and copied like any other entity. Use `EXPLODE` to convert a block reference back to individual entities.
 
-## Dimension Commands
+### ATTDEF workflow
+
+1. Run `ATTDEF` (or `ATT`).
+2. Enter the attribute tag (identifier name).
+3. Enter the prompt text (shown when inserting the block).
+4. Enter a default value.
+5. Enter text height.
+6. Click to place the attribute definition.
+
+### ATTEDIT workflow
+
+1. Select a block reference containing attributes.
+2. Run `ATTEDIT` (or `ATE`).
+3. Enter `tag=value` pairs to update attribute values (e.g. `TITLE=New Title`).
+4. Press **Enter** to finish editing.
+
+## Dimension & Annotation Commands
 
 | Command | Alias | Description |
 | --- | --- | --- |
@@ -186,6 +206,12 @@ Block references can be moved, rotated, scaled, mirrored, and copied like any ot
 | DIMARC | `DIMARC` | Arc length dimension (select arc, place dimension arc). |
 | DIMBREAK | `DIMBREAK` | Toggle dimension line break on/off. |
 | DIMSPACE | `DIMSPACE` | Evenly space selected dimension lines at a given interval. |
+| MLEADER | `MLD` | Create multileader with line segments and text. |
+| MLEADERSTYLE | `MLDS` | Create and manage multileader styles. |
+| MLEADERALIGN |  | Align text positions of selected multileaders. |
+| MLEADERCOLLECT |  | Collect multiple leaders into a single multileader. |
+| TOLERANCE | `TOL` | Insert GD&T feature control frames. |
+| FIELD |  | Insert dynamic field (Date, Filename, Author, NumObjects, Title). |
 
 ### DIMORDINATE workflow
 
@@ -200,6 +226,32 @@ Block references can be moved, rotated, scaled, mirrored, and copied like any ot
 2. Run `QDIM`.
 3. Click to place the dimension line — dimensions are auto-generated for every selected object.
 
+### MLEADER workflow
+
+1. Run `MLEADER` (or `MLD`).
+2. Click to place leader points (line segments).
+3. Press **Enter** to finish placing points.
+4. Click to place the text position.
+5. Enter the leader text.
+
+### TOLERANCE workflow
+
+1. Run `TOLERANCE` (or `TOL`).
+2. Enter the geometric characteristic symbol (e.g., `p` for position, `r` for perpendicularity).
+3. Enter tolerance value (e.g., `0.05`).
+4. Enter datum references (e.g., `A B` or press **Enter** to skip).
+5. Click to place the feature control frame.
+
+Symbols: `u` Position, `r` Perpendicularity, `p` Parallelism, `a` Angularity, `c` Concentricity, `s` Symmetry, `t` Circular Runout, `x` Total Runout, `f` Flatness, `n` Cylindricity, `o` Roundness, `l` Straightness, `pf` Profile Surface, `pl` Profile Line.
+
+### FIELD workflow
+
+1. Run `FIELD`.
+2. Choose a field type: **Date**, **Filename**, **Author**, **NumObjects**, or **Title**.
+3. Click to place the field.
+
+Fields display dynamic values and can be refreshed with `REGEN`.
+
 ## Inquiry Commands
 
 | Command | Alias | Description |
@@ -208,6 +260,8 @@ Block references can be moved, rotated, scaled, mirrored, and copied like any ot
 | AREA | `AA` | Measure area. |
 | ID | `ID` | Read a coordinate. |
 | LIST | `LI` | List selected entity properties. |
+| QUICKCALC | `QC` | Open the in-line calculator for math expressions. |
+| COUNT |  | Count entities by type and list block reference counts. |
 
 ## Selection Commands
 
@@ -265,6 +319,8 @@ When multiple objects overlap at the click point, clicking again in the same spo
 | MSPACE |  | Activate model space inside a viewport. |
 | PSPACE |  | Return to paper space. |
 | PLOT |  | Plot the current layout to PDF. |
+| PAGESETUP | `PSETUP` | Configure paper size, orientation, scale, and margins. |
+| VPSCALE | `XP` | Set viewport scale factor. |
 
 ### VIEW workflow
 
@@ -300,6 +356,9 @@ When multiple objects overlap at the click point, clicking again in the same spo
 | DIMDEC | Set dimension precision (decimal places). |
 | LINETYPE | Set current or selected linetype (continuous/dashed/dotted/dashdot). |
 | LTSCALE | Set global linetype scale. |
+| MLEADERSTYLE | Create/manage multileader styles (arrow, text, landing). |
+| MLSTYLE | Create/manage multiline styles (element offsets, caps). |
+| DIMSTYLE | Save/restore dimension variable presets. |
 
 ## Drafting Aids & Snaps
 
@@ -336,9 +395,9 @@ The Properties panel reflects per-entity attributes, including color overrides (
 
 ## Layouts & Layer States
 
-BrowserCAD includes layout tabs (Model + Paper Space), viewport creation, and a lightweight layer state manager. Use `LAYOUT` to create/switch/delete layouts, `MVIEW` to create viewports, `MSPACE`/`PSPACE` to toggle the active space, and `PLOT` for PDF output. `LAYERSTATE` saves/restores named layer configurations.
+BrowserCAD includes layout tabs (Model + Paper Space), viewport creation, and a lightweight layer state manager. Use `LAYOUT` to create/switch/delete layouts, `MVIEW` to create viewports, `MSPACE`/`PSPACE` to toggle the active space, and `PLOT` for PDF output. `PAGESETUP` configures paper size, orientation, scale, and margins. `VPSCALE` (or `XP`) sets viewport scale. `LAYERSTATE` saves/restores named layer configurations.
 
-Dimension styles can be managed via `DIMSTYLE`, which lets you save and switch between dimension variable presets.
+Styles can be managed via `DIMSTYLE` (dimension presets), `MLEADERSTYLE` (multileader arrow/text/landing settings), and `MLSTYLE` (multiline element offsets and end caps).
 
 ## Lisp Guide
 

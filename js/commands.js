@@ -301,7 +301,6 @@ const Commands = {
         // Phase 3: Advanced Drawing & Editing
         'chprop': 'chprop',
         'change': 'chprop',
-        'ch': 'chprop',
 
         'draworder': 'draworder',
         'dr': 'draworder',
@@ -1490,7 +1489,6 @@ const Commands = {
                 break;
 
             case 'tolerance':
-                UI.log('TOLERANCE: Specify insertion point:', 'prompt');
                 CAD.cmdOptions.toleranceFrames = [];
                 CAD.cmdOptions.toleranceStep = 'symbol';
                 UI.log('Enter geometric characteristic (u=Position, r=Perpendicularity, p=Parallelism, a=Angularity, y=Cylindricity, c=Concentricity, s=Symmetry, t=Flatness, l=Straightness, i=Circularity, x=Runout):', 'prompt');
@@ -3620,6 +3618,28 @@ const Commands = {
             case 'reverse':
                 this.executeReverse();
                 break;
+
+            // New AutoCAD LT features
+            case 'attedit':
+                this.executeAttEdit();
+                break;
+            case 'mleadercollect':
+                this.executeMLeaderCollect();
+                break;
+            case 'mleaderalign':
+                this.executeMLeaderAlign();
+                break;
+            case 'imageclip': {
+                const imgEnt = CAD.getEntity(CAD.selectedIds[0]);
+                if (imgEnt && imgEnt.type === 'image') {
+                    CAD.cmdOptions.clipTarget = imgEnt;
+                    UI.log('IMAGECLIP: Enter clipping option [ON/OFF/Delete/New boundary]:', 'prompt');
+                } else {
+                    UI.log('IMAGECLIP: Selected entity is not an image.', 'error');
+                    this.finishCommand();
+                }
+                break;
+            }
         }
     },
 
@@ -6954,6 +6974,47 @@ const Commands = {
                 return true;
             }
 
+            // New AutoCAD LT feature empty-input handlers
+            if (state.activeCmd === 'mleader' && state.step === 2) {
+                UI.log('MLEADER: Text required to finish multileader.', 'error');
+                return true;
+            }
+
+            if (state.activeCmd === 'trace' && state.cmdOptions.traceStep === 'width') {
+                state.cmdOptions.traceStep = 'points';
+                UI.log(`TRACE: Width = ${state.cmdOptions.traceWidth}. Specify first point:`, 'prompt');
+                return true;
+            }
+
+            if (state.activeCmd === 'tolerance') {
+                const tStep = state.cmdOptions.toleranceStep;
+                if (tStep === 'datum1' || tStep === 'datum2' || tStep === 'datum3') {
+                    // Skip optional datum on Enter
+                    this.handleToleranceInput('');
+                    return true;
+                }
+                if (tStep === 'symbol' || tStep === 'value1') {
+                    UI.log('TOLERANCE: Value required.', 'error');
+                    return true;
+                }
+            }
+
+            if (state.activeCmd === 'pagesetup') {
+                this.finishCommand();
+                Renderer.draw();
+                return true;
+            }
+
+            if (state.activeCmd === 'quickcalc') {
+                UI.log('Enter expression or "exit":', 'prompt');
+                return true;
+            }
+
+            if (state.activeCmd === 'mleaderstyle' || state.activeCmd === 'mlstyle') {
+                this.finishCommand();
+                return true;
+            }
+
             if (state.activeCmd) {
                 this.finishCommand();
                 Renderer.draw();
@@ -8554,11 +8615,10 @@ const Commands = {
             text: text,
             textPosition: textPos,
             height: style.textHeight || CAD.textHeight || 2.5,
-            textHeight: style.textHeight || CAD.textHeight || 2.5,
             arrowType: style.arrowType || 'closed',
             arrowSize: style.arrowSize || 3,
             doglegLength: style.doglegLength || 8,
-            style: CAD.currentMLeaderStyle
+            mleaderStyle: CAD.currentMLeaderStyle
         });
         UI.log('Multileader created.');
         this.finishCommand();
@@ -8647,9 +8707,37 @@ const Commands = {
         const collectedText = mleaders.map(m => m.text).join('\n');
         CAD.updateEntity(first.id, { text: collectedText }, true);
         for (let i = 1; i < mleaders.length; i++) {
-            CAD.removeEntity(mleaders[i].id);
+            CAD.removeEntity(mleaders[i].id, true);
         }
         UI.log(`MLEADERCOLLECT: Collected ${mleaders.length} leaders into one.`);
+        this.finishCommand();
+    },
+
+    executeMLeaderAlign() {
+        const mleaders = CAD.selectedIds
+            .map(id => CAD.getEntity(id))
+            .filter(e => e && e.type === 'mleader');
+        if (mleaders.length < 2) {
+            UI.log('MLEADERALIGN: Select at least 2 multileaders.', 'error');
+            this.finishCommand();
+            return;
+        }
+        CAD.saveUndoState('MLEADERALIGN');
+        // Align text positions to match the first leader's Y coordinate
+        const targetY = mleaders[0].textPosition ? mleaders[0].textPosition.y : mleaders[0].points[mleaders[0].points.length - 1].y;
+        for (let i = 1; i < mleaders.length; i++) {
+            const ml = mleaders[i];
+            if (ml.textPosition) {
+                ml.textPosition.y = targetY;
+            }
+            // Align last leader point Y to match
+            if (ml.points && ml.points.length > 0) {
+                ml.points[ml.points.length - 1].y = targetY;
+            }
+            CAD.updateEntity(ml.id, ml, true);
+        }
+        UI.log(`MLEADERALIGN: Aligned ${mleaders.length} leaders.`);
+        Renderer.draw();
         this.finishCommand();
     },
 
@@ -8681,7 +8769,7 @@ const Commands = {
             position: { ...point },
             text: state.cmdOptions.attdefTag || 'ATTRIBUTE',
             height: height,
-            style: CAD.currentTextStyle,
+            textStyle: CAD.currentTextStyle,
             isAttDef: true,
             attTag: state.cmdOptions.attdefTag || 'ATTRIBUTE',
             attPrompt: state.cmdOptions.attdefPrompt || '',
@@ -8712,6 +8800,7 @@ const Commands = {
             this.finishCommand();
             return;
         }
+        CAD.saveUndoState('ATTEDIT');
         if (!blockRef.attributes) blockRef.attributes = [];
         state.cmdOptions.atteditBlock = blockRef;
         state.cmdOptions.atteditDefs = attDefs;
@@ -8757,7 +8846,6 @@ const Commands = {
             UI.log(`ATTEDIT: [${attrs[nextIdx].tag}] <${attrs[nextIdx].value}>:`, 'prompt');
         } else {
             blockRef.attributes = attrs;
-            CAD.saveUndoState('ATTEDIT');
             CAD.updateEntity(blockRef.id, blockRef, true);
             UI.log('ATTEDIT: Attributes updated.');
             this.finishCommand();
@@ -8879,10 +8967,12 @@ const Commands = {
                 .replace(/\blog\b/gi, 'Math.log')
                 .replace(/\bexp\b/gi, 'Math.exp')
                 .replace(/\^/g, '**');
-            // Only allow safe characters
-            if (/^[0-9+\-*/().%,\s\^Math.sqrtincoeabuflrdxp]+$/i.test(expr) || true) {
+            // Only allow safe characters: digits, operators, parens, Math.xxx calls
+            if (/^[0-9+\-*/().%,\s*]+$/.test(expr) || /^[0-9+\-*/().%,\s*Math.sqrtsincoetanabceilogexpfloorundpw]+$/.test(expr)) {
                 const result = Function('"use strict"; return (' + expr + ')')();
                 UI.log(`  = ${result}`, 'info');
+            } else {
+                UI.log('QUICKCALC: Expression contains invalid characters.', 'error');
             }
         } catch (e) {
             UI.log(`QUICKCALC: Error evaluating "${input}": ${e.message}`, 'error');
@@ -9183,16 +9273,19 @@ const Commands = {
         const option = input.toLowerCase();
 
         if (option === 'on') {
+            CAD.saveUndoState('IMAGECLIP');
             state.cmdOptions.clipTarget.clipEnabled = true;
             CAD.updateEntity(state.cmdOptions.clipTarget.id, state.cmdOptions.clipTarget, true);
             UI.log('IMAGECLIP: Clipping enabled.');
             this.finishCommand();
         } else if (option === 'off') {
+            CAD.saveUndoState('IMAGECLIP');
             state.cmdOptions.clipTarget.clipEnabled = false;
             CAD.updateEntity(state.cmdOptions.clipTarget.id, state.cmdOptions.clipTarget, true);
             UI.log('IMAGECLIP: Clipping disabled.');
             this.finishCommand();
         } else if (option === 'delete' || option === 'd') {
+            CAD.saveUndoState('IMAGECLIP');
             delete state.cmdOptions.clipTarget.clipBoundary;
             state.cmdOptions.clipTarget.clipEnabled = false;
             CAD.updateEntity(state.cmdOptions.clipTarget.id, state.cmdOptions.clipTarget, true);
@@ -9260,7 +9353,7 @@ const Commands = {
             fieldType: fieldType,
             fieldExpression: `%<\\AcVar ${fieldType}>%`,
             evaluatedText: evaluated,
-            style: CAD.currentTextStyle
+            textStyle: CAD.currentTextStyle
         });
 
         // Track the field for updates

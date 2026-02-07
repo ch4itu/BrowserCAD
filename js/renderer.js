@@ -1169,7 +1169,7 @@ const Renderer = {
                     const p0 = entity.points[0];
                     const p1 = entity.points[1];
                     const angle = Math.atan2(p0.y - p1.y, p0.x - p1.x);
-                    const arrowSize = (entity.arrowSize || 3) / CAD.zoom * CAD.zoom;
+                    const arrowSize = entity.arrowSize || 3;
                     const arrowType = entity.arrowType || 'closed';
                     if (arrowType !== 'none') {
                         ctx.save();
@@ -1194,7 +1194,7 @@ const Renderer = {
                 // Draw text
                 if (entity.text) {
                     ctx.save();
-                    const tStyle = this._getTextFont ? this._getTextFont(entity) : { prefix: '', font: 'Arial, sans-serif' };
+                    const tStyle = this._getTextFont(entity);
                     const h = entity.height || entity.textHeight || 2.5;
                     ctx.font = `${tStyle.prefix}${h}px ${tStyle.font}`;
                     ctx.fillStyle = ctx.strokeStyle;
@@ -1256,8 +1256,10 @@ const Renderer = {
                         ctx.lineTo(entity.points[i].x, entity.points[i].y);
                     }
                     ctx.closePath();
+                    ctx.save();
                     ctx.fillStyle = ctx.strokeStyle;
                     ctx.fill();
+                    ctx.restore();
                 }
                 break;
             }
