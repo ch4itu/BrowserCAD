@@ -322,11 +322,20 @@ const Storage = {
         dxf += '0\nENDTAB\n';
 
         // LAYER table
+        const layerList = CAD.layers.length ? CAD.layers : [{
+            name: '0',
+            color: '#FFFFFF',
+            visible: true,
+            frozen: false,
+            locked: false,
+            lineType: 'Continuous',
+            lineWeight: 'Default'
+        }];
         dxf += '0\nTABLE\n';
         dxf += '2\nLAYER\n';
-        dxf += '70\n' + CAD.layers.length + '\n';
+        dxf += '70\n' + layerList.length + '\n';
 
-        CAD.layers.forEach(layer => {
+        layerList.forEach(layer => {
             const flags = (layer.frozen ? 1 : 0) + (layer.locked ? 4 : 0);
             const colorIndex = this.getAciColor(layer.color);
             const layerColor = layer.visible === false ? -Math.abs(colorIndex) : colorIndex;
@@ -345,15 +354,21 @@ const Storage = {
         dxf += '0\nENDTAB\n';
 
         // BLOCK_RECORD table
+        const blockNames = CAD.getBlockList().filter(name => name && name !== '*MODEL_SPACE' && name !== '*PAPER_SPACE');
         dxf += '0\nTABLE\n';
         dxf += '2\nBLOCK_RECORD\n';
-        dxf += '70\n2\n';
+        dxf += '70\n' + (2 + blockNames.length) + '\n';
         dxf += '0\nBLOCK_RECORD\n';
         dxf += '2\n*MODEL_SPACE\n';
         dxf += '70\n0\n';
         dxf += '0\nBLOCK_RECORD\n';
         dxf += '2\n*PAPER_SPACE\n';
         dxf += '70\n0\n';
+        blockNames.forEach(name => {
+            dxf += '0\nBLOCK_RECORD\n';
+            dxf += '2\n' + name + '\n';
+            dxf += '70\n0\n';
+        });
         dxf += '0\nENDTAB\n';
 
         dxf += '0\nENDSEC\n';
@@ -362,8 +377,23 @@ const Storage = {
         dxf += '0\nSECTION\n';
         dxf += '2\nBLOCKS\n';
 
+        // Required *MODEL_SPACE and *PAPER_SPACE blocks
+        dxf += '0\nBLOCK\n';
+        dxf += '2\n*MODEL_SPACE\n';
+        dxf += '70\n0\n';
+        dxf += '10\n0.0\n20\n0.0\n30\n0.0\n';
+        dxf += '3\n*MODEL_SPACE\n';
+        dxf += '1\n\n';
+        dxf += '0\nENDBLK\n';
+        dxf += '0\nBLOCK\n';
+        dxf += '2\n*PAPER_SPACE\n';
+        dxf += '70\n0\n';
+        dxf += '10\n0.0\n20\n0.0\n30\n0.0\n';
+        dxf += '3\n*PAPER_SPACE\n';
+        dxf += '1\n\n';
+        dxf += '0\nENDBLK\n';
+
         // Add each block definition
-        const blockNames = CAD.getBlockList();
         blockNames.forEach(name => {
             const block = CAD.getBlock(name);
             if (block) {

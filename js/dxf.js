@@ -1008,9 +1008,14 @@ const DXF = (() => {
         out.push('0', 'ENDTAB');
 
         // BLOCK_RECORD table - required for R2000+ DXF
-        out.push('0', 'TABLE', '2', 'BLOCK_RECORD', '70', '2');
+        const blockNames = Object.keys(state?.blocks || {})
+            .filter(name => name && name !== '*MODEL_SPACE' && name !== '*PAPER_SPACE');
+        out.push('0', 'TABLE', '2', 'BLOCK_RECORD', '70', String(2 + blockNames.length));
         out.push('0', 'BLOCK_RECORD', '2', '*MODEL_SPACE', '70', '0');
         out.push('0', 'BLOCK_RECORD', '2', '*PAPER_SPACE', '70', '0');
+        blockNames.forEach(name => {
+            out.push('0', 'BLOCK_RECORD', '2', name, '70', '0');
+        });
         out.push('0', 'ENDTAB');
 
         out.push('0', 'ENDSEC');
