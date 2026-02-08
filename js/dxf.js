@@ -1872,12 +1872,29 @@ const DXF = (() => {
         layerList.forEach((layer, idx) => {
             const handle = idx === 0 ? '12' : nextHandle();
             const flags = (layer.frozen ? 1 : 0) | (layer.locked ? 4 : 0);
-            const color = layer.color ?? 7;
-            const colorVal = layer.visible === false ? -Math.abs(color) : color;
+            const rawColor = layer.color ?? layer.trueColor ?? 7;
+            let aciColor = 7;
+            let trueColor = null;
+            if (typeof rawColor === 'string') {
+                if (rawColor.startsWith('#')) {
+                    trueColor = hexToInt(rawColor);
+                } else {
+                    const parsedColor = parseInt(rawColor, 10);
+                    if (Number.isFinite(parsedColor)) {
+                        aciColor = parsedColor;
+                    }
+                }
+            } else if (Number.isFinite(rawColor)) {
+                aciColor = rawColor;
+            }
+            const colorVal = layer.visible === false ? -Math.abs(aciColor) : aciColor;
             out.push('0', 'LAYER', '5', handle,
                 '100', 'AcDbSymbolTableRecord', '100', 'AcDbLayerTableRecord',
                 '2', layer.name || '0', '70', String(flags), '62', String(colorVal),
                 '6', layer.lineType || 'CONTINUOUS');
+            if (trueColor !== null) {
+                out.push('420', String(trueColor));
+            }
         });
         out.push('0', 'ENDTAB');
 
