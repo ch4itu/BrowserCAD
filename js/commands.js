@@ -3421,17 +3421,13 @@ const Commands = {
             result.clipSources = sourceEntities.map(e => this._extractClipSource(e));
         }
 
-        // Store source entity geometry info for accurate clip path rendering
+        // Store source entity geometry for accurate clip paths.
+        // Circles and ellipses use native ctx.arc() for perfect clipping.
+        // Polylines with arcs and splines use the densely interpolated
+        // boundaryPoints with lineTo() — avoids ctx.arc() winding issues
+        // under the Y-flip canvas transform.
         if (sourceEntity) {
-            if (sourceEntity.type === 'polyline' && sourceEntity.bulges && sourceEntity.bulges.length > 0) {
-                result.sourcePoints = [...sourceEntity.points];
-                result.sourceBulges = [...sourceEntity.bulges];
-                result.sourceClosed = sourceEntity.closed || false;
-            } else if (sourceEntity.type === 'polyline' && sourceEntity.isSpline) {
-                result.sourceIsSpline = true;
-                result.sourcePoints = [...sourceEntity.points];
-                result.sourceClosed = sourceEntity.closed || false;
-            } else if (sourceEntity.type === 'circle') {
+            if (sourceEntity.type === 'circle') {
                 result.sourceCircle = { center: { ...sourceEntity.center }, r: sourceEntity.r };
             } else if (sourceEntity.type === 'ellipse') {
                 result.sourceEllipse = { center: { ...sourceEntity.center }, rx: sourceEntity.rx, ry: sourceEntity.ry, rotation: sourceEntity.rotation || 0 };
@@ -3448,13 +3444,9 @@ const Commands = {
         if (entity.type === 'ellipse') {
             return { type: 'ellipse', center: { ...entity.center }, rx: entity.rx, ry: entity.ry, rotation: entity.rotation || 0 };
         }
-        if (entity.type === 'polyline' && entity.bulges && entity.bulges.length > 0) {
-            return { type: 'polyline-arc', points: [...entity.points], bulges: [...entity.bulges], closed: entity.closed || false };
-        }
-        if (entity.type === 'polyline' && entity.isSpline) {
-            return { type: 'spline', points: [...entity.points], closed: entity.closed || false };
-        }
-        // Default: use polygon points
+        // For polylines with arcs, splines, and all others: use densely
+        // interpolated polygon points. This avoids ctx.arc() direction
+        // issues under the Y-flip canvas transform.
         const pts = this.getHatchBoundaryPoints(entity);
         return { type: 'polygon', points: pts };
     },

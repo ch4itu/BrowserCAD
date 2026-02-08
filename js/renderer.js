@@ -851,26 +851,12 @@ const Renderer = {
             ctx.restore();
             ctx.closePath();
             ctx.clip();
-        } else if (entity.sourceBulges && entity.sourcePoints) {
-            ctx.beginPath();
-            const pts = entity.sourcePoints;
-            const bulges = entity.sourceBulges;
-            ctx.moveTo(pts[0].x, pts[0].y);
-            const numSegs = entity.sourceClosed ? pts.length : pts.length - 1;
-            for (let i = 0; i < numSegs; i++) {
-                const p1 = pts[i];
-                const p2 = pts[(i + 1) % pts.length];
-                const bulge = bulges[i] || 0;
-                this._drawPolylineSegment(ctx, p1, p2, bulge, false, true);
-            }
-            ctx.closePath();
-            ctx.clip();
-        } else if (entity.sourceIsSpline && entity.sourcePoints) {
-            ctx.beginPath();
-            this.drawSplineCurve(entity.sourcePoints, ctx, entity.sourceClosed);
-            ctx.closePath();
-            ctx.clip();
         } else {
+            // Default: straight line segments between boundary points.
+            // For polylines with arcs, boundaryPoints already contains
+            // densely interpolated arc points from _getPolylineWithArcsBoundaryPoints(),
+            // so lineTo() produces a smooth clip path that follows the arcs closely.
+            // This avoids ctx.arc() direction issues under the Y-flip canvas transform.
             ctx.beginPath();
             ctx.moveTo(boundaryPoints[0].x, boundaryPoints[0].y);
             for (let i = 1; i < boundaryPoints.length; i++) {
@@ -2617,16 +2603,6 @@ const Renderer = {
             ctx.scale(src.rx, src.ry);
             ctx.arc(0, 0, 1, 0, Math.PI * 2);
             ctx.restore();
-        } else if (src.type === 'polyline-arc') {
-            const pts = src.points;
-            const bulges = src.bulges;
-            ctx.moveTo(pts[0].x, pts[0].y);
-            const numSegs = src.closed ? pts.length : pts.length - 1;
-            for (let i = 0; i < numSegs; i++) {
-                this._drawPolylineSegment(ctx, pts[i], pts[(i + 1) % pts.length], bulges[i] || 0, false, true);
-            }
-        } else if (src.type === 'spline') {
-            this.drawSplineCurve(src.points, ctx, src.closed);
         } else if (src.type === 'polygon' && src.points && src.points.length >= 3) {
             ctx.moveTo(src.points[0].x, src.points[0].y);
             for (let i = 1; i < src.points.length; i++) {
@@ -2635,7 +2611,7 @@ const Renderer = {
         }
     },
 
-    _drawPolylineSegment(ctx, p1, p2, bulge, isFirst, invertArc) {
+    _drawPolylineSegment(ctx, p1, p2, bulge, isFirst) {
         if (isFirst) {
             ctx.moveTo(p1.x, p1.y);
         }
@@ -2665,10 +2641,7 @@ const Renderer = {
             const startAngle = Math.atan2(p1.y - cy, p1.x - cx);
             const endAngle = Math.atan2(p2.y - cy, p2.x - cx);
             // positive bulge = CCW arc in world space (Y-up)
-            // For strokes, direction doesn't matter visually.
-            // For clip/fill paths under Y-flip transform, invert to get correct winding.
-            let counterClockwise = bulge > 0;
-            if (invertArc) counterClockwise = !counterClockwise;
+            const counterClockwise = bulge > 0;
             ctx.arc(cx, cy, r, startAngle, endAngle, counterClockwise);
         }
     },
