@@ -3139,7 +3139,9 @@ const Commands = {
                 CAD.saveUndoState('Hatch');
                 const hatchEntity = this.createHatchEntity(
                     intersectionPoly,
-                    targets.map(entity => entity.id)
+                    targets.map(entity => entity.id),
+                    null,
+                    targets
                 );
                 CAD.addEntity(hatchEntity);
                 UI.log('Hatch applied to intersection.');
@@ -3310,7 +3312,7 @@ const Commands = {
         }
         if (entity.type === 'circle') {
             const points = [];
-            const steps = 36;
+            const steps = 72;
             for (let i = 0; i < steps; i++) {
                 const angle = (Math.PI * 2 * i) / steps;
                 points.push({
@@ -3322,12 +3324,15 @@ const Commands = {
         }
         if (entity.type === 'ellipse') {
             const points = [];
-            const steps = 36;
+            const steps = 72;
             for (let i = 0; i < steps; i++) {
                 const angle = (Math.PI * 2 * i) / steps;
+                const cos = Math.cos(angle);
+                const sin = Math.sin(angle);
+                const rot = entity.rotation || 0;
                 points.push({
-                    x: entity.center.x + Math.cos(angle) * entity.rx,
-                    y: entity.center.y + Math.sin(angle) * entity.ry
+                    x: entity.center.x + cos * entity.rx * Math.cos(rot) - sin * entity.ry * Math.sin(rot),
+                    y: entity.center.y + cos * entity.rx * Math.sin(rot) + sin * entity.ry * Math.cos(rot)
                 });
             }
             return points;
@@ -3379,7 +3384,7 @@ const Commands = {
         return result;
     },
 
-    createHatchEntity(boundaryPoints, clipIds = [], sourceEntity = null) {
+    createHatchEntity(boundaryPoints, clipIds = [], sourceEntity = null, sourceEntities = null) {
         const pattern = (CAD.hatchPattern || 'ansi31').toLowerCase();
         const userScale = CAD.hatchScale || 1;
         const userAngle = CAD.hatchAngle || 0;
@@ -3411,6 +3416,11 @@ const Commands = {
             clipIds
         };
 
+        // Store multiple source entities for intersection clip paths
+        if (sourceEntities && sourceEntities.length > 1) {
+            result.clipSources = sourceEntities.map(e => this._extractClipSource(e));
+        }
+
         // Store source entity geometry info for accurate clip path rendering
         if (sourceEntity) {
             if (sourceEntity.type === 'polyline' && sourceEntity.bulges && sourceEntity.bulges.length > 0) {
@@ -3429,6 +3439,24 @@ const Commands = {
         }
 
         return result;
+    },
+
+    _extractClipSource(entity) {
+        if (entity.type === 'circle') {
+            return { type: 'circle', center: { ...entity.center }, r: entity.r };
+        }
+        if (entity.type === 'ellipse') {
+            return { type: 'ellipse', center: { ...entity.center }, rx: entity.rx, ry: entity.ry, rotation: entity.rotation || 0 };
+        }
+        if (entity.type === 'polyline' && entity.bulges && entity.bulges.length > 0) {
+            return { type: 'polyline-arc', points: [...entity.points], bulges: [...entity.bulges], closed: entity.closed || false };
+        }
+        if (entity.type === 'polyline' && entity.isSpline) {
+            return { type: 'spline', points: [...entity.points], closed: entity.closed || false };
+        }
+        // Default: use polygon points
+        const pts = this.getHatchBoundaryPoints(entity);
+        return { type: 'polygon', points: pts };
     },
 
     findHatchTargets(point) {
