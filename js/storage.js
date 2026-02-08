@@ -176,7 +176,8 @@ const Storage = {
     exportDXF() {
         try {
             const dxf = this.generateDXF();
-            const blob = new Blob([dxf], { type: 'application/dxf' });
+            const encoder = new TextEncoder();
+            const blob = new Blob([encoder.encode(dxf)], { type: 'application/dxf' });
             this.downloadBlob(blob, `${CAD.drawingName || 'drawing'}.dxf`);
             UI.log('Drawing exported as DXF.');
         } catch (e) {
