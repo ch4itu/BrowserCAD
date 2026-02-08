@@ -858,10 +858,7 @@ const Renderer = {
             // so lineTo() produces a smooth clip path that follows the arcs closely.
             // This avoids ctx.arc() direction issues under the Y-flip canvas transform.
             ctx.beginPath();
-            ctx.moveTo(boundaryPoints[0].x, boundaryPoints[0].y);
-            for (let i = 1; i < boundaryPoints.length; i++) {
-                ctx.lineTo(boundaryPoints[i].x, boundaryPoints[i].y);
-            }
+            this._tracePolygonPath(ctx, boundaryPoints);
             ctx.closePath();
             ctx.clip();
         }
@@ -905,10 +902,7 @@ const Renderer = {
         if (isSelected || isHovered) {
             ctx.save();
             ctx.beginPath();
-            ctx.moveTo(boundaryPoints[0].x, boundaryPoints[0].y);
-            for (let i = 1; i < boundaryPoints.length; i++) {
-                ctx.lineTo(boundaryPoints[i].x, boundaryPoints[i].y);
-            }
+            this._tracePolygonPath(ctx, boundaryPoints);
             ctx.closePath();
             ctx.strokeStyle = isSelected ? this.colors.selection : this.colors.hover;
             ctx.lineWidth = (isSelected ? 2 : 1.5) / zoom;
@@ -2603,11 +2597,16 @@ const Renderer = {
             ctx.scale(src.rx, src.ry);
             ctx.arc(0, 0, 1, 0, Math.PI * 2);
             ctx.restore();
-        } else if (src.type === 'polygon' && src.points && src.points.length >= 3) {
-            ctx.moveTo(src.points[0].x, src.points[0].y);
-            for (let i = 1; i < src.points.length; i++) {
-                ctx.lineTo(src.points[i].x, src.points[i].y);
-            }
+        } else if (src.points && src.points.length >= 3) {
+            this._tracePolygonPath(ctx, src.points);
+        }
+    },
+
+    _tracePolygonPath(ctx, points) {
+        if (!points || points.length === 0) return;
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+            ctx.lineTo(points[i].x, points[i].y);
         }
     },
 
