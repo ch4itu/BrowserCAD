@@ -2024,8 +2024,8 @@ const DXF = (() => {
         out.push('0', 'DICTIONARY', '5', layoutDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
         out.push('0', 'DICTIONARY', '5', plotStyleDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1',
             '3', 'Normal', '350', plotStyleHandle);
-        out.push('0', 'PLOTSTYLE', '5', plotStyleHandle, '330', plotStyleDictHandle,
-            '100', 'AcDbPlotStyleName', '2', 'Normal', '70', '0');
+        out.push('0', 'ACDBPLACEHOLDER', '5', plotStyleHandle, '330', plotStyleDictHandle,
+            '100', 'AcDbPlaceHolder');
         out.push('0', 'ENDSEC');
 
         // ============================================================
