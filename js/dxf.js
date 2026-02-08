@@ -55,7 +55,7 @@ const DXF = (() => {
             const s = String(out[i]);
             if (s.length < 3) out[i] = s.padStart(3);
         }
-        return out.join('\r\n');
+        return out.join('\r\n') + '\r\n';
     };
 
     // Write entity header with handle and owner (330 is always written)
@@ -1784,104 +1784,15 @@ const DXF = (() => {
         out.push('0', 'ENDSEC');
     };
 
-    const writeObjectsSection = (out, modelLayoutHandle, paperLayoutHandle) => {
+    const writeObjectsSection = (out) => {
         out.push('0', 'SECTION', '2', 'OBJECTS');
 
-        // Root named object dictionary (handle A is conventional)
-        const rootDictHandle = 'A';
+        // Minimal root named object dictionary (handle C is conventional)
         out.push('0', 'DICTIONARY');
-        out.push('5', rootDictHandle);
+        out.push('5', 'C');
         out.push('330', '0');
         out.push('100', 'AcDbDictionary');
         out.push('281', '1');
-
-        // ACAD_GROUP dictionary
-        const groupDictHandle = nextHandle();
-        out.push('3', 'ACAD_GROUP');
-        out.push('350', groupDictHandle);
-
-        // ACAD_LAYOUT dictionary
-        const layoutDictHandle = nextHandle();
-        out.push('3', 'ACAD_LAYOUT');
-        out.push('350', layoutDictHandle);
-
-        // ACAD_MLINESTYLE dictionary
-        const mlineStyleDictHandle = nextHandle();
-        out.push('3', 'ACAD_MLINESTYLE');
-        out.push('350', mlineStyleDictHandle);
-
-        // ACAD_PLOTSTYLENAME dictionary
-        const plotStyleDictHandle = nextHandle();
-        out.push('3', 'ACAD_PLOTSTYLENAME');
-        out.push('350', plotStyleDictHandle);
-
-        // Empty ACAD_GROUP dictionary
-        out.push('0', 'DICTIONARY');
-        out.push('5', groupDictHandle);
-        out.push('330', rootDictHandle);
-        out.push('100', 'AcDbDictionary');
-        out.push('281', '1');
-
-        // ACAD_LAYOUT dictionary with Model and Layout entries
-        out.push('0', 'DICTIONARY');
-        out.push('5', layoutDictHandle);
-        out.push('330', rootDictHandle);
-        out.push('100', 'AcDbDictionary');
-        out.push('281', '1');
-        out.push('3', 'Model');
-        out.push('350', modelLayoutHandle);
-        out.push('3', 'Layout1');
-        out.push('350', paperLayoutHandle);
-
-        // Model space LAYOUT object
-        out.push('0', 'LAYOUT');
-        out.push('5', modelLayoutHandle);
-        out.push('330', layoutDictHandle);
-        out.push('100', 'AcDbPlotSettings');
-        out.push('1', '');
-        out.push('2', 'none_device');
-        out.push('4', '');
-        out.push('100', 'AcDbLayout');
-        out.push('1', 'Model');
-        out.push('70', '1');
-        out.push('71', '0');
-
-        // Paper space LAYOUT object
-        out.push('0', 'LAYOUT');
-        out.push('5', paperLayoutHandle);
-        out.push('330', layoutDictHandle);
-        out.push('100', 'AcDbPlotSettings');
-        out.push('1', '');
-        out.push('2', 'none_device');
-        out.push('4', '');
-        out.push('100', 'AcDbLayout');
-        out.push('1', 'Layout1');
-        out.push('70', '0');
-        out.push('71', '1');
-
-        // Empty ACAD_MLINESTYLE dictionary
-        out.push('0', 'DICTIONARY');
-        out.push('5', mlineStyleDictHandle);
-        out.push('330', rootDictHandle);
-        out.push('100', 'AcDbDictionary');
-        out.push('281', '1');
-
-        // ACAD_PLOTSTYLENAME - must be ACDBDICTIONARYWDFLT with "Normal" entry
-        const normalPlaceholderHandle = nextHandle();
-        out.push('0', 'ACDBDICTIONARYWDFLT');
-        out.push('5', plotStyleDictHandle);
-        out.push('330', rootDictHandle);
-        out.push('100', 'AcDbDictionary');
-        out.push('281', '1');
-        out.push('3', 'Normal');
-        out.push('350', normalPlaceholderHandle);
-        out.push('100', 'AcDbDictionaryWithDefault');
-        out.push('340', normalPlaceholderHandle);
-
-        // "Normal" plot style placeholder
-        out.push('0', 'ACDBPLACEHOLDER');
-        out.push('5', normalPlaceholderHandle);
-        out.push('330', plotStyleDictHandle);
 
         out.push('0', 'ENDSEC');
     };
@@ -1921,40 +1832,12 @@ const DXF = (() => {
         out.push('9', '$HANDSEED', '5', '__HANDSEED__');
         out.push('0', 'ENDSEC');
 
-        // CLASSES section (required for AC1015)
+        // CLASSES section (empty but present for AC1015 structure)
         out.push('0', 'SECTION', '2', 'CLASSES');
-        // ACDBDICTIONARYWDFLT class (needed for plot style dictionary)
-        out.push('0', 'CLASS');
-        out.push('1', 'ACDBDICTIONARYWDFLT');
-        out.push('2', 'AcDbDictionaryWithDefault');
-        out.push('3', 'ObjectDBX Classes');
-        out.push('90', '0');
-        out.push('280', '0');
-        out.push('281', '0');
-        // ACDBPLACEHOLDER class (needed for Normal plot style)
-        out.push('0', 'CLASS');
-        out.push('1', 'ACDBPLACEHOLDER');
-        out.push('2', 'AcDbPlaceHolder');
-        out.push('3', 'ObjectDBX Classes');
-        out.push('90', '0');
-        out.push('280', '0');
-        out.push('281', '0');
-        // LAYOUT class
-        out.push('0', 'CLASS');
-        out.push('1', 'LAYOUT');
-        out.push('2', 'AcDbLayout');
-        out.push('3', 'ObjectDBX Classes');
-        out.push('90', '0');
-        out.push('280', '0');
-        out.push('281', '0');
         out.push('0', 'ENDSEC');
 
         // TABLES section - returns model/paper space handles for ownership
         const { modelSpaceHandle, paperSpaceHandle } = writeTables(out, state.layers || [], state);
-
-        // Allocate layout handles for OBJECTS section
-        const modelLayoutHandle = nextHandle();
-        const paperLayoutHandle = nextHandle();
 
         // BLOCKS section
         writeBlocksSection(out, state.blocks || {}, state, modelSpaceHandle, paperSpaceHandle);
@@ -1962,8 +1845,8 @@ const DXF = (() => {
         // ENTITIES section - entities are owned by *Model_Space
         writeEntitiesSection(out, state.entities || [], state, modelSpaceHandle);
 
-        // OBJECTS section (required for AC1015)
-        writeObjectsSection(out, modelLayoutHandle, paperLayoutHandle);
+        // OBJECTS section (minimal root dictionary)
+        writeObjectsSection(out);
 
         out.push('0', 'EOF');
 
