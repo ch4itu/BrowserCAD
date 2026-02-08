@@ -175,9 +175,15 @@ const Storage = {
 
     exportDXF() {
         try {
-            const dxf = this.generateDXF();
-            const blob = new Blob([dxf], { type: 'application/dxf' });
-            this.downloadBlob(blob, `${CAD.drawingName || 'drawing'}.dxf`);
+            const dxfString = this.generateDXF();
+            // Create Blob WITHOUT charset=utf-8 to avoid BOM injection
+            const blob = new Blob([dxfString], { type: 'application/dxf' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${CAD.drawingName || 'drawing'}.dxf`;
+            link.click();
+            URL.revokeObjectURL(url);
             UI.log('Drawing exported as DXF.');
         } catch (e) {
             UI.log('Error exporting DXF: ' + e.message, 'error');
