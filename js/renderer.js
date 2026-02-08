@@ -826,13 +826,22 @@ const Renderer = {
         ctx.save();
 
         // Build clip path from boundary - use accurate geometry when available
-        ctx.beginPath();
-        if (entity.sourceCircle) {
-            // Circle: use native arc for perfect clip
+        // For intersections with multiple source entities, apply multiple clip paths
+        if (entity.clipSources && entity.clipSources.length > 0) {
+            for (const src of entity.clipSources) {
+                ctx.beginPath();
+                this._buildClipSourcePath(ctx, src);
+                ctx.closePath();
+                ctx.clip();
+            }
+        } else if (entity.sourceCircle) {
+            ctx.beginPath();
             const c = entity.sourceCircle;
             ctx.arc(c.center.x, c.center.y, c.r, 0, Math.PI * 2);
+            ctx.closePath();
+            ctx.clip();
         } else if (entity.sourceEllipse) {
-            // Ellipse: use native ellipse for perfect clip
+            ctx.beginPath();
             const e = entity.sourceEllipse;
             ctx.save();
             ctx.translate(e.center.x, e.center.y);
@@ -840,8 +849,10 @@ const Renderer = {
             ctx.scale(e.rx, e.ry);
             ctx.arc(0, 0, 1, 0, Math.PI * 2);
             ctx.restore();
+            ctx.closePath();
+            ctx.clip();
         } else if (entity.sourceBulges && entity.sourcePoints) {
-            // Polyline with arcs: trace arcs properly
+            ctx.beginPath();
             const pts = entity.sourcePoints;
             const bulges = entity.sourceBulges;
             ctx.moveTo(pts[0].x, pts[0].y);
@@ -852,18 +863,22 @@ const Renderer = {
                 const bulge = bulges[i] || 0;
                 this._drawPolylineSegment(ctx, p1, p2, bulge, false);
             }
+            ctx.closePath();
+            ctx.clip();
         } else if (entity.sourceIsSpline && entity.sourcePoints) {
-            // Spline: use smooth Catmull-Rom curve
+            ctx.beginPath();
             this.drawSplineCurve(entity.sourcePoints, ctx, entity.sourceClosed);
+            ctx.closePath();
+            ctx.clip();
         } else {
-            // Default: straight line segments between boundary points
+            ctx.beginPath();
             ctx.moveTo(boundaryPoints[0].x, boundaryPoints[0].y);
             for (let i = 1; i < boundaryPoints.length; i++) {
                 ctx.lineTo(boundaryPoints[i].x, boundaryPoints[i].y);
             }
+            ctx.closePath();
+            ctx.clip();
         }
-        ctx.closePath();
-        ctx.clip();
 
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         boundaryPoints.forEach(p => {
@@ -2590,6 +2605,34 @@ const Renderer = {
             return { font: style.font, prefix };
         }
         return { font: 'Arial, sans-serif', prefix: '' };
+    },
+
+    _buildClipSourcePath(ctx, src) {
+        if (src.type === 'circle') {
+            ctx.arc(src.center.x, src.center.y, src.r, 0, Math.PI * 2);
+        } else if (src.type === 'ellipse') {
+            ctx.save();
+            ctx.translate(src.center.x, src.center.y);
+            if (src.rotation) ctx.rotate(src.rotation);
+            ctx.scale(src.rx, src.ry);
+            ctx.arc(0, 0, 1, 0, Math.PI * 2);
+            ctx.restore();
+        } else if (src.type === 'polyline-arc') {
+            const pts = src.points;
+            const bulges = src.bulges;
+            ctx.moveTo(pts[0].x, pts[0].y);
+            const numSegs = src.closed ? pts.length : pts.length - 1;
+            for (let i = 0; i < numSegs; i++) {
+                this._drawPolylineSegment(ctx, pts[i], pts[(i + 1) % pts.length], bulges[i] || 0, false);
+            }
+        } else if (src.type === 'spline') {
+            this.drawSplineCurve(src.points, ctx, src.closed);
+        } else if (src.type === 'polygon' && src.points && src.points.length >= 3) {
+            ctx.moveTo(src.points[0].x, src.points[0].y);
+            for (let i = 1; i < src.points.length; i++) {
+                ctx.lineTo(src.points[i].x, src.points[i].y);
+            }
+        }
     },
 
     _drawPolylineSegment(ctx, p1, p2, bulge, isFirst) {
