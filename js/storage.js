@@ -449,8 +449,9 @@ const Storage = {
         let dxf = '';
         const color = CAD.getEntityColor(entity);
         const colorInt = Utils.hexToInt(color);
+        const type = (entity.type || '').toLowerCase();
 
-        switch (entity.type) {
+        switch (type) {
             case 'line':
                 dxf += '0\nLINE\n';
                 dxf += '8\n' + entity.layer + '\n';

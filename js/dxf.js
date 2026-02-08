@@ -1390,7 +1390,8 @@ const DXF = (() => {
     };
 
     const writeEntity = (out, entity, state) => {
-        switch (entity.type) {
+        const type = (entity.type || '').toLowerCase();
+        switch (type) {
             case 'line':
                 writeEntityLine(out, entity);
                 break;
