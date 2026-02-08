@@ -1799,32 +1799,10 @@ const DXF = (() => {
         out.push('100', 'AcDbDictionary');
         out.push('281', '1');
 
-        // ACAD_GROUP dictionary
-        const groupDictHandle = nextHandle();
-        out.push('3', 'ACAD_GROUP');
-        out.push('350', groupDictHandle);
-
         // ACAD_LAYOUT dictionary
         const layoutDictHandle = nextHandle();
         out.push('3', 'ACAD_LAYOUT');
         out.push('350', layoutDictHandle);
-
-        // ACAD_MLINESTYLE dictionary
-        const mlineStyleDictHandle = nextHandle();
-        out.push('3', 'ACAD_MLINESTYLE');
-        out.push('350', mlineStyleDictHandle);
-
-        // ACAD_PLOTSTYLENAME dictionary
-        const plotStyleDictHandle = nextHandle();
-        out.push('3', 'ACAD_PLOTSTYLENAME');
-        out.push('350', plotStyleDictHandle);
-
-        // Empty ACAD_GROUP dictionary
-        out.push('0', 'DICTIONARY');
-        out.push('5', groupDictHandle);
-        out.push('330', rootDictHandle);
-        out.push('100', 'AcDbDictionary');
-        out.push('281', '1');
 
         // ACAD_LAYOUT dictionary with Model and Layout entries
         out.push('0', 'DICTIONARY');
@@ -1862,30 +1840,6 @@ const DXF = (() => {
         out.push('1', 'Layout1');
         out.push('70', '0');
         out.push('71', '1');
-
-        // Empty ACAD_MLINESTYLE dictionary
-        out.push('0', 'DICTIONARY');
-        out.push('5', mlineStyleDictHandle);
-        out.push('330', rootDictHandle);
-        out.push('100', 'AcDbDictionary');
-        out.push('281', '1');
-
-        // ACAD_PLOTSTYLENAME - must be ACDBDICTIONARYWDFLT with "Normal" entry
-        const normalPlaceholderHandle = nextHandle();
-        out.push('0', 'ACDBDICTIONARYWDFLT');
-        out.push('5', plotStyleDictHandle);
-        out.push('330', rootDictHandle);
-        out.push('100', 'AcDbDictionary');
-        out.push('281', '1');
-        out.push('3', 'Normal');
-        out.push('350', normalPlaceholderHandle);
-        out.push('100', 'AcDbDictionaryWithDefault');
-        out.push('340', normalPlaceholderHandle);
-
-        // "Normal" plot style placeholder
-        out.push('0', 'ACDBPLACEHOLDER');
-        out.push('5', normalPlaceholderHandle);
-        out.push('330', plotStyleDictHandle);
 
         out.push('0', 'ENDSEC');
     };
