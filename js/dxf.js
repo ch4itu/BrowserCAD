@@ -1803,6 +1803,7 @@ const DXF = (() => {
         // ============================================================
         out.push('0', 'SECTION', '2', 'HEADER');
         out.push('9', '$ACADVER', '1', 'AC1015');
+        const handseedIndex = out.length;
         out.push('9', '$HANDSEED', '5', 'FFFF');
         out.push('9', '$INSUNITS', '70', String(DEFAULT_HEADER.$INSUNITS));
         out.push('9', '$MEASUREMENT', '70', '1');
@@ -1910,6 +1911,21 @@ const DXF = (() => {
             '2', 'ACAD', '70', '0');
         out.push('0', 'ENDTAB');
 
+        // -- VIEW (empty) --
+        out.push('0', 'TABLE', '2', 'VIEW', '5', nextHandle(), '100', 'AcDbSymbolTable', '70', '0');
+        out.push('0', 'ENDTAB');
+
+        // -- UCS (empty) --
+        out.push('0', 'TABLE', '2', 'UCS', '5', nextHandle(), '100', 'AcDbSymbolTable', '70', '0');
+        out.push('0', 'ENDTAB');
+
+        // -- DIMSTYLE (Standard) --
+        out.push('0', 'TABLE', '2', 'DIMSTYLE', '5', nextHandle(), '100', 'AcDbSymbolTable', '70', '1');
+        out.push('0', 'DIMSTYLE', '5', nextHandle(),
+            '100', 'AcDbSymbolTableRecord', '100', 'AcDbDimStyleTableRecord',
+            '2', 'Standard', '70', '0');
+        out.push('0', 'ENDTAB');
+
         // -- BLOCK_RECORD --
         const userBlocks = Object.values(state.blocks || {}).filter(
             b => b.name !== '*Model_Space' && b.name !== '*Paper_Space'
@@ -1987,6 +2003,7 @@ const DXF = (() => {
         // ============================================================
         out.push('0', 'EOF');
 
+        out[handseedIndex + 3] = getHandleSeed();
         return formatOutput(out);
     };
 
