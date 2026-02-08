@@ -1808,7 +1808,7 @@ const DXF = (() => {
         out.push('9', '$INSUNITS', '70', String(DEFAULT_HEADER.$INSUNITS));
         out.push('9', '$MEASUREMENT', '70', '1');
         out.push('9', '$CECOLOR', '62', '256');
-        out.push('9', '$CELTYPE', '6', 'ByLayer');
+        out.push('9', '$CELTYPE', '6', 'BYLAYER');
         out.push('9', '$INSBASE', '10', '0.0', '20', '0.0', '30', '0.0');
         out.push('9', '$EXTMIN', '10', '-1000', '20', '-1000', '30', '0');
         out.push('9', '$EXTMAX', '10', '1000', '20', '1000', '30', '0');
@@ -1858,9 +1858,9 @@ const DXF = (() => {
         // -- LTYPE --
         out.push('0', 'TABLE', '2', 'LTYPE', '5', '5', '100', 'AcDbSymbolTable', '70', '3');
         out.push('0', 'LTYPE', '5', '15', '100', 'AcDbSymbolTableRecord', '100', 'AcDbLinetypeTableRecord',
-            '2', 'ByBlock', '70', '0', '3', '', '72', '65', '73', '0', '40', '0');
+            '2', 'BYBLOCK', '70', '0', '3', '', '72', '65', '73', '0', '40', '0');
         out.push('0', 'LTYPE', '5', '16', '100', 'AcDbSymbolTableRecord', '100', 'AcDbLinetypeTableRecord',
-            '2', 'ByLayer', '70', '0', '3', '', '72', '65', '73', '0', '40', '0');
+            '2', 'BYLAYER', '70', '0', '3', '', '72', '65', '73', '0', '40', '0');
         out.push('0', 'LTYPE', '5', '11', '100', 'AcDbSymbolTableRecord', '100', 'AcDbLinetypeTableRecord',
             '2', 'CONTINUOUS', '70', '0', '3', 'Solid line', '72', '65', '73', '0', '40', '0');
         out.push('0', 'ENDTAB');
