@@ -3344,10 +3344,15 @@ const Commands = {
         const points = entity.points || [];
         const bulges = entity.bulges || [];
         const result = [];
-        const numPoints = entity.closed ? points.length : points.length - 1;
+        const isClosed = entity.closed || Utils.isPolygonClosed(points);
+        let arcPoints = points;
+        if (isClosed && points.length > 1 && Utils.isPolygonClosed(points)) {
+            arcPoints = points.slice(0, -1);
+        }
+        const numPoints = isClosed ? arcPoints.length : arcPoints.length - 1;
         for (let i = 0; i < numPoints; i++) {
-            const p1 = points[i];
-            const p2 = points[(i + 1) % points.length];
+            const p1 = arcPoints[i];
+            const p2 = arcPoints[(i + 1) % arcPoints.length];
             const bulge = bulges[i] || 0;
             result.push({ ...p1 });
             if (Math.abs(bulge) > 1e-10) {
@@ -3378,8 +3383,8 @@ const Commands = {
                 }
             }
         }
-        if (!entity.closed && points.length > 0) {
-            result.push({ ...points[points.length - 1] });
+        if (!isClosed && arcPoints.length > 0) {
+            result.push({ ...arcPoints[arcPoints.length - 1] });
         }
         return result;
     },
