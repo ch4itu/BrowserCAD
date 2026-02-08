@@ -1362,6 +1362,17 @@ const DXF = (() => {
     const writeEntityHatch = (out, entity, state, ownerHandle) => {
         const edges = getHatchBoundaryEdges(entity, state);
         if (!edges.length) return;
+        const validEdges = edges.filter(edge => {
+            if (edge.type === 'arc') {
+                const radius = edge.radius ?? edge.r ?? 0;
+                return radius > 0;
+            }
+            const start = edge.start || edge.p1;
+            const end = edge.end || edge.p2;
+            if (!start || !end) return false;
+            return Math.abs(start.x - end.x) > 1e-8 || Math.abs(start.y - end.y) > 1e-8;
+        });
+        if (!validEdges.length) return;
         const rawPattern = entity.patternName || entity.pattern || entity.hatch?.pattern || 'ANSI31';
         const pattern = rawPattern.toUpperCase();
         const scale = entity.scale || 1;
@@ -1381,8 +1392,8 @@ const DXF = (() => {
         out.push('71', '0');
         out.push('91', '1');
         out.push('92', '1');
-        out.push('93', String(edges.length));
-        edges.forEach(edge => {
+        out.push('93', String(validEdges.length));
+        validEdges.forEach(edge => {
             if (edge.type === 'arc') {
                 out.push('72', '2');
                 out.push('10', formatNumber(edge.center.x));
@@ -1884,10 +1895,11 @@ const DXF = (() => {
                 aciColor = rawColor;
             }
             const colorVal = layer.visible === false ? -Math.abs(aciColor) : aciColor;
+            const lineTypeName = (layer.lineType || 'CONTINUOUS').toString().toUpperCase();
             out.push('0', 'LAYER', '5', handle, '330', '2',
                 '100', 'AcDbSymbolTableRecord', '100', 'AcDbLayerTableRecord',
                 '2', layer.name || '0', '70', String(flags), '62', String(colorVal),
-                '6', layer.lineType || 'CONTINUOUS');
+                '6', lineTypeName);
             if (trueColor !== null) {
                 out.push('420', String(trueColor));
             }
