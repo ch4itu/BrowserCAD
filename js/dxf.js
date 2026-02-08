@@ -1619,7 +1619,18 @@ const DXF = (() => {
                 writeEntityInsert(out, entity, ownerHandle);
                 break;
             case 'hatch':
-                writeEntityHatch(out, entity, state, ownerHandle);
+                if (Array.isArray(entity.boundary) && entity.boundary.length >= 3) {
+                    writeEntityLwPolyline(out, {
+                        type: 'polyline',
+                        layer: entity.layer,
+                        color: entity.color,
+                        lineType: entity.lineType,
+                        closed: true,
+                        points: entity.boundary
+                    }, ownerHandle);
+                } else {
+                    writeEntityHatch(out, entity, state, ownerHandle);
+                }
                 break;
             case 'leader':
                 writeEntityLeader(out, entity, ownerHandle);
