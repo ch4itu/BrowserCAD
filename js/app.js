@@ -1271,7 +1271,7 @@ const MobileUI = {
         document.querySelectorAll('.mobile-tab').forEach(tab => {
             tab.classList.toggle('active', tab.dataset.mtab === tabName);
         });
-        document.querySelectorAll('.mobile-tool-row, .mobile-tool-grid').forEach(row => {
+        document.querySelectorAll('.mobile-tool-row').forEach(row => {
             row.classList.toggle('active', row.dataset.mtab === tabName);
         });
     },
