@@ -1989,11 +1989,13 @@ const DXF = (() => {
         out.push('0', 'ENDSEC');
 
         // ============================================================
-        // 6. OBJECTS SECTION (root dictionary, mandatory for AC1015)
-        //    NO 330 owner, NO 100 subclass. Uses 280+281 per spec.
+        // 6. OBJECTS SECTION (root dictionary + empty ACAD_LAYOUT dict)
         // ============================================================
+        const layoutDictHandle = nextHandle();
         out.push('0', 'SECTION', '2', 'OBJECTS');
-        out.push('0', 'DICTIONARY', '5', 'C', '100', 'AcDbDictionary', '280', '0', '281', '1');
+        out.push('0', 'DICTIONARY', '5', 'C', '100', 'AcDbDictionary', '280', '0', '281', '1',
+            '3', 'ACAD_LAYOUT', '350', layoutDictHandle);
+        out.push('0', 'DICTIONARY', '5', layoutDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
         out.push('0', 'ENDSEC');
 
         // ============================================================
