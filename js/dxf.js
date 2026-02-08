@@ -47,16 +47,11 @@ const DXF = (() => {
     // Get current handle counter value (for $HANDSEED)
     const getHandleSeed = () => _handleCounter.toString(16).toUpperCase();
 
-    // Post-process DXF array for R12 compatibility:
-    // Strip AC1015-specific group codes (handles, owners, subclass markers)
-    // and right-justify remaining group codes
+    // Format the DXF output array as CRLF-separated code/value pairs
     const formatOutput = (out) => {
         const result = [];
         for (let i = 0; i < out.length; i += 2) {
-            const code = String(out[i]);
-            // Strip AC1015-only codes: 5=handle, 100=subclass, 105=dimstyle handle, 330=owner
-            if (code === '5' || code === '100' || code === '105' || code === '330') continue;
-            result.push(code.length < 3 ? code.padStart(3) : code);
+            result.push(String(out[i]));
             result.push(String(out[i + 1]));
         }
         return result.join('\r\n') + '\r\n';
@@ -1125,12 +1120,50 @@ const DXF = (() => {
         out.push('41', '2.5');   // DIMASZ
         out.push('0', 'ENDTAB');
 
-        // No BLOCK_RECORD table (R12 doesn't use it; codes 5/100/330 stripped in output)
+        // BLOCK_RECORD table (must be last table in TABLES section)
+        const userBlocks = Object.values(state?.blocks || {}).filter(
+            b => b.name !== '*Model_Space' && b.name !== '*Paper_Space'
+        );
+        const blockRecTableHandle = nextHandle();
+        out.push('0', 'TABLE');
+        out.push('2', 'BLOCK_RECORD');
+        out.push('5', blockRecTableHandle);
+        out.push('330', '0');
+        out.push('100', 'AcDbSymbolTable');
+        out.push('70', String(2 + userBlocks.length));
 
+        const modelSpaceHandle = nextHandle();
+        out.push('0', 'BLOCK_RECORD');
+        out.push('5', modelSpaceHandle);
+        out.push('330', blockRecTableHandle);
+        out.push('100', 'AcDbSymbolTableRecord');
+        out.push('100', 'AcDbBlockTableRecord');
+        out.push('2', '*Model_Space');
+
+        const paperSpaceHandle = nextHandle();
+        out.push('0', 'BLOCK_RECORD');
+        out.push('5', paperSpaceHandle);
+        out.push('330', blockRecTableHandle);
+        out.push('100', 'AcDbSymbolTableRecord');
+        out.push('100', 'AcDbBlockTableRecord');
+        out.push('2', '*Paper_Space');
+
+        const blockHandles = {};
+        userBlocks.forEach(block => {
+            const h = nextHandle();
+            out.push('0', 'BLOCK_RECORD');
+            out.push('5', h);
+            out.push('330', blockRecTableHandle);
+            out.push('100', 'AcDbSymbolTableRecord');
+            out.push('100', 'AcDbBlockTableRecord');
+            out.push('2', block.name || 'BLOCK');
+            blockHandles[block.name] = h;
+        });
+
+        out.push('0', 'ENDTAB');
         out.push('0', 'ENDSEC');
 
-        // Return dummy handles — they are written by callers but stripped by formatOutput
-        return { modelSpaceHandle: '0', paperSpaceHandle: '0' };
+        return { modelSpaceHandle, paperSpaceHandle, blockHandles };
     };
 
     // Y-flip helper: negate Y for export
@@ -1474,10 +1507,10 @@ const DXF = (() => {
         }
     };
 
-    const writeBlocksSection = (out, blocks = {}, state = null, modelSpaceHandle, paperSpaceHandle) => {
+    const writeBlocksSection = (out, blocks = {}, state = null, modelSpaceHandle, paperSpaceHandle, blockHandles = {}) => {
         out.push('0', 'SECTION', '2', 'BLOCKS');
 
-        // *Model_Space block
+        // *Model_Space block (owner = Model_Space BLOCK_RECORD handle)
         out.push('0', 'BLOCK');
         out.push('5', nextHandle());
         out.push('330', modelSpaceHandle);
@@ -1496,7 +1529,7 @@ const DXF = (() => {
         out.push('8', '0');
         out.push('100', 'AcDbBlockEnd');
 
-        // *Paper_Space block
+        // *Paper_Space block (owner = Paper_Space BLOCK_RECORD handle)
         out.push('0', 'BLOCK');
         out.push('5', nextHandle());
         out.push('330', paperSpaceHandle);
@@ -1515,12 +1548,14 @@ const DXF = (() => {
         out.push('8', '0');
         out.push('100', 'AcDbBlockEnd');
 
+        // User-defined blocks (owner = their BLOCK_RECORD handle)
         Object.values(blocks).forEach(block => {
             if (block.name === '*Model_Space' || block.name === '*Paper_Space') return;
+            const ownerHandle = blockHandles[block.name] || '0';
             const basePoint = block.basePoint || block.origin || { x: 0, y: 0, z: 0 };
-            const blockHandle = nextHandle();
             out.push('0', 'BLOCK');
-            out.push('5', blockHandle);
+            out.push('5', nextHandle());
+            out.push('330', ownerHandle);
             out.push('100', 'AcDbEntity');
             out.push('8', '0');
             out.push('100', 'AcDbBlockBegin');
@@ -1530,10 +1565,11 @@ const DXF = (() => {
             out.push('3', block.name || 'BLOCK');
             out.push('1', '');
             (block.entities || []).forEach(entity => {
-                writeEntity(out, entity, state, blockHandle);
+                writeEntity(out, entity, state, ownerHandle);
             });
             out.push('0', 'ENDBLK');
             out.push('5', nextHandle());
+            out.push('330', ownerHandle);
             out.push('100', 'AcDbEntity');
             out.push('8', '0');
             out.push('100', 'AcDbBlockEnd');
@@ -1751,18 +1787,50 @@ const DXF = (() => {
         out.push('0', 'ENDSEC');
     };
 
+    const writeObjectsSection = (out) => {
+        out.push('0', 'SECTION', '2', 'OBJECTS');
+        // Root dictionary (handle C by convention, owner = root)
+        out.push('0', 'DICTIONARY');
+        out.push('5', 'C');
+        out.push('330', '0');
+        out.push('100', 'AcDbDictionary');
+        out.push('281', '1');
+        out.push('0', 'ENDSEC');
+    };
+
     const generateDXF = (stateOrEntities = [], layers = []) => {
         const state = Array.isArray(stateOrEntities)
             ? { entities: stateOrEntities, layers, blocks: {} }
             : (stateOrEntities || { entities: [], layers: [], blocks: {} });
-        const out = [];
 
-        // Reset handle counter (still used internally by writers, stripped in output)
         resetHandles();
 
-        // HEADER section — R12 (AC1009) for maximum compatibility
+        // Build body sections first so $HANDSEED reflects all allocated handles
+        const body = [];
+
+        // CLASSES section (empty but required for AC1015)
+        body.push('0', 'SECTION', '2', 'CLASSES', '0', 'ENDSEC');
+
+        // TABLES section (with BLOCK_RECORD table for proper handle ownership)
+        const { modelSpaceHandle, paperSpaceHandle, blockHandles } =
+            writeTables(body, state.layers || [], state);
+
+        // BLOCKS section
+        writeBlocksSection(body, state.blocks || {}, state, modelSpaceHandle, paperSpaceHandle, blockHandles);
+
+        // ENTITIES section (entities owned by Model_Space BLOCK_RECORD)
+        writeEntitiesSection(body, state.entities || [], state, modelSpaceHandle);
+
+        // OBJECTS section (root dictionary)
+        writeObjectsSection(body);
+
+        // HEADER section (built last for correct $HANDSEED)
+        const out = [];
         out.push('0', 'SECTION', '2', 'HEADER');
-        out.push('9', '$ACADVER', '1', 'AC1009');
+        out.push('9', '$ACADVER', '1', 'AC1015');
+        out.push('9', '$ACADMAINTVER', '70', '6');
+        out.push('9', '$DWGCODEPAGE', '3', 'ANSI_1252');
+        out.push('9', '$HANDSEED', '5', getHandleSeed());
         out.push('9', '$INSBASE', '10', '0.0', '20', '0.0', '30', '0.0');
         out.push('9', '$EXTMIN', '10', '0.0', '20', '0.0', '30', '0.0');
         out.push('9', '$EXTMAX', '10', '1000.0', '20', '1000.0', '30', '0.0');
@@ -1779,22 +1847,10 @@ const DXF = (() => {
         out.push('9', '$CLAYER', '8', state.currentLayer || '0');
         out.push('0', 'ENDSEC');
 
-        // No CLASSES section (R12 doesn't use it)
-
-        // TABLES section (handles/subclass markers stripped in formatOutput)
-        const { modelSpaceHandle, paperSpaceHandle } = writeTables(out, state.layers || [], state);
-
-        // BLOCKS section
-        writeBlocksSection(out, state.blocks || {}, state, modelSpaceHandle, paperSpaceHandle);
-
-        // ENTITIES section
-        writeEntitiesSection(out, state.entities || [], state, modelSpaceHandle);
-
-        // No OBJECTS section (R12 doesn't use it)
-
+        // Combine: HEADER + body (CLASSES, TABLES, BLOCKS, ENTITIES, OBJECTS) + EOF
+        out.push(...body);
         out.push('0', 'EOF');
 
-        // Post-process: strip AC1015 codes, right-justify, CRLF line endings
         return formatOutput(out);
     };
 
