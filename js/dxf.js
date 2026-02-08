@@ -3,10 +3,10 @@
    ============================================
    Coordinate convention:
    - DXF uses Y-up coordinate system
-   - BrowserCAD internal uses Y-down (canvas)
+   - BrowserCAD internal uses Y-up world coordinates
    - This module works in DXF space for parsing (returns raw DXF coords)
-   - mapDxfEntityToCad in storage.js handles Y-flip + angle conversion
-   - Export functions handle Y-flip + angle conversion for writing
+   - mapDxfEntityToCad in storage.js should not apply Y-flip
+   - Export functions write Y-up with degree conversions only
    ============================================ */
 
 const DXF = (() => {
@@ -934,8 +934,8 @@ const DXF = (() => {
     };
 
     // ==========================================
-    // EXPORT - All write functions convert from
-    // CAD internal (Y-down, radians) to DXF (Y-up, degrees)
+    // EXPORT - CAD internal uses Y-up with radians
+    // DXF uses Y-up with degrees
     // ==========================================
 
     const writeColor = (out, entity) => {
@@ -1166,8 +1166,7 @@ const DXF = (() => {
         return { modelSpaceHandle, paperSpaceHandle, blockHandles };
     };
 
-    // Y-flip helper: negate Y for export
-    const fy = (y) => -(y || 0);
+    const fy = (y) => (y || 0);
 
     const writeEntityLine = (out, entity, ownerHandle) => {
         writeEntityHeader(out, 'LINE', entity, ownerHandle);
@@ -1192,10 +1191,9 @@ const DXF = (() => {
         out.push('10', formatNumber(entity.center?.x), '20', formatNumber(fy(entity.center?.y)), '30', formatNumber(entity.center?.z || 0));
         out.push('40', formatNumber(entity.r || 0));
         out.push('100', 'AcDbArc');
-        // Convert internal radians to DXF degrees with Y-flip:
-        // Swap start/end and negate to reverse the Y-flip transformation
-        out.push('50', formatNumber(-(entity.end || 0) * RAD2DEG));
-        out.push('51', formatNumber(-(entity.start || 0) * RAD2DEG));
+        // Convert internal radians to DXF degrees
+        out.push('50', formatNumber((entity.start || 0) * RAD2DEG));
+        out.push('51', formatNumber((entity.end || 0) * RAD2DEG));
     };
 
     const writeEntityLwPolyline = (out, entity, ownerHandle) => {
@@ -1216,8 +1214,7 @@ const DXF = (() => {
             // Check both point.bulge and entity.bulges array
             const bulge = point.bulge || bulges[idx] || 0;
             if (Math.abs(bulge) > 1e-10) {
-                // Negate bulge to compensate for Y-flip
-                out.push('42', formatNumber(-bulge));
+                out.push('42', formatNumber(bulge));
             }
         });
     };
@@ -1231,8 +1228,7 @@ const DXF = (() => {
         out.push('40', formatNumber(entity.height || 0));
         out.push('1', entity.text || '');
         if (entity.rotation) {
-            // Negate rotation for Y-flip (internal CCW in Y-down → CCW in Y-up)
-            out.push('50', formatNumber(-(entity.rotation || 0) * RAD2DEG));
+            out.push('50', formatNumber((entity.rotation || 0) * RAD2DEG));
         }
         if (isMText && entity.width) {
             out.push('41', formatNumber(entity.width));
@@ -1255,7 +1251,7 @@ const DXF = (() => {
         // Major axis endpoint relative to center
         const rx = entity.rx || 0;
         const ry = entity.ry || 0;
-        const rot = -(entity.rotation || 0); // Negate for Y-flip
+        const rot = entity.rotation || 0;
         const majorX = rx * Math.cos(rot);
         const majorY = rx * Math.sin(rot);
         out.push('11', formatNumber(majorX), '21', formatNumber(majorY), '31', '0.0');
@@ -1331,8 +1327,7 @@ const DXF = (() => {
         const insertPoint = entity.insertPoint || { x: entity.x || 0, y: entity.y || 0, z: 0 };
         const scale = entity.scale || { x: entity.scaleX ?? 1, y: entity.scaleY ?? 1 };
         const rotation = entity.rotation || 0;
-        // Negate rotation for Y-flip
-        const rotationDeg = -rotation * RAD2DEG;
+        const rotationDeg = rotation * RAD2DEG;
         writeEntityHeader(out, 'INSERT', entity, ownerHandle);
         writeCommonStyle(out, entity);
         out.push('100', 'AcDbBlockReference');
@@ -1393,9 +1388,9 @@ const DXF = (() => {
                 out.push('10', formatNumber(edge.center.x));
                 out.push('20', formatNumber(fy(edge.center.y)));
                 out.push('40', formatNumber(edge.radius ?? edge.r ?? 0));
-                // Edge angles are in internal radians, convert to DXF degrees with Y-flip
-                const startDeg = -(edge.end || 0) * RAD2DEG;
-                const endDeg = -(edge.start || 0) * RAD2DEG;
+                // Edge angles are in internal radians, convert to DXF degrees
+                const startDeg = (edge.start || 0) * RAD2DEG;
+                const endDeg = (edge.end || 0) * RAD2DEG;
                 out.push('50', formatNumber(startDeg));
                 out.push('51', formatNumber(endDeg));
                 out.push('73', '1');
@@ -1803,11 +1798,12 @@ const DXF = (() => {
         // ============================================================
         out.push('0', 'SECTION', '2', 'HEADER');
         out.push('9', '$ACADVER', '1', 'AC1015');
+        const handseedIndex = out.length;
         out.push('9', '$HANDSEED', '5', 'FFFF');
         out.push('9', '$INSUNITS', '70', String(DEFAULT_HEADER.$INSUNITS));
         out.push('9', '$MEASUREMENT', '70', '1');
         out.push('9', '$CECOLOR', '62', '256');
-        out.push('9', '$CELTYPE', '6', 'ByLayer');
+        out.push('9', '$CELTYPE', '6', 'BYLAYER');
         out.push('9', '$INSBASE', '10', '0.0', '20', '0.0', '30', '0.0');
         out.push('9', '$EXTMIN', '10', '-1000', '20', '-1000', '30', '0');
         out.push('9', '$EXTMAX', '10', '1000', '20', '1000', '30', '0');
@@ -1835,8 +1831,8 @@ const DXF = (() => {
         out.push('0', 'SECTION', '2', 'TABLES');
 
         // -- VPORT --
-        out.push('0', 'TABLE', '2', 'VPORT', '5', '8', '100', 'AcDbSymbolTable', '70', '1');
-        out.push('0', 'VPORT', '5', '10', '100', 'AcDbSymbolTableRecord', '100', 'AcDbViewportTableRecord',
+        out.push('0', 'TABLE', '2', 'VPORT', '5', '8', '330', '0', '100', 'AcDbSymbolTable', '70', '1');
+        out.push('0', 'VPORT', '5', '10', '330', '8', '100', 'AcDbSymbolTableRecord', '100', 'AcDbViewportTableRecord',
             '2', '*ACTIVE', '70', '0',
             '10', '0', '20', '0',
             '11', '1', '21', '1',
@@ -1855,12 +1851,12 @@ const DXF = (() => {
         out.push('0', 'ENDTAB');
 
         // -- LTYPE --
-        out.push('0', 'TABLE', '2', 'LTYPE', '5', '5', '100', 'AcDbSymbolTable', '70', '3');
-        out.push('0', 'LTYPE', '5', '15', '100', 'AcDbSymbolTableRecord', '100', 'AcDbLinetypeTableRecord',
-            '2', 'ByBlock', '70', '0', '3', '', '72', '65', '73', '0', '40', '0');
-        out.push('0', 'LTYPE', '5', '16', '100', 'AcDbSymbolTableRecord', '100', 'AcDbLinetypeTableRecord',
-            '2', 'ByLayer', '70', '0', '3', '', '72', '65', '73', '0', '40', '0');
-        out.push('0', 'LTYPE', '5', '11', '100', 'AcDbSymbolTableRecord', '100', 'AcDbLinetypeTableRecord',
+        out.push('0', 'TABLE', '2', 'LTYPE', '5', '5', '330', '0', '100', 'AcDbSymbolTable', '70', '3');
+        out.push('0', 'LTYPE', '5', '15', '330', '5', '100', 'AcDbSymbolTableRecord', '100', 'AcDbLinetypeTableRecord',
+            '2', 'BYBLOCK', '70', '0', '3', '', '72', '65', '73', '0', '40', '0');
+        out.push('0', 'LTYPE', '5', '16', '330', '5', '100', 'AcDbSymbolTableRecord', '100', 'AcDbLinetypeTableRecord',
+            '2', 'BYLAYER', '70', '0', '3', '', '72', '65', '73', '0', '40', '0');
+        out.push('0', 'LTYPE', '5', '11', '330', '5', '100', 'AcDbSymbolTableRecord', '100', 'AcDbLinetypeTableRecord',
             '2', 'CONTINUOUS', '70', '0', '3', 'Solid line', '72', '65', '73', '0', '40', '0');
         out.push('0', 'ENDTAB');
 
@@ -1868,45 +1864,80 @@ const DXF = (() => {
         const layerList = (state.layers || []).length > 0
             ? state.layers
             : [{ name: '0', color: 7, visible: true, frozen: false, locked: false }];
-        out.push('0', 'TABLE', '2', 'LAYER', '5', '2', '100', 'AcDbSymbolTable', '70', String(layerList.length));
+        out.push('0', 'TABLE', '2', 'LAYER', '5', '2', '330', '0', '100', 'AcDbSymbolTable', '70', String(layerList.length));
         layerList.forEach((layer, idx) => {
             const handle = idx === 0 ? '12' : nextHandle();
             const flags = (layer.frozen ? 1 : 0) | (layer.locked ? 4 : 0);
-            const color = layer.color ?? 7;
-            const colorVal = layer.visible === false ? -Math.abs(color) : color;
-            out.push('0', 'LAYER', '5', handle,
+            const rawColor = layer.color ?? layer.trueColor ?? 7;
+            let aciColor = 7;
+            let trueColor = null;
+            if (typeof rawColor === 'string') {
+                if (rawColor.startsWith('#')) {
+                    trueColor = hexToInt(rawColor);
+                } else {
+                    const parsedColor = parseInt(rawColor, 10);
+                    if (Number.isFinite(parsedColor)) {
+                        aciColor = parsedColor;
+                    }
+                }
+            } else if (Number.isFinite(rawColor)) {
+                aciColor = rawColor;
+            }
+            const colorVal = layer.visible === false ? -Math.abs(aciColor) : aciColor;
+            out.push('0', 'LAYER', '5', handle, '330', '2',
                 '100', 'AcDbSymbolTableRecord', '100', 'AcDbLayerTableRecord',
                 '2', layer.name || '0', '70', String(flags), '62', String(colorVal),
                 '6', layer.lineType || 'CONTINUOUS');
+            if (trueColor !== null) {
+                out.push('420', String(trueColor));
+            }
         });
         out.push('0', 'ENDTAB');
 
         // -- STYLE --
-        out.push('0', 'TABLE', '2', 'STYLE', '5', '3', '100', 'AcDbSymbolTable', '70', '1');
-        out.push('0', 'STYLE', '5', '13', '100', 'AcDbSymbolTableRecord', '100', 'AcDbTextStyleTableRecord',
+        out.push('0', 'TABLE', '2', 'STYLE', '5', '3', '330', '0', '100', 'AcDbSymbolTable', '70', '1');
+        out.push('0', 'STYLE', '5', '13', '330', '3', '100', 'AcDbSymbolTableRecord', '100', 'AcDbTextStyleTableRecord',
             '2', 'Standard', '70', '0', '40', '0', '41', '1', '50', '0', '71', '0', '42', '2.5', '3', 'txt', '4', '');
         out.push('0', 'ENDTAB');
 
         // -- APPID --
-        out.push('0', 'TABLE', '2', 'APPID', '5', '9', '100', 'AcDbSymbolTable', '70', '1');
-        out.push('0', 'APPID', '5', '14', '100', 'AcDbSymbolTableRecord', '100', 'AcDbRegAppTableRecord',
+        out.push('0', 'TABLE', '2', 'APPID', '5', '9', '330', '0', '100', 'AcDbSymbolTable', '70', '1');
+        out.push('0', 'APPID', '5', '14', '330', '9', '100', 'AcDbSymbolTableRecord', '100', 'AcDbRegAppTableRecord',
             '2', 'ACAD', '70', '0');
+        out.push('0', 'ENDTAB');
+
+        // -- VIEW (empty) --
+        const viewTableHandle = nextHandle();
+        out.push('0', 'TABLE', '2', 'VIEW', '5', viewTableHandle, '330', '0', '100', 'AcDbSymbolTable', '70', '0');
+        out.push('0', 'ENDTAB');
+
+        // -- UCS (empty) --
+        const ucsTableHandle = nextHandle();
+        out.push('0', 'TABLE', '2', 'UCS', '5', ucsTableHandle, '330', '0', '100', 'AcDbSymbolTable', '70', '0');
+        out.push('0', 'ENDTAB');
+
+        // -- DIMSTYLE (Standard) --
+        const dimStyleTableHandle = nextHandle();
+        out.push('0', 'TABLE', '2', 'DIMSTYLE', '5', dimStyleTableHandle, '330', '0', '100', 'AcDbSymbolTable', '70', '1');
+        out.push('0', 'DIMSTYLE', '5', nextHandle(), '330', dimStyleTableHandle,
+            '100', 'AcDbSymbolTableRecord', '100', 'AcDbDimStyleTableRecord',
+            '2', 'Standard', '70', '0');
         out.push('0', 'ENDTAB');
 
         // -- BLOCK_RECORD --
         const userBlocks = Object.values(state.blocks || {}).filter(
             b => b.name !== '*Model_Space' && b.name !== '*Paper_Space'
         );
-        out.push('0', 'TABLE', '2', 'BLOCK_RECORD', '5', '1', '100', 'AcDbSymbolTable',
+        out.push('0', 'TABLE', '2', 'BLOCK_RECORD', '5', '1', '330', '0', '100', 'AcDbSymbolTable',
             '70', String(2 + userBlocks.length));
-        out.push('0', 'BLOCK_RECORD', '5', '40',
+        out.push('0', 'BLOCK_RECORD', '5', '40', '330', '1',
             '100', 'AcDbSymbolTableRecord', '100', 'AcDbBlockTableRecord', '2', '*Model_Space');
-        out.push('0', 'BLOCK_RECORD', '5', '41',
+        out.push('0', 'BLOCK_RECORD', '5', '41', '330', '1',
             '100', 'AcDbSymbolTableRecord', '100', 'AcDbBlockTableRecord', '2', '*Paper_Space');
         const blockRecordHandles = {};
         userBlocks.forEach(block => {
             const h = nextHandle();
-            out.push('0', 'BLOCK_RECORD', '5', h,
+            out.push('0', 'BLOCK_RECORD', '5', h, '330', '1',
                 '100', 'AcDbSymbolTableRecord', '100', 'AcDbBlockTableRecord', '2', block.name || 'BLOCK');
             blockRecordHandles[block.name] = h;
         });
@@ -1958,11 +1989,66 @@ const DXF = (() => {
         out.push('0', 'ENDSEC');
 
         // ============================================================
-        // 6. OBJECTS SECTION (root dictionary, mandatory for AC1015)
-        //    NO 330 owner, NO 100 subclass. Uses 280+281 per spec.
+        // 6. OBJECTS SECTION (root dictionary + layout dictionaries)
         // ============================================================
+        const groupDictHandle = nextHandle();
+        const layoutDictHandle = nextHandle();
+        const mlineDictHandle = nextHandle();
+        const plotSettingsDictHandle = nextHandle();
+        const plotStyleDictHandle = nextHandle();
+        const materialDictHandle = nextHandle();
+        const tableStyleDictHandle = nextHandle();
+        const visualStyleDictHandle = nextHandle();
+        const modelLayoutHandle = nextHandle();
+        const paperLayoutHandle = nextHandle();
+
         out.push('0', 'SECTION', '2', 'OBJECTS');
-        out.push('0', 'DICTIONARY', '5', 'C', '100', 'AcDbDictionary', '280', '0', '281', '1');
+        out.push('0', 'DICTIONARY', '5', 'C', '100', 'AcDbDictionary', '280', '0', '281', '1',
+            '3', 'ACAD_GROUP', '350', groupDictHandle,
+            '3', 'ACAD_LAYOUT', '350', layoutDictHandle,
+            '3', 'ACAD_MLINESTYLE', '350', mlineDictHandle,
+            '3', 'ACAD_PLOTSETTINGS', '350', plotSettingsDictHandle,
+            '3', 'ACAD_PLOTSTYLENAME', '350', plotStyleDictHandle,
+            '3', 'ACAD_MATERIAL', '350', materialDictHandle,
+            '3', 'ACAD_TABLESTYLE', '350', tableStyleDictHandle,
+            '3', 'ACAD_VISUALSTYLE', '350', visualStyleDictHandle);
+
+        out.push('0', 'DICTIONARY', '5', groupDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
+        out.push('0', 'DICTIONARY', '5', mlineDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
+        out.push('0', 'DICTIONARY', '5', plotSettingsDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
+        out.push('0', 'DICTIONARY', '5', plotStyleDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
+        out.push('0', 'DICTIONARY', '5', materialDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
+        out.push('0', 'DICTIONARY', '5', tableStyleDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
+        out.push('0', 'DICTIONARY', '5', visualStyleDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
+
+        out.push('0', 'DICTIONARY', '5', layoutDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1',
+            '3', 'Model', '350', modelLayoutHandle,
+            '3', 'Layout1', '350', paperLayoutHandle);
+
+        out.push('0', 'LAYOUT', '5', modelLayoutHandle, '330', layoutDictHandle,
+            '100', 'AcDbPlotSettings',
+            '1', '', '2', 'Model', '70', '1',
+            '71', '0', '72', '0', '73', '0', '74', '0', '75', '0', '76', '0', '77', '0', '78', '0', '79', '0',
+            '147', '0', '148', '0', '149', '0',
+            '100', 'AcDbLayout',
+            '1', '', '70', '1', '71', '1',
+            '10', '0', '20', '0', '11', '420', '21', '297',
+            '12', '0', '22', '0', '13', '0', '23', '0', '14', '0', '24', '0',
+            '15', '0', '25', '0', '16', '1', '26', '0', '17', '0', '27', '0',
+            '330', '40');
+
+        out.push('0', 'LAYOUT', '5', paperLayoutHandle, '330', layoutDictHandle,
+            '100', 'AcDbPlotSettings',
+            '1', '', '2', 'Layout1', '70', '1',
+            '71', '0', '72', '0', '73', '0', '74', '0', '75', '0', '76', '0', '77', '0', '78', '0', '79', '0',
+            '147', '0', '148', '0', '149', '0',
+            '100', 'AcDbLayout',
+            '1', '', '70', '1', '71', '1',
+            '10', '0', '20', '0', '11', '420', '21', '297',
+            '12', '0', '22', '0', '13', '0', '23', '0', '14', '0', '24', '0',
+            '15', '0', '25', '0', '16', '1', '26', '0', '17', '0', '27', '0',
+            '330', '41');
+
         out.push('0', 'ENDSEC');
 
         // ============================================================
@@ -1970,6 +2056,7 @@ const DXF = (() => {
         // ============================================================
         out.push('0', 'EOF');
 
+        out[handseedIndex + 3] = getHandleSeed();
         return formatOutput(out);
     };
 
