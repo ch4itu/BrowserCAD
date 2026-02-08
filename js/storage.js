@@ -209,7 +209,7 @@ const Storage = {
     fromDxfPoint(point) {
         return {
             x: point?.x || 0,
-            y: -(point?.y || 0)
+            y: point?.y || 0
         };
     },
 
@@ -2128,19 +2128,17 @@ const Storage = {
                     lineType: entity.lineType ? entity.lineType.toLowerCase() : undefined,
                     center: this.fromDxfPoint(entity.center),
                     r: entity.r || 0,
-                    // Swap start/end and negate for Y-flip
                     // DXF angles are in degrees from dxf.js
-                    start: -Utils.degToRad(entity.end || 0),
-                    end: -Utils.degToRad(entity.start || 0)
+                    start: Utils.degToRad(entity.start || 0),
+                    end: Utils.degToRad(entity.end || 0)
                 };
             case 'lwpolyline':
             case 'polyline': {
                 const points = (entity.points || []).map(point => ({
                     x: point.x || 0,
-                    y: -(point.y || 0)
+                    y: point.y || 0
                 }));
-                // Negate bulge values to compensate for Y-flip
-                const bulges = (entity.points || []).map(point => -(point.bulge || 0));
+                const bulges = (entity.points || []).map(point => (point.bulge || 0));
                 const hasBulges = bulges.some(b => Math.abs(b) > 1e-10);
                 const result = {
                     type: 'polyline',
@@ -2158,7 +2156,7 @@ const Storage = {
             case 'spline': {
                 const points = (entity.points || []).map(point => ({
                     x: point.x || 0,
-                    y: -(point.y || 0)
+                    y: point.y || 0
                 }));
                 return {
                     type: 'polyline',
@@ -2179,8 +2177,8 @@ const Storage = {
                     center: this.fromDxfPoint(entity.center),
                     rx: entity.rx || 0,
                     ry: entity.ry || 0,
-                    // Rotation is derived from geometry in dxf.js (radians), negate for Y-flip
-                    rotation: -(entity.rotation || 0)
+                    // Rotation is derived from geometry in dxf.js (radians)
+                    rotation: entity.rotation || 0
                 };
             case 'text':
                 return {
@@ -2190,8 +2188,8 @@ const Storage = {
                     position: this.fromDxfPoint(entity.position || entity.point),
                     text: (entity.text || '').replace(/\\P/g, '\n'),
                     height: entity.height || 10,
-                    // Rotation from dxf.js is in degrees, convert + negate for Y-flip
-                    rotation: -Utils.degToRad(entity.rotation || 0)
+                    // Rotation from dxf.js is in degrees
+                    rotation: Utils.degToRad(entity.rotation || 0)
                 };
             case 'mtext':
                 return {
@@ -2202,8 +2200,8 @@ const Storage = {
                     text: (entity.text || '').replace(/\\P/g, '\n'),
                     height: entity.height || 10,
                     width: entity.width || 0,
-                    // Rotation from dxf.js is in degrees, convert + negate for Y-flip
-                    rotation: -Utils.degToRad(entity.rotation || 0)
+                    // Rotation from dxf.js is in degrees
+                    rotation: Utils.degToRad(entity.rotation || 0)
                 };
             case 'point':
                 return {
@@ -2223,8 +2221,8 @@ const Storage = {
                         x: entity.scale?.x ?? 1,
                         y: entity.scale?.y ?? 1
                     },
-                    // Rotation from dxf.js is in degrees, convert + negate for Y-flip
-                    rotation: -Utils.degToRad(entity.rotation || 0)
+                    // Rotation from dxf.js is in degrees
+                    rotation: Utils.degToRad(entity.rotation || 0)
                 };
             }
             case 'hatch': {
@@ -2233,7 +2231,7 @@ const Storage = {
                 if (entity.boundaryPoints && entity.boundaryPoints.length >= 3) {
                     hatchPoints = entity.boundaryPoints.map(p => ({
                         x: p.x || 0,
-                        y: -(p.y || 0)
+                        y: p.y || 0
                     }));
                 } else if (entity.boundary && entity.boundary.length > 0) {
                     // Extract points from edge definitions
@@ -2241,7 +2239,7 @@ const Storage = {
                         if (edge.type === 'line') {
                             hatchPoints.push({
                                 x: edge.start.x,
-                                y: -(edge.start.y || 0)
+                                y: edge.start.y || 0
                             });
                         } else if (edge.type === 'arc') {
                             // Tessellate arc edges into points
@@ -2257,7 +2255,7 @@ const Storage = {
                                 const a = (startDeg + (sweep * i / steps)) * (Math.PI / 180);
                                 hatchPoints.push({
                                     x: cx + r * Math.cos(a),
-                                    y: -(cy + r * Math.sin(a))
+                                    y: cy + r * Math.sin(a)
                                 });
                             }
                         }
@@ -2265,7 +2263,7 @@ const Storage = {
                 } else if (entity.points) {
                     hatchPoints = (entity.points || []).map(p => ({
                         x: p.x || 0,
-                        y: -(p.y || 0)
+                        y: p.y || 0
                     }));
                 }
 
@@ -2295,7 +2293,7 @@ const Storage = {
             case 'solid': {
                 const solidPts = (entity.points || []).map(point => ({
                     x: point.x || 0,
-                    y: -(point.y || 0)
+                    y: point.y || 0
                 }));
                 return {
                     type: 'polyline',
@@ -2310,7 +2308,7 @@ const Storage = {
             case 'leader': {
                 const leaderPts = (entity.points || []).map(point => ({
                     x: point.x || 0,
-                    y: -(point.y || 0)
+                    y: point.y || 0
                 }));
                 if (leaderPts.length < 2) return null;
                 const leader = {
@@ -2374,7 +2372,7 @@ const Storage = {
                         x: entity.scale?.x ?? 1,
                         y: entity.scale?.y ?? 1
                     },
-                    rotation: -Utils.degToRad(entity.rotation || 0)
+                    rotation: Utils.degToRad(entity.rotation || 0)
                 };
             }
             case 'image': {
@@ -2390,7 +2388,7 @@ const Storage = {
                     p2: { x: p1.x + width, y: p1.y + height },
                     width,
                     height,
-                    rotation: -Utils.radToDeg(rotation),
+                    rotation: Utils.radToDeg(rotation),
                     src: src || '',
                     opacity: 0.6,
                     scale: 1
@@ -2402,13 +2400,13 @@ const Storage = {
                     type: 'tolerance',
                     layer: entity.layer || '0',
                     color: entity.color,
-                    position: { x: pos.x, y: -pos.y },
+                    position: { x: pos.x, y: pos.y },
                     height: entity.height || 5,
                     frames: entity.frames || []
                 };
             }
             case 'wipeout': {
-                const pts = (entity.points || []).map(p => ({ x: p.x, y: -p.y }));
+                const pts = (entity.points || []).map(p => ({ x: p.x, y: p.y }));
                 if (pts.length < 3) return null;
                 return {
                     type: 'wipeout',
@@ -2423,9 +2421,9 @@ const Storage = {
                     type: 'text',
                     layer: entity.layer || '0',
                     color: entity.color,
-                    position: { x: adPos.x, y: -adPos.y },
+                    position: { x: adPos.x, y: adPos.y },
                     height: entity.height || 2.5,
-                    rotation: entity.rotation ? -entity.rotation : 0,
+                    rotation: entity.rotation || 0,
                     text: entity.defaultValue || entity.tag || '',
                     textStyle: 'Standard',
                     tag: entity.tag,
@@ -2438,9 +2436,9 @@ const Storage = {
                     type: 'text',
                     layer: entity.layer || '0',
                     color: entity.color,
-                    position: { x: atPos.x, y: -atPos.y },
+                    position: { x: atPos.x, y: atPos.y },
                     height: entity.height || 2.5,
-                    rotation: entity.rotation ? -entity.rotation : 0,
+                    rotation: entity.rotation || 0,
                     text: entity.value || '',
                     textStyle: 'Standard',
                     tag: entity.tag
@@ -2452,16 +2450,16 @@ const Storage = {
                     type: 'viewport',
                     layer: entity.layer || '0',
                     color: entity.color,
-                    center: { x: vc.x, y: -vc.y },
+                    center: { x: vc.x, y: vc.y },
                     width: entity.width || 200,
                     height: entity.height || 150,
-                    viewCenter: entity.viewCenter ? { x: entity.viewCenter.x, y: -entity.viewCenter.y } : { x: 0, y: 0 },
+                    viewCenter: entity.viewCenter ? { x: entity.viewCenter.x, y: entity.viewCenter.y } : { x: 0, y: 0 },
                     viewHeight: entity.viewHeight || 100,
                     vpScale: entity.viewHeight ? (entity.height / entity.viewHeight) : 1
                 };
             }
             case 'trace': {
-                const trPts = (entity.points || []).map(p => ({ x: p.x, y: -p.y }));
+                const trPts = (entity.points || []).map(p => ({ x: p.x, y: p.y }));
                 if (trPts.length < 3) return null;
                 return {
                     type: 'trace',
@@ -2867,7 +2865,7 @@ const Storage = {
                 const name = blockData[2] || 'UNNAMED';
                 const basePoint = {
                     x: parseFloat(blockData[10]) || 0,
-                    y: -(parseFloat(blockData[20]) || 0)
+                    y: parseFloat(blockData[20]) || 0
                 };
 
                 const entities = [];
@@ -2970,11 +2968,11 @@ const Storage = {
             type: 'line',
             p1: {
                 x: parseFloat(data[10]) || 0,
-                y: -(parseFloat(data[20]) || 0)
+                y: parseFloat(data[20]) || 0
             },
             p2: {
                 x: parseFloat(data[11]) || 0,
-                y: -(parseFloat(data[21]) || 0)
+                y: parseFloat(data[21]) || 0
             }
         };
         this.applyDXFEntityStyle(entity, data);
@@ -2989,7 +2987,7 @@ const Storage = {
             type: 'circle',
             center: {
                 x: parseFloat(data[10]) || 0,
-                y: -(parseFloat(data[20]) || 0)
+                y: parseFloat(data[20]) || 0
             },
             r: parseFloat(data[40]) || 1
         };
@@ -3005,11 +3003,11 @@ const Storage = {
             type: 'arc',
             center: {
                 x: parseFloat(data[10]) || 0,
-                y: -(parseFloat(data[20]) || 0)
+                y: parseFloat(data[20]) || 0
             },
             r: parseFloat(data[40]) || 1,
-            start: -Utils.degToRad(parseFloat(data[51]) || 0),
-            end: -Utils.degToRad(parseFloat(data[50]) || 360)
+            start: Utils.degToRad(parseFloat(data[50]) || 0),
+            end: Utils.degToRad(parseFloat(data[51]) || 360)
         };
         this.applyDXFEntityStyle(entity, data);
 
@@ -3033,9 +3031,8 @@ const Storage = {
                 const vx = parseFloat(vertexData[10]);
                 const vy = parseFloat(vertexData[20]);
                 if (!isNaN(vx) && !isNaN(vy)) {
-                    points.push({ x: vx, y: -vy });
-                    // Negate bulge to compensate for Y-flip
-                    bulges.push(-(parseFloat(vertexData[42]) || 0));
+                    points.push({ x: vx, y: vy });
+                    bulges.push((parseFloat(vertexData[42]) || 0));
                 }
             }
 
@@ -3072,10 +3069,9 @@ const Storage = {
         for (let j = 0; j < xCoords.length; j++) {
             points.push({
                 x: parseFloat(xCoords[j]) || 0,
-                y: -(parseFloat(yCoords[j]) || 0)
+                y: parseFloat(yCoords[j]) || 0
             });
-            // Negate bulge to compensate for Y-flip
-            bulges.push(-(parseFloat(bulgeValues[j]) || 0));
+            bulges.push((parseFloat(bulgeValues[j]) || 0));
         }
 
         // Check closed flag (group code 70, bit 1)
@@ -3114,7 +3110,7 @@ const Storage = {
             type: isMtext ? 'mtext' : 'text',
             position: {
                 x: parseFloat(data[10]) || 0,
-                y: -(parseFloat(data[20]) || 0)
+                y: parseFloat(data[20]) || 0
             },
             text: textParts.join('').replace(/\\P/g, '\n'),
             height: parseFloat(data[40]) || 10,
@@ -3136,7 +3132,7 @@ const Storage = {
             type: 'point',
             position: {
                 x: parseFloat(data[10]) || 0,
-                y: -(parseFloat(data[20]) || 0)
+                y: parseFloat(data[20]) || 0
             }
         };
         this.applyDXFEntityStyle(entity, data);
@@ -3166,7 +3162,7 @@ const Storage = {
         for (let j = 0; j < xCoords.length; j++) {
             points.push({
                 x: parseFloat(xCoords[j]) || 0,
-                y: -(parseFloat(yCoords[j]) || 0)
+                y: parseFloat(yCoords[j]) || 0
             });
         }
 
@@ -3186,10 +3182,10 @@ const Storage = {
         const { data, nextIndex } = this.readDXFEntity(lines, startIndex);
 
         const centerX = parseFloat(data[10]) || 0;
-        const centerY = -(parseFloat(data[20]) || 0);
+        const centerY = parseFloat(data[20]) || 0;
         // Major axis endpoint relative to center
         const majorX = parseFloat(data[11]) || 1;
-        const majorY = -(parseFloat(data[21]) || 0);
+        const majorY = parseFloat(data[21]) || 0;
         // Ratio of minor to major axis
         const ratio = parseFloat(data[40]) || 1;
 
@@ -3217,13 +3213,13 @@ const Storage = {
             blockName: this.getDXFValue(data, 2) || 'UNNAMED',
             insertPoint: {
                 x: parseFloat(data[10]) || 0,
-                y: -(parseFloat(data[20]) || 0)
+                y: parseFloat(data[20]) || 0
             },
             scale: {
                 x: parseFloat(data[41]) || 1,
                 y: parseFloat(data[42]) || 1
             },
-            rotation: -Utils.degToRad(parseFloat(data[50]) || 0)
+            rotation: Utils.degToRad(parseFloat(data[50]) || 0)
         };
         this.applyDXFEntityStyle(entity, data);
 
@@ -3240,7 +3236,7 @@ const Storage = {
         for (let j = 0; j < xCoords.length; j++) {
             points.push({
                 x: parseFloat(xCoords[j]) || 0,
-                y: -(parseFloat(yCoords[j]) || 0)
+                y: parseFloat(yCoords[j]) || 0
             });
         }
 
@@ -3265,7 +3261,7 @@ const Storage = {
             const x = parseFloat(data[pair[0]]);
             const y = parseFloat(data[pair[1]]);
             if (!isNaN(x) && !isNaN(y)) {
-                points.push({ x, y: -y });
+                points.push({ x, y });
             }
         }
         if (points.length < 3) return null;
@@ -3350,7 +3346,7 @@ const Storage = {
             const x = parseFloat(xCoords[i]);
             const y = parseFloat(yCoords[i]);
             if (!isNaN(x) && !isNaN(y)) {
-                points.push({ x, y: -y });
+                points.push({ x, y });
             }
         }
         return points;
@@ -3374,7 +3370,7 @@ const Storage = {
         if (Math.abs(endAngle - startAngle) >= 360) {
             return {
                 type: 'circle',
-                center: { x: centerX, y: -centerY },
+                center: { x: centerX, y: centerY },
                 r: radius,
                 hatch: { pattern: isSolid ? 'solid' : (patternName || 'solid') },
                 noStroke: true
