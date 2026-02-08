@@ -55,7 +55,7 @@ const DXF = (() => {
             const s = String(out[i]);
             if (s.length < 3) out[i] = s.padStart(3);
         }
-        return out.join('\r\n');
+        return `${out.join('\r\n')}\r\n`;
     };
 
     // Write entity header with handle and owner (330 is always written)
@@ -1919,34 +1919,6 @@ const DXF = (() => {
         // $HANDSEED placeholder — replaced with actual value after all handles allocated
         const handseedIdx = out.length;
         out.push('9', '$HANDSEED', '5', '__HANDSEED__');
-        out.push('0', 'ENDSEC');
-
-        // CLASSES section (required for AC1015)
-        out.push('0', 'SECTION', '2', 'CLASSES');
-        // ACDBDICTIONARYWDFLT class (needed for plot style dictionary)
-        out.push('0', 'CLASS');
-        out.push('1', 'ACDBDICTIONARYWDFLT');
-        out.push('2', 'AcDbDictionaryWithDefault');
-        out.push('3', 'ObjectDBX Classes');
-        out.push('90', '0');
-        out.push('280', '0');
-        out.push('281', '0');
-        // ACDBPLACEHOLDER class (needed for Normal plot style)
-        out.push('0', 'CLASS');
-        out.push('1', 'ACDBPLACEHOLDER');
-        out.push('2', 'AcDbPlaceHolder');
-        out.push('3', 'ObjectDBX Classes');
-        out.push('90', '0');
-        out.push('280', '0');
-        out.push('281', '0');
-        // LAYOUT class
-        out.push('0', 'CLASS');
-        out.push('1', 'LAYOUT');
-        out.push('2', 'AcDbLayout');
-        out.push('3', 'ObjectDBX Classes');
-        out.push('90', '0');
-        out.push('280', '0');
-        out.push('281', '0');
         out.push('0', 'ENDSEC');
 
         // TABLES section - returns model/paper space handles for ownership
