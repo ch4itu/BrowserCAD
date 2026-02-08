@@ -234,6 +234,39 @@ const Storage = {
         dxf += '0\nSECTION\n';
         dxf += '2\nTABLES\n';
 
+        // VPORT table (required by many DXF readers)
+        dxf += '0\nTABLE\n';
+        dxf += '2\nVPORT\n';
+        dxf += '70\n1\n';
+        dxf += '0\nVPORT\n';
+        dxf += '2\n*ACTIVE\n';
+        dxf += '70\n0\n';
+        dxf += '10\n0.0\n20\n0.0\n';
+        dxf += '11\n1.0\n21\n1.0\n';
+        dxf += '12\n0.0\n22\n0.0\n';
+        dxf += '13\n0.0\n23\n0.0\n';
+        dxf += '14\n0.0\n24\n0.0\n';
+        dxf += '15\n0.0\n25\n0.0\n';
+        dxf += '16\n0.0\n26\n0.0\n';
+        dxf += '36\n1.0\n';
+        dxf += '37\n0.0\n';
+        dxf += '40\n1.0\n';
+        dxf += '41\n1.0\n';
+        dxf += '42\n50.0\n';
+        dxf += '43\n0.0\n';
+        dxf += '44\n0.0\n';
+        dxf += '50\n0.0\n';
+        dxf += '51\n0.0\n';
+        dxf += '71\n0\n';
+        dxf += '72\n100\n';
+        dxf += '73\n1\n';
+        dxf += '74\n3\n';
+        dxf += '75\n0\n';
+        dxf += '76\n0\n';
+        dxf += '77\n0\n';
+        dxf += '78\n0\n';
+        dxf += '0\nENDTAB\n';
+
         // LTYPE table (line types - required by many DXF readers)
         dxf += '0\nTABLE\n';
         dxf += '2\nLTYPE\n';
@@ -279,6 +312,15 @@ const Storage = {
         dxf += '3\ntxt\n'; // Primary font file
         dxf += '0\nENDTAB\n';
 
+        // APPID table
+        dxf += '0\nTABLE\n';
+        dxf += '2\nAPPID\n';
+        dxf += '70\n1\n';
+        dxf += '0\nAPPID\n';
+        dxf += '2\nACAD\n';
+        dxf += '70\n0\n';
+        dxf += '0\nENDTAB\n';
+
         // LAYER table
         dxf += '0\nTABLE\n';
         dxf += '2\nLAYER\n';
@@ -301,6 +343,19 @@ const Storage = {
         });
 
         dxf += '0\nENDTAB\n';
+
+        // BLOCK_RECORD table
+        dxf += '0\nTABLE\n';
+        dxf += '2\nBLOCK_RECORD\n';
+        dxf += '70\n2\n';
+        dxf += '0\nBLOCK_RECORD\n';
+        dxf += '2\n*MODEL_SPACE\n';
+        dxf += '70\n0\n';
+        dxf += '0\nBLOCK_RECORD\n';
+        dxf += '2\n*PAPER_SPACE\n';
+        dxf += '70\n0\n';
+        dxf += '0\nENDTAB\n';
+
         dxf += '0\nENDSEC\n';
 
         // Blocks section (for block definitions)
@@ -326,6 +381,9 @@ const Storage = {
             dxf += this.entityToDXF(entity);
         });
 
+        dxf += '0\nENDSEC\n';
+        dxf += '0\nSECTION\n';
+        dxf += '2\nOBJECTS\n';
         dxf += '0\nENDSEC\n';
         dxf += '0\nEOF\n';
 
