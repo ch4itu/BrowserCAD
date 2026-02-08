@@ -37,13 +37,15 @@ const DXF = (() => {
     // Handle system for AC1015 compliance
     // ============================================
     let _handleCounter = 0;
-    // Reserved handles: 1-9 for well-known objects, A=root dict, etc.
-    const resetHandles = () => { _handleCounter = 0x20; };
+    // Start at 0x100 to avoid reserved/well-known handle ranges (0x00–0xFF)
+    const resetHandles = () => { _handleCounter = 0x100; };
     const nextHandle = () => {
         const h = _handleCounter.toString(16).toUpperCase();
         _handleCounter++;
         return h;
     };
+    // Get current handle counter value (for $HANDSEED)
+    const getHandleSeed = () => _handleCounter.toString(16).toUpperCase();
 
     // Post-process DXF array: right-justify all group codes
     // In the output array, elements alternate: code, value, code, value, ...
@@ -56,11 +58,11 @@ const DXF = (() => {
         return out.join('\r\n');
     };
 
-    // Write entity header with handle and owner
+    // Write entity header with handle and owner (330 is always written)
     const writeEntityHeader = (out, dxfType, entity, ownerHandle) => {
         out.push('0', dxfType);
         out.push('5', nextHandle());
-        if (ownerHandle) out.push('330', ownerHandle);
+        out.push('330', ownerHandle || '0');
         out.push('100', 'AcDbEntity');
         out.push('8', entity.layer || '0');
     };
@@ -1914,7 +1916,9 @@ const DXF = (() => {
         out.push('9', '$CLAYER', '8', state.currentLayer || '0');
         out.push('9', '$CELTYPE', '6', 'ByLayer');
         out.push('9', '$CECOLOR', '62', '256');
-        out.push('9', '$HANDSEED', '5', 'FFFF');
+        // $HANDSEED placeholder — replaced with actual value after all handles allocated
+        const handseedIdx = out.length;
+        out.push('9', '$HANDSEED', '5', '__HANDSEED__');
         out.push('0', 'ENDSEC');
 
         // CLASSES section (required for AC1015)
@@ -1962,6 +1966,9 @@ const DXF = (() => {
         writeObjectsSection(out, modelLayoutHandle, paperLayoutHandle);
 
         out.push('0', 'EOF');
+
+        // Replace $HANDSEED placeholder with actual final handle value
+        out[handseedIdx + 3] = getHandleSeed();
 
         // Post-process: right-justify group codes and use \r\n line endings
         return formatOutput(out);
