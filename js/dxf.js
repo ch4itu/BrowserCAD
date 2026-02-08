@@ -37,11 +37,23 @@ const DXF = (() => {
     // Handle system for AC1015 compliance
     // ============================================
     let _handleCounter = 0;
-    const resetHandles = () => { _handleCounter = 0x100; }; // Start after reserved handles
+    // Reserved handles: 1-9 for well-known objects, A=root dict, etc.
+    const resetHandles = () => { _handleCounter = 0x20; };
     const nextHandle = () => {
         const h = _handleCounter.toString(16).toUpperCase();
         _handleCounter++;
         return h;
+    };
+
+    // Post-process DXF array: right-justify all group codes
+    // In the output array, elements alternate: code, value, code, value, ...
+    // DXF standard requires group codes to be right-justified (e.g., "  0", " 10", "100")
+    const formatOutput = (out) => {
+        for (let i = 0; i < out.length; i += 2) {
+            const s = String(out[i]);
+            if (s.length < 3) out[i] = s.padStart(3);
+        }
+        return out.join('\r\n');
     };
 
     // Write entity header with handle and owner
@@ -1114,27 +1126,27 @@ const DXF = (() => {
         out.push('5', blockRecTableHandle);
         out.push('330', '0');
         out.push('100', 'AcDbSymbolTable');
-        // Count: *MODEL_SPACE + *PAPER_SPACE + user blocks
-        const blockNames = Object.keys(state?.blocks || {}).filter(n => n !== '*MODEL_SPACE' && n !== '*PAPER_SPACE');
+        // Count: *Model_Space + *Paper_Space + user blocks
+        const blockNames = Object.keys(state?.blocks || {}).filter(n => n !== '*Model_Space' && n !== '*Paper_Space');
         out.push('70', String(2 + blockNames.length));
 
-        // *MODEL_SPACE block record
+        // *Model_Space block record
         const modelSpaceHandle = nextHandle();
         out.push('0', 'BLOCK_RECORD');
         out.push('5', modelSpaceHandle);
         out.push('330', blockRecTableHandle);
         out.push('100', 'AcDbSymbolTableRecord');
         out.push('100', 'AcDbBlockTableRecord');
-        out.push('2', '*MODEL_SPACE');
+        out.push('2', '*Model_Space');
 
-        // *PAPER_SPACE block record
+        // *Paper_Space block record
         const paperSpaceHandle = nextHandle();
         out.push('0', 'BLOCK_RECORD');
         out.push('5', paperSpaceHandle);
         out.push('330', blockRecTableHandle);
         out.push('100', 'AcDbSymbolTableRecord');
         out.push('100', 'AcDbBlockTableRecord');
-        out.push('2', '*PAPER_SPACE');
+        out.push('2', '*Paper_Space');
 
         // User block records
         blockNames.forEach(name => {
@@ -1496,17 +1508,17 @@ const DXF = (() => {
     const writeBlocksSection = (out, blocks = {}, state = null, modelSpaceHandle, paperSpaceHandle) => {
         out.push('0', 'SECTION', '2', 'BLOCKS');
 
-        // *MODEL_SPACE block
+        // *Model_Space block
         out.push('0', 'BLOCK');
         out.push('5', nextHandle());
         out.push('330', modelSpaceHandle);
         out.push('100', 'AcDbEntity');
         out.push('8', '0');
         out.push('100', 'AcDbBlockBegin');
-        out.push('2', '*MODEL_SPACE');
+        out.push('2', '*Model_Space');
         out.push('70', '0');
         out.push('10', '0.0', '20', '0.0', '30', '0.0');
-        out.push('3', '*MODEL_SPACE');
+        out.push('3', '*Model_Space');
         out.push('1', '');
         out.push('0', 'ENDBLK');
         out.push('5', nextHandle());
@@ -1515,17 +1527,17 @@ const DXF = (() => {
         out.push('8', '0');
         out.push('100', 'AcDbBlockEnd');
 
-        // *PAPER_SPACE block
+        // *Paper_Space block
         out.push('0', 'BLOCK');
         out.push('5', nextHandle());
         out.push('330', paperSpaceHandle);
         out.push('100', 'AcDbEntity');
         out.push('8', '0');
         out.push('100', 'AcDbBlockBegin');
-        out.push('2', '*PAPER_SPACE');
+        out.push('2', '*Paper_Space');
         out.push('70', '0');
         out.push('10', '0.0', '20', '0.0', '30', '0.0');
-        out.push('3', '*PAPER_SPACE');
+        out.push('3', '*Paper_Space');
         out.push('1', '');
         out.push('0', 'ENDBLK');
         out.push('5', nextHandle());
@@ -1535,7 +1547,7 @@ const DXF = (() => {
         out.push('100', 'AcDbBlockEnd');
 
         Object.values(blocks).forEach(block => {
-            if (block.name === '*MODEL_SPACE' || block.name === '*PAPER_SPACE') return;
+            if (block.name === '*Model_Space' || block.name === '*Paper_Space') return;
             const basePoint = block.basePoint || block.origin || { x: 0, y: 0, z: 0 };
             const blockHandle = nextHandle();
             out.push('0', 'BLOCK');
@@ -1770,15 +1782,105 @@ const DXF = (() => {
         out.push('0', 'ENDSEC');
     };
 
-    const writeObjectsSection = (out) => {
+    const writeObjectsSection = (out, modelLayoutHandle, paperLayoutHandle) => {
         out.push('0', 'SECTION', '2', 'OBJECTS');
-        // Root dictionary
-        const dictHandle = nextHandle();
+
+        // Root named object dictionary (handle A is conventional)
+        const rootDictHandle = 'A';
         out.push('0', 'DICTIONARY');
-        out.push('5', dictHandle);
+        out.push('5', rootDictHandle);
         out.push('330', '0');
         out.push('100', 'AcDbDictionary');
         out.push('281', '1');
+
+        // ACAD_GROUP dictionary
+        const groupDictHandle = nextHandle();
+        out.push('3', 'ACAD_GROUP');
+        out.push('350', groupDictHandle);
+
+        // ACAD_LAYOUT dictionary
+        const layoutDictHandle = nextHandle();
+        out.push('3', 'ACAD_LAYOUT');
+        out.push('350', layoutDictHandle);
+
+        // ACAD_MLINESTYLE dictionary
+        const mlineStyleDictHandle = nextHandle();
+        out.push('3', 'ACAD_MLINESTYLE');
+        out.push('350', mlineStyleDictHandle);
+
+        // ACAD_PLOTSTYLENAME dictionary
+        const plotStyleDictHandle = nextHandle();
+        out.push('3', 'ACAD_PLOTSTYLENAME');
+        out.push('350', plotStyleDictHandle);
+
+        // Empty ACAD_GROUP dictionary
+        out.push('0', 'DICTIONARY');
+        out.push('5', groupDictHandle);
+        out.push('330', rootDictHandle);
+        out.push('100', 'AcDbDictionary');
+        out.push('281', '1');
+
+        // ACAD_LAYOUT dictionary with Model and Layout entries
+        out.push('0', 'DICTIONARY');
+        out.push('5', layoutDictHandle);
+        out.push('330', rootDictHandle);
+        out.push('100', 'AcDbDictionary');
+        out.push('281', '1');
+        out.push('3', 'Model');
+        out.push('350', modelLayoutHandle);
+        out.push('3', 'Layout1');
+        out.push('350', paperLayoutHandle);
+
+        // Model space LAYOUT object
+        out.push('0', 'LAYOUT');
+        out.push('5', modelLayoutHandle);
+        out.push('330', layoutDictHandle);
+        out.push('100', 'AcDbPlotSettings');
+        out.push('1', '');
+        out.push('2', 'none_device');
+        out.push('4', '');
+        out.push('100', 'AcDbLayout');
+        out.push('1', 'Model');
+        out.push('70', '1');
+        out.push('71', '0');
+
+        // Paper space LAYOUT object
+        out.push('0', 'LAYOUT');
+        out.push('5', paperLayoutHandle);
+        out.push('330', layoutDictHandle);
+        out.push('100', 'AcDbPlotSettings');
+        out.push('1', '');
+        out.push('2', 'none_device');
+        out.push('4', '');
+        out.push('100', 'AcDbLayout');
+        out.push('1', 'Layout1');
+        out.push('70', '0');
+        out.push('71', '1');
+
+        // Empty ACAD_MLINESTYLE dictionary
+        out.push('0', 'DICTIONARY');
+        out.push('5', mlineStyleDictHandle);
+        out.push('330', rootDictHandle);
+        out.push('100', 'AcDbDictionary');
+        out.push('281', '1');
+
+        // ACAD_PLOTSTYLENAME - must be ACDBDICTIONARYWDFLT with "Normal" entry
+        const normalPlaceholderHandle = nextHandle();
+        out.push('0', 'ACDBDICTIONARYWDFLT');
+        out.push('5', plotStyleDictHandle);
+        out.push('330', rootDictHandle);
+        out.push('100', 'AcDbDictionary');
+        out.push('281', '1');
+        out.push('3', 'Normal');
+        out.push('350', normalPlaceholderHandle);
+        out.push('100', 'AcDbDictionaryWithDefault');
+        out.push('340', normalPlaceholderHandle);
+
+        // "Normal" plot style placeholder
+        out.push('0', 'ACDBPLACEHOLDER');
+        out.push('5', normalPlaceholderHandle);
+        out.push('330', plotStyleDictHandle);
+
         out.push('0', 'ENDSEC');
     };
 
@@ -1794,36 +1896,75 @@ const DXF = (() => {
         // HEADER section
         out.push('0', 'SECTION', '2', 'HEADER');
         out.push('9', '$ACADVER', '1', 'AC1015');
-        out.push('9', '$HANDSEED', '5', 'FFFF'); // Will be large enough
+        out.push('9', '$ACADMAINTVER', '70', '6');
+        out.push('9', '$DWGCODEPAGE', '3', 'ANSI_1252');
+        out.push('9', '$INSBASE', '10', '0.0', '20', '0.0', '30', '0.0');
+        out.push('9', '$EXTMIN', '10', '1e+20', '20', '1e+20', '30', '1e+20');
+        out.push('9', '$EXTMAX', '10', '-1e+20', '20', '-1e+20', '30', '-1e+20');
+        out.push('9', '$LIMMIN', '10', '0.0', '20', '0.0');
+        out.push('9', '$LIMMAX', '10', '420.0', '20', '297.0');
         out.push('9', '$INSUNITS', '70', String(DEFAULT_HEADER.$INSUNITS));
         out.push('9', '$MEASUREMENT', '70', '1');
         out.push('9', '$LUNITS', '70', '2');
         out.push('9', '$LUPREC', '70', '4');
         out.push('9', '$AUNITS', '70', '0');
         out.push('9', '$AUPREC', '70', '2');
-        if (state.currentLayer) {
-            out.push('9', '$CLAYER', '8', state.currentLayer);
-        }
+        out.push('9', '$TEXTSIZE', '40', '2.5');
+        out.push('9', '$TEXTSTYLE', '7', 'Standard');
+        out.push('9', '$CLAYER', '8', state.currentLayer || '0');
+        out.push('9', '$CELTYPE', '6', 'ByLayer');
+        out.push('9', '$CECOLOR', '62', '256');
+        out.push('9', '$HANDSEED', '5', 'FFFF');
         out.push('0', 'ENDSEC');
 
-        // CLASSES section (empty but required for AC1015)
+        // CLASSES section (required for AC1015)
         out.push('0', 'SECTION', '2', 'CLASSES');
+        // ACDBDICTIONARYWDFLT class (needed for plot style dictionary)
+        out.push('0', 'CLASS');
+        out.push('1', 'ACDBDICTIONARYWDFLT');
+        out.push('2', 'AcDbDictionaryWithDefault');
+        out.push('3', 'ObjectDBX Classes');
+        out.push('90', '0');
+        out.push('280', '0');
+        out.push('281', '0');
+        // ACDBPLACEHOLDER class (needed for Normal plot style)
+        out.push('0', 'CLASS');
+        out.push('1', 'ACDBPLACEHOLDER');
+        out.push('2', 'AcDbPlaceHolder');
+        out.push('3', 'ObjectDBX Classes');
+        out.push('90', '0');
+        out.push('280', '0');
+        out.push('281', '0');
+        // LAYOUT class
+        out.push('0', 'CLASS');
+        out.push('1', 'LAYOUT');
+        out.push('2', 'AcDbLayout');
+        out.push('3', 'ObjectDBX Classes');
+        out.push('90', '0');
+        out.push('280', '0');
+        out.push('281', '0');
         out.push('0', 'ENDSEC');
 
         // TABLES section - returns model/paper space handles for ownership
         const { modelSpaceHandle, paperSpaceHandle } = writeTables(out, state.layers || [], state);
 
+        // Allocate layout handles for OBJECTS section
+        const modelLayoutHandle = nextHandle();
+        const paperLayoutHandle = nextHandle();
+
         // BLOCKS section
         writeBlocksSection(out, state.blocks || {}, state, modelSpaceHandle, paperSpaceHandle);
 
-        // ENTITIES section - entities are owned by *MODEL_SPACE
+        // ENTITIES section - entities are owned by *Model_Space
         writeEntitiesSection(out, state.entities || [], state, modelSpaceHandle);
 
         // OBJECTS section (required for AC1015)
-        writeObjectsSection(out);
+        writeObjectsSection(out, modelLayoutHandle, paperLayoutHandle);
 
         out.push('0', 'EOF');
-        return out.join('\n');
+
+        // Post-process: right-justify group codes and use \r\n line endings
+        return formatOutput(out);
     };
 
     const exportFromCadState = (state) => {
