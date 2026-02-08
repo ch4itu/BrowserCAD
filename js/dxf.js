@@ -51,11 +51,15 @@ const DXF = (() => {
     // In the output array, elements alternate: code, value, code, value, ...
     // DXF standard requires group codes to be right-justified (e.g., "  0", " 10", "100")
     const formatOutput = (out) => {
-        for (let i = 0; i < out.length; i += 2) {
-            const s = String(out[i]);
-            if (s.length < 3) out[i] = s.padStart(3);
-        }
-        return `${out.join('\r\n')}\r\n`;
+        // Ensure every group code is exactly 3 chars padded with spaces
+        const lines = out.map((val, i) => {
+            if (i % 2 === 0) {
+                return String(val).padStart(3, ' ');
+            }
+            return String(val);
+        });
+        // Join with CRLF and MUST include a trailing CRLF after EOF
+        return `${lines.join('\r\n')}\r\n`;
     };
 
     // Write entity header with handle and owner (330 is always written)
