@@ -861,7 +861,7 @@ const Renderer = {
                 const p1 = pts[i];
                 const p2 = pts[(i + 1) % pts.length];
                 const bulge = bulges[i] || 0;
-                this._drawPolylineSegment(ctx, p1, p2, bulge, false);
+                this._drawPolylineSegment(ctx, p1, p2, bulge, false, true);
             }
             ctx.closePath();
             ctx.clip();
@@ -2623,7 +2623,7 @@ const Renderer = {
             ctx.moveTo(pts[0].x, pts[0].y);
             const numSegs = src.closed ? pts.length : pts.length - 1;
             for (let i = 0; i < numSegs; i++) {
-                this._drawPolylineSegment(ctx, pts[i], pts[(i + 1) % pts.length], bulges[i] || 0, false);
+                this._drawPolylineSegment(ctx, pts[i], pts[(i + 1) % pts.length], bulges[i] || 0, false, true);
             }
         } else if (src.type === 'spline') {
             this.drawSplineCurve(src.points, ctx, src.closed);
@@ -2635,7 +2635,7 @@ const Renderer = {
         }
     },
 
-    _drawPolylineSegment(ctx, p1, p2, bulge, isFirst) {
+    _drawPolylineSegment(ctx, p1, p2, bulge, isFirst, invertArc) {
         if (isFirst) {
             ctx.moveTo(p1.x, p1.y);
         }
@@ -2664,10 +2664,11 @@ const Renderer = {
             const cy = midY + h * ny;
             const startAngle = Math.atan2(p1.y - cy, p1.x - cx);
             const endAngle = Math.atan2(p2.y - cy, p2.x - cx);
-            // positive bulge = CCW arc (counterclockwise param = true in canvas)
-            // but canvas CCW goes in decreasing-angle direction, so:
-            // bulge > 0 means the arc bulges to the left of the chord direction
-            const counterClockwise = bulge > 0;
+            // positive bulge = CCW arc in world space (Y-up)
+            // For strokes, direction doesn't matter visually.
+            // For clip/fill paths under Y-flip transform, invert to get correct winding.
+            let counterClockwise = bulge > 0;
+            if (invertArc) counterClockwise = !counterClockwise;
             ctx.arc(cx, cy, r, startAngle, endAngle, counterClockwise);
         }
     },
