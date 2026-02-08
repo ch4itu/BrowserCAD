@@ -1787,57 +1787,32 @@ const DXF = (() => {
         out.push('0', 'ENDSEC');
     };
 
-    const writeObjectsSection = (out) => {
-        out.push('0', 'SECTION', '2', 'OBJECTS');
-        // Root dictionary (handle C by convention, owner = root)
-        out.push('0', 'DICTIONARY');
-        out.push('5', 'C');
-        out.push('330', '0');
-        out.push('100', 'AcDbDictionary');
-        out.push('281', '1');
-        out.push('0', 'ENDSEC');
-    };
-
     const generateDXF = (stateOrEntities = [], layers = []) => {
         const state = Array.isArray(stateOrEntities)
             ? { entities: stateOrEntities, layers, blocks: {} }
             : (stateOrEntities || { entities: [], layers: [], blocks: {} });
 
+        // Reset handle counter — only used for entities and dynamic records (layers, user blocks)
+        // Structural scaffold uses hard-coded handles (1–45, C) matching proven AC1015 template
         resetHandles();
 
-        // Build body sections first so $HANDSEED reflects all allocated handles
-        const body = [];
-
-        // CLASSES section (empty but required for AC1015)
-        body.push('0', 'SECTION', '2', 'CLASSES', '0', 'ENDSEC');
-
-        // TABLES section (with BLOCK_RECORD table for proper handle ownership)
-        const { modelSpaceHandle, paperSpaceHandle, blockHandles } =
-            writeTables(body, state.layers || [], state);
-
-        // BLOCKS section
-        writeBlocksSection(body, state.blocks || {}, state, modelSpaceHandle, paperSpaceHandle, blockHandles);
-
-        // ENTITIES section (entities owned by Model_Space BLOCK_RECORD)
-        writeEntitiesSection(body, state.entities || [], state, modelSpaceHandle);
-
-        // OBJECTS section (root dictionary)
-        writeObjectsSection(body);
-
-        // HEADER section (built last for correct $HANDSEED)
         const out = [];
+
+        // ============================================================
+        // 1. HEADER SECTION
+        // ============================================================
         out.push('0', 'SECTION', '2', 'HEADER');
         out.push('9', '$ACADVER', '1', 'AC1015');
-        out.push('9', '$ACADMAINTVER', '70', '6');
-        out.push('9', '$DWGCODEPAGE', '3', 'ANSI_1252');
-        out.push('9', '$HANDSEED', '5', getHandleSeed());
-        out.push('9', '$INSBASE', '10', '0.0', '20', '0.0', '30', '0.0');
-        out.push('9', '$EXTMIN', '10', '0.0', '20', '0.0', '30', '0.0');
-        out.push('9', '$EXTMAX', '10', '1000.0', '20', '1000.0', '30', '0.0');
-        out.push('9', '$LIMMIN', '10', '0.0', '20', '0.0');
-        out.push('9', '$LIMMAX', '10', '420.0', '20', '297.0');
+        out.push('9', '$HANDSEED', '5', 'FFFF');
         out.push('9', '$INSUNITS', '70', String(DEFAULT_HEADER.$INSUNITS));
         out.push('9', '$MEASUREMENT', '70', '1');
+        out.push('9', '$CECOLOR', '62', '256');
+        out.push('9', '$CELTYPE', '6', 'ByLayer');
+        out.push('9', '$INSBASE', '10', '0.0', '20', '0.0', '30', '0.0');
+        out.push('9', '$EXTMIN', '10', '-1000', '20', '-1000', '30', '0');
+        out.push('9', '$EXTMAX', '10', '1000', '20', '1000', '30', '0');
+        out.push('9', '$LIMMIN', '10', '0.0', '20', '0.0');
+        out.push('9', '$LIMMAX', '10', '420.0', '20', '297.0');
         out.push('9', '$LUNITS', '70', '2');
         out.push('9', '$LUPREC', '70', '4');
         out.push('9', '$AUNITS', '70', '0');
@@ -1847,8 +1822,152 @@ const DXF = (() => {
         out.push('9', '$CLAYER', '8', state.currentLayer || '0');
         out.push('0', 'ENDSEC');
 
-        // Combine: HEADER + body (CLASSES, TABLES, BLOCKS, ENTITIES, OBJECTS) + EOF
-        out.push(...body);
+        // ============================================================
+        // 2. CLASSES SECTION (empty, mandatory for AC1015)
+        // ============================================================
+        out.push('0', 'SECTION', '2', 'CLASSES', '0', 'ENDSEC');
+
+        // ============================================================
+        // 3. TABLES SECTION
+        //    Hard-coded handles match proven AC1015 template.
+        //    NO 330 owner references on TABLE or table-record entries.
+        // ============================================================
+        out.push('0', 'SECTION', '2', 'TABLES');
+
+        // -- VPORT --
+        out.push('0', 'TABLE', '2', 'VPORT', '5', '8', '100', 'AcDbSymbolTable', '70', '1');
+        out.push('0', 'VPORT', '5', '10', '100', 'AcDbSymbolTableRecord', '100', 'AcDbViewportTableRecord',
+            '2', '*ACTIVE', '70', '0',
+            '10', '0', '20', '0',
+            '11', '1', '21', '1',
+            '12', '0', '22', '0',
+            '13', '0', '23', '0',
+            '14', '0.5', '24', '0.5',
+            '15', '0.5', '25', '0.5',
+            '16', '0', '26', '0', '36', '1',
+            '17', '0', '27', '0', '37', '0',
+            '40', '100', '41', '1.5', '42', '50', '43', '0', '44', '0',
+            '50', '0', '51', '0',
+            '71', '0', '72', '100',
+            '73', '1', '74', '3',
+            '75', '1', '76', '1',
+            '77', '0', '78', '0');
+        out.push('0', 'ENDTAB');
+
+        // -- LTYPE --
+        out.push('0', 'TABLE', '2', 'LTYPE', '5', '5', '100', 'AcDbSymbolTable', '70', '3');
+        out.push('0', 'LTYPE', '5', '15', '100', 'AcDbSymbolTableRecord', '100', 'AcDbLinetypeTableRecord',
+            '2', 'ByBlock', '70', '0', '3', '', '72', '65', '73', '0', '40', '0');
+        out.push('0', 'LTYPE', '5', '16', '100', 'AcDbSymbolTableRecord', '100', 'AcDbLinetypeTableRecord',
+            '2', 'ByLayer', '70', '0', '3', '', '72', '65', '73', '0', '40', '0');
+        out.push('0', 'LTYPE', '5', '11', '100', 'AcDbSymbolTableRecord', '100', 'AcDbLinetypeTableRecord',
+            '2', 'CONTINUOUS', '70', '0', '3', 'Solid line', '72', '65', '73', '0', '40', '0');
+        out.push('0', 'ENDTAB');
+
+        // -- LAYER --
+        const layerList = (state.layers || []).length > 0
+            ? state.layers
+            : [{ name: '0', color: 7, visible: true, frozen: false, locked: false }];
+        out.push('0', 'TABLE', '2', 'LAYER', '5', '2', '100', 'AcDbSymbolTable', '70', String(layerList.length));
+        layerList.forEach((layer, idx) => {
+            const handle = idx === 0 ? '12' : nextHandle();
+            const flags = (layer.frozen ? 1 : 0) | (layer.locked ? 4 : 0);
+            const color = layer.color ?? 7;
+            const colorVal = layer.visible === false ? -Math.abs(color) : color;
+            out.push('0', 'LAYER', '5', handle,
+                '100', 'AcDbSymbolTableRecord', '100', 'AcDbLayerTableRecord',
+                '2', layer.name || '0', '70', String(flags), '62', String(colorVal),
+                '6', layer.lineType || 'CONTINUOUS');
+        });
+        out.push('0', 'ENDTAB');
+
+        // -- STYLE --
+        out.push('0', 'TABLE', '2', 'STYLE', '5', '3', '100', 'AcDbSymbolTable', '70', '1');
+        out.push('0', 'STYLE', '5', '13', '100', 'AcDbSymbolTableRecord', '100', 'AcDbTextStyleTableRecord',
+            '2', 'Standard', '70', '0', '40', '0', '41', '1', '50', '0', '71', '0', '42', '2.5', '3', 'txt', '4', '');
+        out.push('0', 'ENDTAB');
+
+        // -- APPID --
+        out.push('0', 'TABLE', '2', 'APPID', '5', '9', '100', 'AcDbSymbolTable', '70', '1');
+        out.push('0', 'APPID', '5', '14', '100', 'AcDbSymbolTableRecord', '100', 'AcDbRegAppTableRecord',
+            '2', 'ACAD', '70', '0');
+        out.push('0', 'ENDTAB');
+
+        // -- BLOCK_RECORD --
+        const userBlocks = Object.values(state.blocks || {}).filter(
+            b => b.name !== '*Model_Space' && b.name !== '*Paper_Space'
+        );
+        out.push('0', 'TABLE', '2', 'BLOCK_RECORD', '5', '1', '100', 'AcDbSymbolTable',
+            '70', String(2 + userBlocks.length));
+        out.push('0', 'BLOCK_RECORD', '5', '40',
+            '100', 'AcDbSymbolTableRecord', '100', 'AcDbBlockTableRecord', '2', '*Model_Space');
+        out.push('0', 'BLOCK_RECORD', '5', '41',
+            '100', 'AcDbSymbolTableRecord', '100', 'AcDbBlockTableRecord', '2', '*Paper_Space');
+        const blockRecordHandles = {};
+        userBlocks.forEach(block => {
+            const h = nextHandle();
+            out.push('0', 'BLOCK_RECORD', '5', h,
+                '100', 'AcDbSymbolTableRecord', '100', 'AcDbBlockTableRecord', '2', block.name || 'BLOCK');
+            blockRecordHandles[block.name] = h;
+        });
+        out.push('0', 'ENDTAB');
+
+        out.push('0', 'ENDSEC');
+
+        // ============================================================
+        // 4. BLOCKS SECTION
+        //    *Model_Space and *Paper_Space use hard-coded handles.
+        //    BLOCK/ENDBLK DO have 330 owner → their BLOCK_RECORD handle.
+        // ============================================================
+        out.push('0', 'SECTION', '2', 'BLOCKS');
+        // *Model_Space
+        out.push('0', 'BLOCK', '5', '42', '330', '40', '100', 'AcDbEntity', '8', '0',
+            '100', 'AcDbBlockBegin', '2', '*Model_Space', '70', '0',
+            '10', '0', '20', '0', '30', '0', '3', '*Model_Space', '1', '');
+        out.push('0', 'ENDBLK', '5', '43', '330', '40', '100', 'AcDbEntity', '8', '0',
+            '100', 'AcDbBlockEnd');
+        // *Paper_Space
+        out.push('0', 'BLOCK', '5', '44', '330', '41', '100', 'AcDbEntity', '8', '0',
+            '100', 'AcDbBlockBegin', '2', '*Paper_Space', '70', '0',
+            '10', '0', '20', '0', '30', '0', '3', '*Paper_Space', '1', '');
+        out.push('0', 'ENDBLK', '5', '45', '330', '41', '100', 'AcDbEntity', '8', '0',
+            '100', 'AcDbBlockEnd');
+        // User-defined blocks
+        userBlocks.forEach(block => {
+            const ownerHandle = blockRecordHandles[block.name] || '0';
+            const basePoint = block.basePoint || block.origin || { x: 0, y: 0, z: 0 };
+            out.push('0', 'BLOCK', '5', nextHandle(), '330', ownerHandle,
+                '100', 'AcDbEntity', '8', '0', '100', 'AcDbBlockBegin',
+                '2', block.name || 'BLOCK', '70', '0',
+                '10', formatNumber(basePoint.x), '20', formatNumber(fy(basePoint.y)),
+                '30', formatNumber(basePoint.z || 0), '3', block.name || 'BLOCK', '1', '');
+            (block.entities || []).forEach(entity => {
+                writeEntity(out, entity, state, ownerHandle);
+            });
+            out.push('0', 'ENDBLK', '5', nextHandle(), '330', ownerHandle,
+                '100', 'AcDbEntity', '8', '0', '100', 'AcDbBlockEnd');
+        });
+        out.push('0', 'ENDSEC');
+
+        // ============================================================
+        // 5. ENTITIES SECTION
+        //    All model-space entities point to BLOCK_RECORD handle "40"
+        // ============================================================
+        out.push('0', 'SECTION', '2', 'ENTITIES');
+        (state.entities || []).forEach(entity => writeEntity(out, entity, state, '40'));
+        out.push('0', 'ENDSEC');
+
+        // ============================================================
+        // 6. OBJECTS SECTION (root dictionary, mandatory for AC1015)
+        //    NO 330 owner, NO 100 subclass. Uses 280+281 per spec.
+        // ============================================================
+        out.push('0', 'SECTION', '2', 'OBJECTS');
+        out.push('0', 'DICTIONARY', '5', 'C', '100', 'AcDbDictionary', '280', '0', '281', '1');
+        out.push('0', 'ENDSEC');
+
+        // ============================================================
+        // 7. EOF
+        // ============================================================
         out.push('0', 'EOF');
 
         return formatOutput(out);
