@@ -2012,13 +2012,20 @@ const DXF = (() => {
         out.push('0', 'ENDSEC');
 
         // ============================================================
-        // 6. OBJECTS SECTION (root dictionary + empty ACAD_LAYOUT dict)
+        // 6. OBJECTS SECTION (root dictionary + minimal layout/plot style dicts)
         // ============================================================
         const layoutDictHandle = nextHandle();
+        const plotStyleDictHandle = nextHandle();
+        const plotStyleHandle = nextHandle();
         out.push('0', 'SECTION', '2', 'OBJECTS');
         out.push('0', 'DICTIONARY', '5', 'C', '100', 'AcDbDictionary', '280', '0', '281', '1',
-            '3', 'ACAD_LAYOUT', '350', layoutDictHandle);
+            '3', 'ACAD_LAYOUT', '350', layoutDictHandle,
+            '3', 'ACAD_PLOTSTYLENAME', '350', plotStyleDictHandle);
         out.push('0', 'DICTIONARY', '5', layoutDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
+        out.push('0', 'DICTIONARY', '5', plotStyleDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1',
+            '3', 'Normal', '350', plotStyleHandle);
+        out.push('0', 'PLOTSTYLE', '5', plotStyleHandle, '330', plotStyleDictHandle,
+            '100', 'AcDbPlotStyleName', '2', 'Normal', '70', '0');
         out.push('0', 'ENDSEC');
 
         // ============================================================
