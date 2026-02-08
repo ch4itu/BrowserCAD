@@ -33,6 +33,26 @@ const DXF = (() => {
         return num.toFixed(6);
     };
 
+    // ============================================
+    // Handle system for AC1015 compliance
+    // ============================================
+    let _handleCounter = 0;
+    const resetHandles = () => { _handleCounter = 0x100; }; // Start after reserved handles
+    const nextHandle = () => {
+        const h = _handleCounter.toString(16).toUpperCase();
+        _handleCounter++;
+        return h;
+    };
+
+    // Write entity header with handle and owner
+    const writeEntityHeader = (out, dxfType, entity, ownerHandle) => {
+        out.push('0', dxfType);
+        out.push('5', nextHandle());
+        if (ownerHandle) out.push('330', ownerHandle);
+        out.push('100', 'AcDbEntity');
+        out.push('8', entity.layer || '0');
+    };
+
     // Convert 24-bit RGB integer to #RRGGBB hex string
     const intToHex = (intColor) => {
         if (!intColor && intColor !== 0) return null;
@@ -927,26 +947,84 @@ const DXF = (() => {
     const writeTables = (out, layers = [], state = null) => {
         out.push('0', 'SECTION', '2', 'TABLES');
 
-        // LTYPE table - write standard linetypes
-        out.push('0', 'TABLE', '2', 'LTYPE', '70', '4');
+        // VPORT table (required)
+        const vportTableHandle = nextHandle();
+        out.push('0', 'TABLE');
+        out.push('2', 'VPORT');
+        out.push('5', vportTableHandle);
+        out.push('330', '0');
+        out.push('100', 'AcDbSymbolTable');
+        out.push('70', '1');
+        out.push('0', 'VPORT');
+        out.push('5', nextHandle());
+        out.push('330', vportTableHandle);
+        out.push('100', 'AcDbSymbolTableRecord');
+        out.push('100', 'AcDbViewportTableRecord');
+        out.push('2', '*ACTIVE');
+        out.push('70', '0');
+        out.push('10', '0.0', '20', '0.0');
+        out.push('11', '1.0', '21', '1.0');
+        out.push('12', '0.0', '22', '0.0');
+        out.push('40', '1000.0');
+        out.push('41', '1.0');
+        out.push('0', 'ENDTAB');
+
+        // LTYPE table
+        const ltypeTableHandle = nextHandle();
+        out.push('0', 'TABLE');
+        out.push('2', 'LTYPE');
+        out.push('5', ltypeTableHandle);
+        out.push('330', '0');
+        out.push('100', 'AcDbSymbolTable');
+        out.push('70', '4');
         // ByBlock
-        out.push('0', 'LTYPE', '2', 'BYBLOCK', '70', '0', '3', '', '72', '65', '73', '0', '40', '0.0');
+        out.push('0', 'LTYPE');
+        out.push('5', nextHandle());
+        out.push('330', ltypeTableHandle);
+        out.push('100', 'AcDbSymbolTableRecord');
+        out.push('100', 'AcDbLinetypeTableRecord');
+        out.push('2', 'BYBLOCK', '70', '0', '3', '', '72', '65', '73', '0', '40', '0.0');
         // ByLayer
-        out.push('0', 'LTYPE', '2', 'BYLAYER', '70', '0', '3', '', '72', '65', '73', '0', '40', '0.0');
+        out.push('0', 'LTYPE');
+        out.push('5', nextHandle());
+        out.push('330', ltypeTableHandle);
+        out.push('100', 'AcDbSymbolTableRecord');
+        out.push('100', 'AcDbLinetypeTableRecord');
+        out.push('2', 'BYLAYER', '70', '0', '3', '', '72', '65', '73', '0', '40', '0.0');
         // Continuous
-        out.push('0', 'LTYPE', '2', 'CONTINUOUS', '70', '0', '3', 'Solid line', '72', '65', '73', '0', '40', '0.0');
+        out.push('0', 'LTYPE');
+        out.push('5', nextHandle());
+        out.push('330', ltypeTableHandle);
+        out.push('100', 'AcDbSymbolTableRecord');
+        out.push('100', 'AcDbLinetypeTableRecord');
+        out.push('2', 'CONTINUOUS', '70', '0', '3', 'Solid line', '72', '65', '73', '0', '40', '0.0');
         // Dashed
-        out.push('0', 'LTYPE', '2', 'DASHED', '70', '0', '3', '__ __ __ __', '72', '65', '73', '2', '40', '0.75');
+        out.push('0', 'LTYPE');
+        out.push('5', nextHandle());
+        out.push('330', ltypeTableHandle);
+        out.push('100', 'AcDbSymbolTableRecord');
+        out.push('100', 'AcDbLinetypeTableRecord');
+        out.push('2', 'DASHED', '70', '0', '3', '__ __ __ __', '72', '65', '73', '2', '40', '0.75');
         out.push('49', '0.5', '74', '0', '49', '-0.25', '74', '0');
         out.push('0', 'ENDTAB');
 
         // LAYER table
-        out.push('0', 'TABLE', '2', 'LAYER', '70', String(layers.length || 1));
+        const layerTableHandle = nextHandle();
+        out.push('0', 'TABLE');
+        out.push('2', 'LAYER');
+        out.push('5', layerTableHandle);
+        out.push('330', '0');
+        out.push('100', 'AcDbSymbolTable');
+        out.push('70', String(layers.length || 1));
         const layerList = layers.length ? layers : [{ name: '0', color: 7, visible: true, frozen: false, locked: false }];
         layerList.forEach(layer => {
             const flags = (layer.frozen ? 1 : 0) | (layer.locked ? 4 : 0);
             const color = layer.color ?? 7;
             out.push('0', 'LAYER');
+            out.push('5', nextHandle());
+            out.push('330', layerTableHandle);
+            out.push('100', 'AcDbSymbolTableRecord');
+            out.push('100', 'AcDbLayerTableRecord');
             out.push('2', layer.name || '0');
             out.push('70', String(flags));
             out.push('62', String(layer.visible === false ? -Math.abs(color) : color));
@@ -958,60 +1036,161 @@ const DXF = (() => {
         });
         out.push('0', 'ENDTAB');
 
-        // STYLE table (text styles)
-        out.push('0', 'TABLE', '2', 'STYLE', '70', '1');
-        out.push('0', 'STYLE', '2', 'STANDARD', '70', '0', '40', '0.0', '41', '1.0', '3', 'txt');
+        // STYLE table
+        const styleTableHandle = nextHandle();
+        out.push('0', 'TABLE');
+        out.push('2', 'STYLE');
+        out.push('5', styleTableHandle);
+        out.push('330', '0');
+        out.push('100', 'AcDbSymbolTable');
+        out.push('70', '1');
+        out.push('0', 'STYLE');
+        out.push('5', nextHandle());
+        out.push('330', styleTableHandle);
+        out.push('100', 'AcDbSymbolTableRecord');
+        out.push('100', 'AcDbTextStyleTableRecord');
+        out.push('2', 'STANDARD', '70', '0', '40', '0.0', '41', '1.0', '3', 'txt');
+        out.push('0', 'ENDTAB');
+
+        // VIEW table (empty but required)
+        out.push('0', 'TABLE');
+        out.push('2', 'VIEW');
+        out.push('5', nextHandle());
+        out.push('330', '0');
+        out.push('100', 'AcDbSymbolTable');
+        out.push('70', '0');
+        out.push('0', 'ENDTAB');
+
+        // UCS table (empty but required)
+        out.push('0', 'TABLE');
+        out.push('2', 'UCS');
+        out.push('5', nextHandle());
+        out.push('330', '0');
+        out.push('100', 'AcDbSymbolTable');
+        out.push('70', '0');
+        out.push('0', 'ENDTAB');
+
+        // APPID table (required)
+        const appidTableHandle = nextHandle();
+        out.push('0', 'TABLE');
+        out.push('2', 'APPID');
+        out.push('5', appidTableHandle);
+        out.push('330', '0');
+        out.push('100', 'AcDbSymbolTable');
+        out.push('70', '1');
+        out.push('0', 'APPID');
+        out.push('5', nextHandle());
+        out.push('330', appidTableHandle);
+        out.push('100', 'AcDbSymbolTableRecord');
+        out.push('100', 'AcDbRegAppTableRecord');
+        out.push('2', 'ACAD');
+        out.push('70', '0');
         out.push('0', 'ENDTAB');
 
         // DIMSTYLE table
-        out.push('0', 'TABLE', '2', 'DIMSTYLE', '70', '1');
-        out.push('0', 'DIMSTYLE', '2', 'STANDARD', '70', '0');
+        const dimStyleTableHandle = nextHandle();
+        out.push('0', 'TABLE');
+        out.push('2', 'DIMSTYLE');
+        out.push('5', dimStyleTableHandle);
+        out.push('330', '0');
+        out.push('100', 'AcDbSymbolTable');
+        out.push('70', '1');
+        out.push('0', 'DIMSTYLE');
+        out.push('105', nextHandle());
+        out.push('330', dimStyleTableHandle);
+        out.push('100', 'AcDbSymbolTableRecord');
+        out.push('100', 'AcDbDimStyleTableRecord');
+        out.push('2', 'STANDARD');
+        out.push('70', '0');
         out.push('40', '1.0');   // DIMSCALE
         out.push('140', '2.5');  // DIMTXT
-        out.push('41', '2.5');   // DIMASZ (arrow size)
+        out.push('41', '2.5');   // DIMASZ
         out.push('0', 'ENDTAB');
 
+        // BLOCK_RECORD table (required for AC1015)
+        const blockRecTableHandle = nextHandle();
+        out.push('0', 'TABLE');
+        out.push('2', 'BLOCK_RECORD');
+        out.push('5', blockRecTableHandle);
+        out.push('330', '0');
+        out.push('100', 'AcDbSymbolTable');
+        // Count: *MODEL_SPACE + *PAPER_SPACE + user blocks
+        const blockNames = Object.keys(state?.blocks || {}).filter(n => n !== '*MODEL_SPACE' && n !== '*PAPER_SPACE');
+        out.push('70', String(2 + blockNames.length));
+
+        // *MODEL_SPACE block record
+        const modelSpaceHandle = nextHandle();
+        out.push('0', 'BLOCK_RECORD');
+        out.push('5', modelSpaceHandle);
+        out.push('330', blockRecTableHandle);
+        out.push('100', 'AcDbSymbolTableRecord');
+        out.push('100', 'AcDbBlockTableRecord');
+        out.push('2', '*MODEL_SPACE');
+
+        // *PAPER_SPACE block record
+        const paperSpaceHandle = nextHandle();
+        out.push('0', 'BLOCK_RECORD');
+        out.push('5', paperSpaceHandle);
+        out.push('330', blockRecTableHandle);
+        out.push('100', 'AcDbSymbolTableRecord');
+        out.push('100', 'AcDbBlockTableRecord');
+        out.push('2', '*PAPER_SPACE');
+
+        // User block records
+        blockNames.forEach(name => {
+            out.push('0', 'BLOCK_RECORD');
+            out.push('5', nextHandle());
+            out.push('330', blockRecTableHandle);
+            out.push('100', 'AcDbSymbolTableRecord');
+            out.push('100', 'AcDbBlockTableRecord');
+            out.push('2', name);
+        });
+
+        out.push('0', 'ENDTAB');
         out.push('0', 'ENDSEC');
+
+        return { modelSpaceHandle, paperSpaceHandle };
     };
 
     // Y-flip helper: negate Y for export
     const fy = (y) => -(y || 0);
 
-    const writeEntityLine = (out, entity) => {
-        out.push('0', 'LINE');
-        out.push('8', entity.layer || '0');
+    const writeEntityLine = (out, entity, ownerHandle) => {
+        writeEntityHeader(out, 'LINE', entity, ownerHandle);
         writeCommonStyle(out, entity);
+        out.push('100', 'AcDbLine');
         out.push('10', formatNumber(entity.p1?.x), '20', formatNumber(fy(entity.p1?.y)), '30', formatNumber(entity.p1?.z || 0));
         out.push('11', formatNumber(entity.p2?.x), '21', formatNumber(fy(entity.p2?.y)), '31', formatNumber(entity.p2?.z || 0));
     };
 
-    const writeEntityCircle = (out, entity) => {
-        out.push('0', 'CIRCLE');
-        out.push('8', entity.layer || '0');
+    const writeEntityCircle = (out, entity, ownerHandle) => {
+        writeEntityHeader(out, 'CIRCLE', entity, ownerHandle);
         writeCommonStyle(out, entity);
+        out.push('100', 'AcDbCircle');
         out.push('10', formatNumber(entity.center?.x), '20', formatNumber(fy(entity.center?.y)), '30', formatNumber(entity.center?.z || 0));
         out.push('40', formatNumber(entity.r || 0));
     };
 
-    const writeEntityArc = (out, entity) => {
-        out.push('0', 'ARC');
-        out.push('8', entity.layer || '0');
+    const writeEntityArc = (out, entity, ownerHandle) => {
+        writeEntityHeader(out, 'ARC', entity, ownerHandle);
         writeCommonStyle(out, entity);
+        out.push('100', 'AcDbCircle');
         out.push('10', formatNumber(entity.center?.x), '20', formatNumber(fy(entity.center?.y)), '30', formatNumber(entity.center?.z || 0));
         out.push('40', formatNumber(entity.r || 0));
+        out.push('100', 'AcDbArc');
         // Convert internal radians to DXF degrees with Y-flip:
         // Swap start/end and negate to reverse the Y-flip transformation
         out.push('50', formatNumber(-(entity.end || 0) * RAD2DEG));
         out.push('51', formatNumber(-(entity.start || 0) * RAD2DEG));
     };
 
-    const writeEntityLwPolyline = (out, entity) => {
+    const writeEntityLwPolyline = (out, entity, ownerHandle) => {
         const points = entity.points || [];
         const bulges = entity.bulges || [];
         const closedFlag = entity.closed ? 1 : 0;
-        out.push('0', 'LWPOLYLINE');
-        out.push('8', entity.layer || '0');
+        writeEntityHeader(out, 'LWPOLYLINE', entity, ownerHandle);
         writeCommonStyle(out, entity);
+        out.push('100', 'AcDbPolyline');
         out.push('90', String(points.length));
         out.push('70', String(closedFlag));
         points.forEach((point, idx) => {
@@ -1029,10 +1208,10 @@ const DXF = (() => {
         });
     };
 
-    const writeEntityText = (out, entity, isMText = false) => {
-        out.push('0', isMText ? 'MTEXT' : 'TEXT');
-        out.push('8', entity.layer || '0');
+    const writeEntityText = (out, entity, isMText = false, ownerHandle) => {
+        writeEntityHeader(out, isMText ? 'MTEXT' : 'TEXT', entity, ownerHandle);
         writeCommonStyle(out, entity);
+        out.push('100', isMText ? 'AcDbMText' : 'AcDbText');
         const pos = entity.position || { x: 0, y: 0 };
         out.push('10', formatNumber(pos.x), '20', formatNumber(fy(pos.y)), '30', formatNumber(pos.z || 0));
         out.push('40', formatNumber(entity.height || 0));
@@ -1046,18 +1225,18 @@ const DXF = (() => {
         }
     };
 
-    const writeEntityPoint = (out, entity) => {
-        out.push('0', 'POINT');
-        out.push('8', entity.layer || '0');
+    const writeEntityPoint = (out, entity, ownerHandle) => {
+        writeEntityHeader(out, 'POINT', entity, ownerHandle);
         writeCommonStyle(out, entity);
+        out.push('100', 'AcDbPoint');
         const pos = entity.position || { x: 0, y: 0 };
         out.push('10', formatNumber(pos.x), '20', formatNumber(fy(pos.y)), '30', '0.0');
     };
 
-    const writeEntityEllipse = (out, entity) => {
-        out.push('0', 'ELLIPSE');
-        out.push('8', entity.layer || '0');
+    const writeEntityEllipse = (out, entity, ownerHandle) => {
+        writeEntityHeader(out, 'ELLIPSE', entity, ownerHandle);
         writeCommonStyle(out, entity);
+        out.push('100', 'AcDbEllipse');
         out.push('10', formatNumber(entity.center?.x), '20', formatNumber(fy(entity.center?.y)), '30', '0.0');
         // Major axis endpoint relative to center
         const rx = entity.rx || 0;
@@ -1073,7 +1252,7 @@ const DXF = (() => {
         out.push('42', formatNumber(Math.PI * 2));      // end parameter (full ellipse)
     };
 
-    const writeEntitySpline = (out, entity) => {
+    const writeEntitySpline = (out, entity, ownerHandle) => {
         let points = entity.points || [];
         if (points.length < 2) return;
         const degree = 3;
@@ -1087,9 +1266,9 @@ const DXF = (() => {
             }
         }
 
-        out.push('0', 'SPLINE');
-        out.push('8', entity.layer || '0');
+        writeEntityHeader(out, 'SPLINE', entity, ownerHandle);
         writeCommonStyle(out, entity);
+        out.push('100', 'AcDbSpline');
         out.push('70', String(closed ? 11 : 8)); // flags: 8=planar, 1=closed, 2=periodic
         out.push('71', String(degree));
 
@@ -1118,12 +1297,12 @@ const DXF = (() => {
         });
     };
 
-    const writeEntityLeader = (out, entity) => {
+    const writeEntityLeader = (out, entity, ownerHandle) => {
         const points = entity.points || [];
         if (points.length < 2) return;
-        out.push('0', 'LEADER');
-        out.push('8', entity.layer || '0');
+        writeEntityHeader(out, 'LEADER', entity, ownerHandle);
         writeCommonStyle(out, entity);
+        out.push('100', 'AcDbLeader');
         out.push('3', 'STANDARD'); // dimension style name
         out.push('71', '1');  // arrowhead flag
         out.push('72', '0');  // leader path type (straight)
@@ -1134,15 +1313,15 @@ const DXF = (() => {
         });
     };
 
-    const writeEntityInsert = (out, entity) => {
+    const writeEntityInsert = (out, entity, ownerHandle) => {
         const insertPoint = entity.insertPoint || { x: entity.x || 0, y: entity.y || 0, z: 0 };
         const scale = entity.scale || { x: entity.scaleX ?? 1, y: entity.scaleY ?? 1 };
         const rotation = entity.rotation || 0;
         // Negate rotation for Y-flip
         const rotationDeg = -rotation * RAD2DEG;
-        out.push('0', 'INSERT');
-        out.push('8', entity.layer || '0');
+        writeEntityHeader(out, 'INSERT', entity, ownerHandle);
         writeCommonStyle(out, entity);
+        out.push('100', 'AcDbBlockReference');
         out.push('2', entity.blockName || '');
         out.push('10', formatNumber(insertPoint.x), '20', formatNumber(fy(insertPoint.y)), '30', formatNumber(insertPoint.z || 0));
         out.push('41', formatNumber(scale.x ?? 1));
@@ -1171,7 +1350,7 @@ const DXF = (() => {
         return [];
     };
 
-    const writeEntityHatch = (out, entity, state) => {
+    const writeEntityHatch = (out, entity, state, ownerHandle) => {
         const edges = getHatchBoundaryEdges(entity, state);
         if (!edges.length) return;
         const rawPattern = entity.patternName || entity.pattern || entity.hatch?.pattern || 'ANSI31';
@@ -1179,10 +1358,8 @@ const DXF = (() => {
         const scale = entity.scale || 1;
         const angle = entity.angle || 0;
         const isSolid = entity.solid === 1 || rawPattern.toLowerCase() === 'solid';
-        out.push('0', 'HATCH');
-        out.push('8', entity.layer || '0');
+        writeEntityHeader(out, 'HATCH', entity, ownerHandle);
         writeCommonStyle(out, entity);
-        out.push('100', 'AcDbEntity');
         out.push('100', 'AcDbHatch');
         out.push('10', '0.0');
         out.push('20', '0.0');
@@ -1226,32 +1403,30 @@ const DXF = (() => {
         out.push('78', '0');
     };
 
-    const writeEntityDimension = (out, entity) => {
+    const writeEntityDimension = (out, entity, ownerHandle) => {
         // Export dimension as lines + text (decomposed)
         // This ensures broad compatibility
-        const layer = entity.layer || '0';
-
         if (entity.dimType === 'linear' || entity.dimType === 'aligned') {
             const p1 = entity.p1 || entity.start;
             const p2 = entity.p2 || entity.end;
             if (!p1 || !p2) return;
+            const dimLineY = entity.dimLineY != null ? entity.dimLineY : (Math.min(p1.y, p2.y) - 20);
 
             // Extension lines
-            out.push('0', 'LINE');
-            out.push('8', layer);
+            writeEntityHeader(out, 'LINE', entity, ownerHandle);
             writeCommonStyle(out, entity);
+            out.push('100', 'AcDbLine');
             out.push('10', formatNumber(p1.x), '20', formatNumber(fy(p1.y)), '30', '0.0');
-            const dimLineY = entity.dimLineY != null ? entity.dimLineY : (Math.min(p1.y, p2.y) - 20);
             out.push('11', formatNumber(p1.x), '21', formatNumber(fy(dimLineY)), '31', '0.0');
 
-            out.push('0', 'LINE');
-            out.push('8', layer);
+            writeEntityHeader(out, 'LINE', entity, ownerHandle);
+            out.push('100', 'AcDbLine');
             out.push('10', formatNumber(p2.x), '20', formatNumber(fy(p2.y)), '30', '0.0');
             out.push('11', formatNumber(p2.x), '21', formatNumber(fy(dimLineY)), '31', '0.0');
 
             // Dimension line
-            out.push('0', 'LINE');
-            out.push('8', layer);
+            writeEntityHeader(out, 'LINE', entity, ownerHandle);
+            out.push('100', 'AcDbLine');
             out.push('10', formatNumber(p1.x), '20', formatNumber(fy(dimLineY)), '30', '0.0');
             out.push('11', formatNumber(p2.x), '21', formatNumber(fy(dimLineY)), '31', '0.0');
 
@@ -1259,8 +1434,8 @@ const DXF = (() => {
             if (entity.text) {
                 const midX = (p1.x + p2.x) / 2;
                 const textH = entity.textHeight || 2.5;
-                out.push('0', 'TEXT');
-                out.push('8', layer);
+                writeEntityHeader(out, 'TEXT', entity, ownerHandle);
+                out.push('100', 'AcDbText');
                 out.push('10', formatNumber(midX), '20', formatNumber(fy(dimLineY - textH * 1.5)), '30', '0.0');
                 out.push('40', formatNumber(textH));
                 out.push('1', entity.text);
@@ -1270,16 +1445,16 @@ const DXF = (() => {
             const textPos = entity.textPosition || entity.position;
             if (!center || !textPos) return;
 
-            out.push('0', 'LINE');
-            out.push('8', layer);
+            writeEntityHeader(out, 'LINE', entity, ownerHandle);
             writeCommonStyle(out, entity);
+            out.push('100', 'AcDbLine');
             out.push('10', formatNumber(center.x), '20', formatNumber(fy(center.y)), '30', '0.0');
             out.push('11', formatNumber(textPos.x), '21', formatNumber(fy(textPos.y)), '31', '0.0');
 
             if (entity.text) {
                 const textH = entity.textHeight || 2.5;
-                out.push('0', 'TEXT');
-                out.push('8', layer);
+                writeEntityHeader(out, 'TEXT', entity, ownerHandle);
+                out.push('100', 'AcDbText');
                 out.push('10', formatNumber(textPos.x), '20', formatNumber(fy(textPos.y)), '30', '0.0');
                 out.push('40', formatNumber(textH));
                 out.push('1', entity.text);
@@ -1293,11 +1468,12 @@ const DXF = (() => {
             const textH = entity.textHeight || 2.5;
             const dimR = r + 15;
 
-            out.push('0', 'ARC');
-            out.push('8', layer);
+            writeEntityHeader(out, 'ARC', entity, ownerHandle);
             writeCommonStyle(out, entity);
+            out.push('100', 'AcDbCircle');
             out.push('10', formatNumber(center.x), '20', formatNumber(fy(center.y)), '30', '0.0');
             out.push('40', formatNumber(dimR));
+            out.push('100', 'AcDbArc');
             out.push('50', formatNumber(-(endA || 0) * RAD2DEG));
             out.push('51', formatNumber(-(startA || 0) * RAD2DEG));
 
@@ -1306,8 +1482,8 @@ const DXF = (() => {
                 if (sweep < 0) sweep += 2 * Math.PI;
                 const midAngle = startA + sweep / 2;
                 const textR = dimR + textH;
-                out.push('0', 'TEXT');
-                out.push('8', layer);
+                writeEntityHeader(out, 'TEXT', entity, ownerHandle);
+                out.push('100', 'AcDbText');
                 out.push('10', formatNumber(center.x + textR * Math.cos(midAngle)));
                 out.push('20', formatNumber(fy(center.y + textR * Math.sin(midAngle))));
                 out.push('30', '0.0');
@@ -1317,74 +1493,116 @@ const DXF = (() => {
         }
     };
 
-    const writeBlocksSection = (out, blocks = {}, state = null) => {
+    const writeBlocksSection = (out, blocks = {}, state = null, modelSpaceHandle, paperSpaceHandle) => {
         out.push('0', 'SECTION', '2', 'BLOCKS');
-        // Required *MODEL_SPACE and *PAPER_SPACE blocks
-        out.push('0', 'BLOCK', '2', '*MODEL_SPACE', '70', '0', '10', '0.0', '20', '0.0', '30', '0.0', '3', '*MODEL_SPACE', '1', '');
+
+        // *MODEL_SPACE block
+        out.push('0', 'BLOCK');
+        out.push('5', nextHandle());
+        out.push('330', modelSpaceHandle);
+        out.push('100', 'AcDbEntity');
+        out.push('8', '0');
+        out.push('100', 'AcDbBlockBegin');
+        out.push('2', '*MODEL_SPACE');
+        out.push('70', '0');
+        out.push('10', '0.0', '20', '0.0', '30', '0.0');
+        out.push('3', '*MODEL_SPACE');
+        out.push('1', '');
         out.push('0', 'ENDBLK');
-        out.push('0', 'BLOCK', '2', '*PAPER_SPACE', '70', '0', '10', '0.0', '20', '0.0', '30', '0.0', '3', '*PAPER_SPACE', '1', '');
+        out.push('5', nextHandle());
+        out.push('330', modelSpaceHandle);
+        out.push('100', 'AcDbEntity');
+        out.push('8', '0');
+        out.push('100', 'AcDbBlockEnd');
+
+        // *PAPER_SPACE block
+        out.push('0', 'BLOCK');
+        out.push('5', nextHandle());
+        out.push('330', paperSpaceHandle);
+        out.push('100', 'AcDbEntity');
+        out.push('8', '0');
+        out.push('100', 'AcDbBlockBegin');
+        out.push('2', '*PAPER_SPACE');
+        out.push('70', '0');
+        out.push('10', '0.0', '20', '0.0', '30', '0.0');
+        out.push('3', '*PAPER_SPACE');
+        out.push('1', '');
         out.push('0', 'ENDBLK');
+        out.push('5', nextHandle());
+        out.push('330', paperSpaceHandle);
+        out.push('100', 'AcDbEntity');
+        out.push('8', '0');
+        out.push('100', 'AcDbBlockEnd');
 
         Object.values(blocks).forEach(block => {
             if (block.name === '*MODEL_SPACE' || block.name === '*PAPER_SPACE') return;
             const basePoint = block.basePoint || block.origin || { x: 0, y: 0, z: 0 };
+            const blockHandle = nextHandle();
             out.push('0', 'BLOCK');
+            out.push('5', blockHandle);
+            out.push('100', 'AcDbEntity');
+            out.push('8', '0');
+            out.push('100', 'AcDbBlockBegin');
             out.push('2', block.name || 'BLOCK');
             out.push('70', '0');
             out.push('10', formatNumber(basePoint.x), '20', formatNumber(fy(basePoint.y)), '30', formatNumber(basePoint.z || 0));
             out.push('3', block.name || 'BLOCK');
             out.push('1', '');
             (block.entities || []).forEach(entity => {
-                writeEntity(out, entity, state);
+                writeEntity(out, entity, state, blockHandle);
             });
             out.push('0', 'ENDBLK');
+            out.push('5', nextHandle());
+            out.push('100', 'AcDbEntity');
+            out.push('8', '0');
+            out.push('100', 'AcDbBlockEnd');
         });
         out.push('0', 'ENDSEC');
     };
 
-    const writeEntity = (out, entity, state) => {
+    const writeEntity = (out, entity, state, ownerHandle) => {
         switch (entity.type) {
             case 'line':
-                writeEntityLine(out, entity);
+                writeEntityLine(out, entity, ownerHandle);
                 break;
             case 'circle':
-                writeEntityCircle(out, entity);
+                writeEntityCircle(out, entity, ownerHandle);
                 break;
             case 'arc':
-                writeEntityArc(out, entity);
+                writeEntityArc(out, entity, ownerHandle);
                 break;
             case 'lwpolyline':
             case 'polyline':
                 if (entity.isSpline && entity.points?.length >= 2) {
-                    writeEntitySpline(out, entity);
+                    writeEntitySpline(out, entity, ownerHandle);
                 } else {
-                    writeEntityLwPolyline(out, entity);
+                    writeEntityLwPolyline(out, entity, ownerHandle);
                 }
                 break;
             case 'text':
-                writeEntityText(out, entity, false);
+                writeEntityText(out, entity, false, ownerHandle);
                 break;
             case 'mtext':
-                writeEntityText(out, entity, true);
+                writeEntityText(out, entity, true, ownerHandle);
                 break;
             case 'point':
-                writeEntityPoint(out, entity);
+                writeEntityPoint(out, entity, ownerHandle);
                 break;
             case 'ellipse':
-                writeEntityEllipse(out, entity);
+                writeEntityEllipse(out, entity, ownerHandle);
                 break;
             case 'insert':
             case 'block':
-                writeEntityInsert(out, entity);
+                writeEntityInsert(out, entity, ownerHandle);
                 break;
             case 'hatch':
-                writeEntityHatch(out, entity, state);
+                writeEntityHatch(out, entity, state, ownerHandle);
                 break;
             case 'leader':
-                writeEntityLeader(out, entity);
+                writeEntityLeader(out, entity, ownerHandle);
                 break;
             case 'dimension':
-                writeEntityDimension(out, entity);
+                writeEntityDimension(out, entity, ownerHandle);
                 break;
             case 'rect':
                 // Export rect as closed LWPOLYLINE
@@ -1400,17 +1618,16 @@ const DXF = (() => {
                         { x: entity.p2.x, y: entity.p2.y },
                         { x: entity.p1.x, y: entity.p2.y }
                     ]
-                });
+                }, ownerHandle);
                 break;
             case 'mleader':
-                // Export as LEADER entity for compatibility
-                writeEntityLeader(out, entity);
+                writeEntityLeader(out, entity, ownerHandle);
                 break;
             case 'tolerance': {
                 const pos = entity.position || { x: 0, y: 0 };
-                out.push('0', 'TOLERANCE');
-                out.push('8', entity.layer || '0');
+                writeEntityHeader(out, 'TOLERANCE', entity, ownerHandle);
                 writeCommonStyle(out, entity);
+                out.push('100', 'AcDbFcf');
                 out.push('10', formatNumber(pos.x), '20', formatNumber(fy(pos.y)), '30', '0.0');
                 const tolStr = (entity.frames || []).map(f => {
                     let s = (f.symbol || '') + (f.diameterSymbol ? '%%c' : '') + (f.tolerance1 || '');
@@ -1423,12 +1640,11 @@ const DXF = (() => {
                 break;
             }
             case 'trace': {
-                // DXF TRACE entity - 4 corner points
                 const pts = entity.points || [];
                 if (pts.length >= 4) {
-                    out.push('0', 'TRACE');
-                    out.push('8', entity.layer || '0');
+                    writeEntityHeader(out, 'TRACE', entity, ownerHandle);
                     writeCommonStyle(out, entity);
+                    out.push('100', 'AcDbTrace');
                     out.push('10', formatNumber(pts[0].x), '20', formatNumber(fy(pts[0].y)), '30', '0.0');
                     out.push('11', formatNumber(pts[1].x), '21', formatNumber(fy(pts[1].y)), '31', '0.0');
                     out.push('12', formatNumber(pts[2].x), '22', formatNumber(fy(pts[2].y)), '32', '0.0');
@@ -1437,40 +1653,37 @@ const DXF = (() => {
                 break;
             }
             case 'field': {
-                // Export as TEXT with evaluated content
                 const fp = entity.position || { x: 0, y: 0 };
-                out.push('0', 'TEXT');
-                out.push('8', entity.layer || '0');
+                writeEntityHeader(out, 'TEXT', entity, ownerHandle);
                 writeCommonStyle(out, entity);
+                out.push('100', 'AcDbText');
                 out.push('10', formatNumber(fp.x), '20', formatNumber(fy(fp.y)), '30', '0.0');
                 out.push('40', formatNumber(entity.height || 10));
                 out.push('1', entity.evaluatedText || entity.fieldExpression || '---');
                 break;
             }
             case 'donut': {
-                // Export as two circles + solid hatch
                 const dc = entity.center || { x: 0, y: 0 };
-                out.push('0', 'CIRCLE');
-                out.push('8', entity.layer || '0');
+                writeEntityHeader(out, 'CIRCLE', entity, ownerHandle);
                 writeCommonStyle(out, entity);
+                out.push('100', 'AcDbCircle');
                 out.push('10', formatNumber(dc.x), '20', formatNumber(fy(dc.y)), '30', '0.0');
                 out.push('40', formatNumber(entity.outerRadius || 1));
                 if (entity.innerRadius > 0) {
-                    out.push('0', 'CIRCLE');
-                    out.push('8', entity.layer || '0');
+                    writeEntityHeader(out, 'CIRCLE', entity, ownerHandle);
                     writeCommonStyle(out, entity);
+                    out.push('100', 'AcDbCircle');
                     out.push('10', formatNumber(dc.x), '20', formatNumber(fy(dc.y)), '30', '0.0');
                     out.push('40', formatNumber(entity.innerRadius));
                 }
                 break;
             }
             case 'solid': {
-                // DXF SOLID entity - 4 corner points
                 const sp = entity.points || [];
                 if (sp.length >= 3) {
-                    out.push('0', 'SOLID');
-                    out.push('8', entity.layer || '0');
+                    writeEntityHeader(out, 'SOLID', entity, ownerHandle);
                     writeCommonStyle(out, entity);
+                    out.push('100', 'AcDbTrace');
                     const codes = [[10,20],[11,21],[12,22],[13,23]];
                     for (let si = 0; si < Math.min(sp.length, 4); si++) {
                         out.push(String(codes[si][0]), formatNumber(sp[si].x));
@@ -1483,42 +1696,27 @@ const DXF = (() => {
                 }
                 break;
             }
-            case 'wipeout': {
-                // Export as closed LWPOLYLINE (DXF WIPEOUT is proprietary)
+            case 'wipeout':
+            case 'region':
+            case 'revcloud': {
                 const wp = entity.points || [];
                 if (wp.length >= 3) {
-                    out.push('0', 'LWPOLYLINE');
-                    out.push('8', entity.layer || '0');
+                    writeEntityHeader(out, 'LWPOLYLINE', entity, ownerHandle);
                     writeCommonStyle(out, entity);
+                    out.push('100', 'AcDbPolyline');
                     out.push('90', String(wp.length));
-                    out.push('70', '1'); // Closed
+                    out.push('70', '1');
                     wp.forEach(p => {
                         out.push('10', formatNumber(p.x), '20', formatNumber(fy(p.y)));
                     });
                 }
                 break;
             }
-            case 'region': {
-                // Export as closed LWPOLYLINE
-                const rp = entity.points || [];
-                if (rp.length >= 3) {
-                    out.push('0', 'LWPOLYLINE');
-                    out.push('8', entity.layer || '0');
-                    writeCommonStyle(out, entity);
-                    out.push('90', String(rp.length));
-                    out.push('70', '1');
-                    rp.forEach(p => {
-                        out.push('10', formatNumber(p.x), '20', formatNumber(fy(p.y)));
-                    });
-                }
-                break;
-            }
             case 'image': {
-                // Export image boundary as rectangle LWPOLYLINE
                 if (entity.p1 && entity.p2) {
-                    out.push('0', 'LWPOLYLINE');
-                    out.push('8', entity.layer || '0');
+                    writeEntityHeader(out, 'LWPOLYLINE', entity, ownerHandle);
                     writeCommonStyle(out, entity);
+                    out.push('100', 'AcDbPolyline');
                     out.push('90', '4');
                     out.push('70', '1');
                     out.push('10', formatNumber(entity.p1.x), '20', formatNumber(fy(entity.p1.y)));
@@ -1528,35 +1726,20 @@ const DXF = (() => {
                 }
                 break;
             }
-            case 'revcloud': {
-                // Export as closed LWPOLYLINE
-                const rc = entity.points || [];
-                if (rc.length >= 3) {
-                    out.push('0', 'LWPOLYLINE');
-                    out.push('8', entity.layer || '0');
-                    writeCommonStyle(out, entity);
-                    out.push('90', String(rc.length));
-                    out.push('70', '1');
-                    rc.forEach(p => {
-                        out.push('10', formatNumber(p.x), '20', formatNumber(fy(p.y)));
-                    });
-                }
-                break;
-            }
             case 'table': {
-                // Export as grid of LINE entities
                 if (entity.position) {
                     const tp = entity.position;
                     const rows = entity.rows || 3, cols = entity.cols || 3;
                     const rh = entity.rowHeight || 10, cw = entity.colWidth || 30;
-                    const lay = entity.layer || '0';
                     for (let r = 0; r <= rows; r++) {
-                        out.push('0', 'LINE', '8', lay);
+                        writeEntityHeader(out, 'LINE', entity, ownerHandle);
+                        out.push('100', 'AcDbLine');
                         out.push('10', formatNumber(tp.x), '20', formatNumber(fy(tp.y + r * rh)), '30', '0.0');
                         out.push('11', formatNumber(tp.x + cols * cw), '21', formatNumber(fy(tp.y + r * rh)), '31', '0.0');
                     }
                     for (let c = 0; c <= cols; c++) {
-                        out.push('0', 'LINE', '8', lay);
+                        writeEntityHeader(out, 'LINE', entity, ownerHandle);
+                        out.push('100', 'AcDbLine');
                         out.push('10', formatNumber(tp.x + c * cw), '20', formatNumber(fy(tp.y)), '30', '0.0');
                         out.push('11', formatNumber(tp.x + c * cw), '21', formatNumber(fy(tp.y + rows * rh)), '31', '0.0');
                     }
@@ -1564,13 +1747,12 @@ const DXF = (() => {
                 break;
             }
             case 'mline': {
-                // Export multiline as individual LINE entities
                 const ml = entity.points || [];
                 if (ml.length >= 2) {
                     for (let mi = 0; mi < ml.length - 1; mi++) {
-                        out.push('0', 'LINE');
-                        out.push('8', entity.layer || '0');
+                        writeEntityHeader(out, 'LINE', entity, ownerHandle);
                         writeCommonStyle(out, entity);
+                        out.push('100', 'AcDbLine');
                         out.push('10', formatNumber(ml[mi].x), '20', formatNumber(fy(ml[mi].y)), '30', '0.0');
                         out.push('11', formatNumber(ml[mi + 1].x), '21', formatNumber(fy(ml[mi + 1].y)), '31', '0.0');
                     }
@@ -1582,9 +1764,21 @@ const DXF = (() => {
         }
     };
 
-    const writeEntitiesSection = (out, entities = [], state = null) => {
+    const writeEntitiesSection = (out, entities = [], state = null, modelSpaceHandle) => {
         out.push('0', 'SECTION', '2', 'ENTITIES');
-        entities.forEach(entity => writeEntity(out, entity, state));
+        entities.forEach(entity => writeEntity(out, entity, state, modelSpaceHandle));
+        out.push('0', 'ENDSEC');
+    };
+
+    const writeObjectsSection = (out) => {
+        out.push('0', 'SECTION', '2', 'OBJECTS');
+        // Root dictionary
+        const dictHandle = nextHandle();
+        out.push('0', 'DICTIONARY');
+        out.push('5', dictHandle);
+        out.push('330', '0');
+        out.push('100', 'AcDbDictionary');
+        out.push('281', '1');
         out.push('0', 'ENDSEC');
     };
 
@@ -1594,24 +1788,40 @@ const DXF = (() => {
             : (stateOrEntities || { entities: [], layers: [], blocks: {} });
         const out = [];
 
-        // Header section with additional variables
+        // Reset handle counter for each export
+        resetHandles();
+
+        // HEADER section
         out.push('0', 'SECTION', '2', 'HEADER');
         out.push('9', '$ACADVER', '1', 'AC1015');
+        out.push('9', '$HANDSEED', '5', 'FFFF'); // Will be large enough
         out.push('9', '$INSUNITS', '70', String(DEFAULT_HEADER.$INSUNITS));
-        out.push('9', '$MEASUREMENT', '70', '1');   // Metric
-        out.push('9', '$LUNITS', '70', '2');         // Decimal units
-        out.push('9', '$LUPREC', '70', '4');         // 4 decimal places
-        out.push('9', '$AUNITS', '70', '0');         // Decimal degrees
-        out.push('9', '$AUPREC', '70', '2');         // 2 decimal places for angles
-        // Current layer
+        out.push('9', '$MEASUREMENT', '70', '1');
+        out.push('9', '$LUNITS', '70', '2');
+        out.push('9', '$LUPREC', '70', '4');
+        out.push('9', '$AUNITS', '70', '0');
+        out.push('9', '$AUPREC', '70', '2');
         if (state.currentLayer) {
             out.push('9', '$CLAYER', '8', state.currentLayer);
         }
         out.push('0', 'ENDSEC');
 
-        writeTables(out, state.layers || [], state);
-        writeBlocksSection(out, state.blocks || {}, state);
-        writeEntitiesSection(out, state.entities || [], state);
+        // CLASSES section (empty but required for AC1015)
+        out.push('0', 'SECTION', '2', 'CLASSES');
+        out.push('0', 'ENDSEC');
+
+        // TABLES section - returns model/paper space handles for ownership
+        const { modelSpaceHandle, paperSpaceHandle } = writeTables(out, state.layers || [], state);
+
+        // BLOCKS section
+        writeBlocksSection(out, state.blocks || {}, state, modelSpaceHandle, paperSpaceHandle);
+
+        // ENTITIES section - entities are owned by *MODEL_SPACE
+        writeEntitiesSection(out, state.entities || [], state, modelSpaceHandle);
+
+        // OBJECTS section (required for AC1015)
+        writeObjectsSection(out);
+
         out.push('0', 'EOF');
         return out.join('\n');
     };
