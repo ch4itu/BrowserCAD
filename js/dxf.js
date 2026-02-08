@@ -927,6 +927,37 @@ const DXF = (() => {
     const writeTables = (out, layers = [], state = null) => {
         out.push('0', 'SECTION', '2', 'TABLES');
 
+        // VPORT table - required by many DXF readers
+        out.push('0', 'TABLE', '2', 'VPORT', '70', '1');
+        out.push('0', 'VPORT');
+        out.push('2', '*ACTIVE');
+        out.push('70', '0');
+        out.push('10', '0.0', '20', '0.0');
+        out.push('11', '1.0', '21', '1.0');
+        out.push('12', '0.0', '22', '0.0');
+        out.push('13', '0.0', '23', '0.0');
+        out.push('14', '0.0', '24', '0.0');
+        out.push('15', '0.0', '25', '0.0');
+        out.push('16', '0.0', '26', '0.0');
+        out.push('36', '1.0');
+        out.push('37', '0.0');
+        out.push('40', '1.0');
+        out.push('41', '1.0');
+        out.push('42', '50.0');
+        out.push('43', '0.0');
+        out.push('44', '0.0');
+        out.push('50', '0.0');
+        out.push('51', '0.0');
+        out.push('71', '0');
+        out.push('72', '100');
+        out.push('73', '1');
+        out.push('74', '3');
+        out.push('75', '0');
+        out.push('76', '0');
+        out.push('77', '0');
+        out.push('78', '0');
+        out.push('0', 'ENDTAB');
+
         // LTYPE table - write standard linetypes
         out.push('0', 'TABLE', '2', 'LTYPE', '70', '4');
         // ByBlock
@@ -963,12 +994,28 @@ const DXF = (() => {
         out.push('0', 'STYLE', '2', 'STANDARD', '70', '0', '40', '0.0', '41', '1.0', '3', 'txt');
         out.push('0', 'ENDTAB');
 
+        // APPID table
+        out.push('0', 'TABLE', '2', 'APPID', '70', '1');
+        out.push('0', 'APPID', '2', 'ACAD', '70', '0');
+        out.push('0', 'ENDTAB');
+
         // DIMSTYLE table
         out.push('0', 'TABLE', '2', 'DIMSTYLE', '70', '1');
         out.push('0', 'DIMSTYLE', '2', 'STANDARD', '70', '0');
         out.push('40', '1.0');   // DIMSCALE
         out.push('140', '2.5');  // DIMTXT
         out.push('41', '2.5');   // DIMASZ (arrow size)
+        out.push('0', 'ENDTAB');
+
+        // BLOCK_RECORD table - required for R2000+ DXF
+        const blockNames = Object.keys(state?.blocks || {})
+            .filter(name => name && name !== '*MODEL_SPACE' && name !== '*PAPER_SPACE');
+        out.push('0', 'TABLE', '2', 'BLOCK_RECORD', '70', String(2 + blockNames.length));
+        out.push('0', 'BLOCK_RECORD', '2', '*MODEL_SPACE', '70', '0');
+        out.push('0', 'BLOCK_RECORD', '2', '*PAPER_SPACE', '70', '0');
+        blockNames.forEach(name => {
+            out.push('0', 'BLOCK_RECORD', '2', name, '70', '0');
+        });
         out.push('0', 'ENDTAB');
 
         out.push('0', 'ENDSEC');
@@ -1343,7 +1390,8 @@ const DXF = (() => {
     };
 
     const writeEntity = (out, entity, state) => {
-        switch (entity.type) {
+        const type = (entity.type || '').toLowerCase();
+        switch (type) {
             case 'line':
                 writeEntityLine(out, entity);
                 break;
@@ -1588,6 +1636,11 @@ const DXF = (() => {
         out.push('0', 'ENDSEC');
     };
 
+    const writeObjectsSection = (out) => {
+        out.push('0', 'SECTION', '2', 'OBJECTS');
+        out.push('0', 'ENDSEC');
+    };
+
     const generateDXF = (stateOrEntities = [], layers = []) => {
         const state = Array.isArray(stateOrEntities)
             ? { entities: stateOrEntities, layers, blocks: {} }
@@ -1612,6 +1665,7 @@ const DXF = (() => {
         writeTables(out, state.layers || [], state);
         writeBlocksSection(out, state.blocks || {}, state);
         writeEntitiesSection(out, state.entities || [], state);
+        writeObjectsSection(out);
         out.push('0', 'EOF');
         return out.join('\n');
     };

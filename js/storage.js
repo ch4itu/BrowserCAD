@@ -234,6 +234,39 @@ const Storage = {
         dxf += '0\nSECTION\n';
         dxf += '2\nTABLES\n';
 
+        // VPORT table (required by many DXF readers)
+        dxf += '0\nTABLE\n';
+        dxf += '2\nVPORT\n';
+        dxf += '70\n1\n';
+        dxf += '0\nVPORT\n';
+        dxf += '2\n*ACTIVE\n';
+        dxf += '70\n0\n';
+        dxf += '10\n0.0\n20\n0.0\n';
+        dxf += '11\n1.0\n21\n1.0\n';
+        dxf += '12\n0.0\n22\n0.0\n';
+        dxf += '13\n0.0\n23\n0.0\n';
+        dxf += '14\n0.0\n24\n0.0\n';
+        dxf += '15\n0.0\n25\n0.0\n';
+        dxf += '16\n0.0\n26\n0.0\n';
+        dxf += '36\n1.0\n';
+        dxf += '37\n0.0\n';
+        dxf += '40\n1.0\n';
+        dxf += '41\n1.0\n';
+        dxf += '42\n50.0\n';
+        dxf += '43\n0.0\n';
+        dxf += '44\n0.0\n';
+        dxf += '50\n0.0\n';
+        dxf += '51\n0.0\n';
+        dxf += '71\n0\n';
+        dxf += '72\n100\n';
+        dxf += '73\n1\n';
+        dxf += '74\n3\n';
+        dxf += '75\n0\n';
+        dxf += '76\n0\n';
+        dxf += '77\n0\n';
+        dxf += '78\n0\n';
+        dxf += '0\nENDTAB\n';
+
         // LTYPE table (line types - required by many DXF readers)
         dxf += '0\nTABLE\n';
         dxf += '2\nLTYPE\n';
@@ -279,12 +312,30 @@ const Storage = {
         dxf += '3\ntxt\n'; // Primary font file
         dxf += '0\nENDTAB\n';
 
+        // APPID table
+        dxf += '0\nTABLE\n';
+        dxf += '2\nAPPID\n';
+        dxf += '70\n1\n';
+        dxf += '0\nAPPID\n';
+        dxf += '2\nACAD\n';
+        dxf += '70\n0\n';
+        dxf += '0\nENDTAB\n';
+
         // LAYER table
+        const layerList = CAD.layers.length ? CAD.layers : [{
+            name: '0',
+            color: '#FFFFFF',
+            visible: true,
+            frozen: false,
+            locked: false,
+            lineType: 'Continuous',
+            lineWeight: 'Default'
+        }];
         dxf += '0\nTABLE\n';
         dxf += '2\nLAYER\n';
-        dxf += '70\n' + CAD.layers.length + '\n';
+        dxf += '70\n' + layerList.length + '\n';
 
-        CAD.layers.forEach(layer => {
+        layerList.forEach(layer => {
             const flags = (layer.frozen ? 1 : 0) + (layer.locked ? 4 : 0);
             const colorIndex = this.getAciColor(layer.color);
             const layerColor = layer.visible === false ? -Math.abs(colorIndex) : colorIndex;
@@ -301,14 +352,48 @@ const Storage = {
         });
 
         dxf += '0\nENDTAB\n';
+
+        // BLOCK_RECORD table
+        const blockNames = CAD.getBlockList().filter(name => name && name !== '*MODEL_SPACE' && name !== '*PAPER_SPACE');
+        dxf += '0\nTABLE\n';
+        dxf += '2\nBLOCK_RECORD\n';
+        dxf += '70\n' + (2 + blockNames.length) + '\n';
+        dxf += '0\nBLOCK_RECORD\n';
+        dxf += '2\n*MODEL_SPACE\n';
+        dxf += '70\n0\n';
+        dxf += '0\nBLOCK_RECORD\n';
+        dxf += '2\n*PAPER_SPACE\n';
+        dxf += '70\n0\n';
+        blockNames.forEach(name => {
+            dxf += '0\nBLOCK_RECORD\n';
+            dxf += '2\n' + name + '\n';
+            dxf += '70\n0\n';
+        });
+        dxf += '0\nENDTAB\n';
+
         dxf += '0\nENDSEC\n';
 
         // Blocks section (for block definitions)
         dxf += '0\nSECTION\n';
         dxf += '2\nBLOCKS\n';
 
+        // Required *MODEL_SPACE and *PAPER_SPACE blocks
+        dxf += '0\nBLOCK\n';
+        dxf += '2\n*MODEL_SPACE\n';
+        dxf += '70\n0\n';
+        dxf += '10\n0.0\n20\n0.0\n30\n0.0\n';
+        dxf += '3\n*MODEL_SPACE\n';
+        dxf += '1\n\n';
+        dxf += '0\nENDBLK\n';
+        dxf += '0\nBLOCK\n';
+        dxf += '2\n*PAPER_SPACE\n';
+        dxf += '70\n0\n';
+        dxf += '10\n0.0\n20\n0.0\n30\n0.0\n';
+        dxf += '3\n*PAPER_SPACE\n';
+        dxf += '1\n\n';
+        dxf += '0\nENDBLK\n';
+
         // Add each block definition
-        const blockNames = CAD.getBlockList();
         blockNames.forEach(name => {
             const block = CAD.getBlock(name);
             if (block) {
@@ -326,6 +411,9 @@ const Storage = {
             dxf += this.entityToDXF(entity);
         });
 
+        dxf += '0\nENDSEC\n';
+        dxf += '0\nSECTION\n';
+        dxf += '2\nOBJECTS\n';
         dxf += '0\nENDSEC\n';
         dxf += '0\nEOF\n';
 
@@ -361,8 +449,9 @@ const Storage = {
         let dxf = '';
         const color = CAD.getEntityColor(entity);
         const colorInt = Utils.hexToInt(color);
+        const type = (entity.type || '').toLowerCase();
 
-        switch (entity.type) {
+        switch (type) {
             case 'line':
                 dxf += '0\nLINE\n';
                 dxf += '8\n' + entity.layer + '\n';
