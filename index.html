@@ -902,8 +902,8 @@
                     <span class="mtab-icon">&#9678;</span><span class="mtab-label">Snap</span>
                 </button>
             </div>
-            <!-- Draw tools - grid layout with 2 rows -->
-            <div class="mobile-tool-grid active" data-mtab="draw">
+            <!-- Draw tools - scrollable row -->
+            <div class="mobile-tool-row active" data-mtab="draw">
                 <button class="mobile-tool-btn" onclick="App.executeCommand('line')"><i class="m-icon">/</i><span class="m-label">Line</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('polyline')"><i class="m-icon">~</i><span class="m-label">Pline</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('circle')"><i class="m-icon">&#9675;</i><span class="m-label">Circle</span></button>
@@ -918,7 +918,7 @@
                 <button class="mobile-tool-btn" onclick="App.executeCommand('point')"><i class="m-icon">&#8226;</i><span class="m-label">Point</span></button>
             </div>
             <!-- Modify tools -->
-            <div class="mobile-tool-grid" data-mtab="modify">
+            <div class="mobile-tool-row" data-mtab="modify">
                 <button class="mobile-tool-btn" onclick="App.executeCommand('move')"><i class="m-icon">&#8680;</i><span class="m-label">Move</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('copy')"><i class="m-icon">&#8658;</i><span class="m-label">Copy</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('rotate')"><i class="m-icon">&#8635;</i><span class="m-label">Rotate</span></button>
@@ -933,7 +933,7 @@
                 <button class="mobile-tool-btn" onclick="App.executeCommand('array')"><i class="m-icon">&#9638;</i><span class="m-label">Array</span></button>
             </div>
             <!-- Dimension tools -->
-            <div class="mobile-tool-grid" data-mtab="dims">
+            <div class="mobile-tool-row" data-mtab="dims">
                 <button class="mobile-tool-btn" onclick="App.executeCommand('dimlinear')"><i class="m-icon">&#8596;</i><span class="m-label">Linear</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('dimaligned')"><i class="m-icon">&#8598;</i><span class="m-label">Aligned</span></button>
                 <button class="mobile-tool-btn" onclick="App.executeCommand('dimangular')"><i class="m-icon">&#8736;</i><span class="m-label">Angular</span></button>
@@ -947,7 +947,7 @@
                 <button class="mobile-tool-btn" onclick="App.executeCommand('field')"><i class="m-icon">&#402;</i><span class="m-label">Field</span></button>
             </div>
             <!-- View tools -->
-            <div class="mobile-tool-grid" data-mtab="view">
+            <div class="mobile-tool-row" data-mtab="view">
                 <button class="mobile-tool-btn" onclick="Commands.zoomExtents()"><i class="m-icon">&#8703;</i><span class="m-label">Extents</span></button>
                 <button class="mobile-tool-btn" onclick="CAD.zoomIn(); Renderer.draw();"><i class="m-icon">+</i><span class="m-label">Zoom In</span></button>
                 <button class="mobile-tool-btn" onclick="CAD.zoomOut(); Renderer.draw();"><i class="m-icon">-</i><span class="m-label">Zoom Out</span></button>
@@ -962,7 +962,7 @@
                 <button class="mobile-tool-btn" onclick="App.executeCommand('pagesetup')"><i class="m-icon">&#128196;</i><span class="m-label">Page</span></button>
             </div>
             <!-- Snap controls -->
-            <div class="mobile-tool-grid" data-mtab="snap">
+            <div class="mobile-tool-row" data-mtab="snap">
                 <button class="mobile-tool-btn snap-toggle-btn" id="mSnapOsnap" onclick="MobileUI.toggleSnap('osnap')"><i class="m-icon">&#9678;</i><span class="m-label">OSNAP</span></button>
                 <button class="mobile-tool-btn snap-toggle-btn" id="mSnapGrid" onclick="MobileUI.toggleSnap('grid')"><i class="m-icon">#</i><span class="m-label">Grid</span></button>
                 <button class="mobile-tool-btn snap-toggle-btn" id="mSnapOrtho" onclick="MobileUI.toggleSnap('ortho')"><i class="m-icon">&#9482;</i><span class="m-label">Ortho</span></button>
