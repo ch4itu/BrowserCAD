@@ -1989,66 +1989,13 @@ const DXF = (() => {
         out.push('0', 'ENDSEC');
 
         // ============================================================
-        // 6. OBJECTS SECTION (root dictionary + layout dictionaries)
+        // 6. OBJECTS SECTION (root dictionary + empty ACAD_LAYOUT dict)
         // ============================================================
-        const groupDictHandle = nextHandle();
         const layoutDictHandle = nextHandle();
-        const mlineDictHandle = nextHandle();
-        const plotSettingsDictHandle = nextHandle();
-        const plotStyleDictHandle = nextHandle();
-        const materialDictHandle = nextHandle();
-        const tableStyleDictHandle = nextHandle();
-        const visualStyleDictHandle = nextHandle();
-        const modelLayoutHandle = nextHandle();
-        const paperLayoutHandle = nextHandle();
-
         out.push('0', 'SECTION', '2', 'OBJECTS');
         out.push('0', 'DICTIONARY', '5', 'C', '100', 'AcDbDictionary', '280', '0', '281', '1',
-            '3', 'ACAD_GROUP', '350', groupDictHandle,
-            '3', 'ACAD_LAYOUT', '350', layoutDictHandle,
-            '3', 'ACAD_MLINESTYLE', '350', mlineDictHandle,
-            '3', 'ACAD_PLOTSETTINGS', '350', plotSettingsDictHandle,
-            '3', 'ACAD_PLOTSTYLENAME', '350', plotStyleDictHandle,
-            '3', 'ACAD_MATERIAL', '350', materialDictHandle,
-            '3', 'ACAD_TABLESTYLE', '350', tableStyleDictHandle,
-            '3', 'ACAD_VISUALSTYLE', '350', visualStyleDictHandle);
-
-        out.push('0', 'DICTIONARY', '5', groupDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
-        out.push('0', 'DICTIONARY', '5', mlineDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
-        out.push('0', 'DICTIONARY', '5', plotSettingsDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
-        out.push('0', 'DICTIONARY', '5', plotStyleDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
-        out.push('0', 'DICTIONARY', '5', materialDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
-        out.push('0', 'DICTIONARY', '5', tableStyleDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
-        out.push('0', 'DICTIONARY', '5', visualStyleDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
-
-        out.push('0', 'DICTIONARY', '5', layoutDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1',
-            '3', 'Model', '350', modelLayoutHandle,
-            '3', 'Layout1', '350', paperLayoutHandle);
-
-        out.push('0', 'LAYOUT', '5', modelLayoutHandle, '330', layoutDictHandle,
-            '100', 'AcDbPlotSettings',
-            '1', '', '2', 'Model', '70', '1',
-            '71', '0', '72', '0', '73', '0', '74', '0', '75', '0', '76', '0', '77', '0', '78', '0', '79', '0',
-            '147', '0', '148', '0', '149', '0',
-            '100', 'AcDbLayout',
-            '1', '', '70', '1', '71', '1',
-            '10', '0', '20', '0', '11', '420', '21', '297',
-            '12', '0', '22', '0', '13', '0', '23', '0', '14', '0', '24', '0',
-            '15', '0', '25', '0', '16', '1', '26', '0', '17', '0', '27', '0',
-            '330', '40');
-
-        out.push('0', 'LAYOUT', '5', paperLayoutHandle, '330', layoutDictHandle,
-            '100', 'AcDbPlotSettings',
-            '1', '', '2', 'Layout1', '70', '1',
-            '71', '0', '72', '0', '73', '0', '74', '0', '75', '0', '76', '0', '77', '0', '78', '0', '79', '0',
-            '147', '0', '148', '0', '149', '0',
-            '100', 'AcDbLayout',
-            '1', '', '70', '1', '71', '1',
-            '10', '0', '20', '0', '11', '420', '21', '297',
-            '12', '0', '22', '0', '13', '0', '23', '0', '14', '0', '24', '0',
-            '15', '0', '25', '0', '16', '1', '26', '0', '17', '0', '27', '0',
-            '330', '41');
-
+            '3', 'ACAD_LAYOUT', '350', layoutDictHandle);
+        out.push('0', 'DICTIONARY', '5', layoutDictHandle, '330', 'C', '100', 'AcDbDictionary', '281', '1');
         out.push('0', 'ENDSEC');
 
         // ============================================================
