@@ -1791,8 +1791,8 @@ const DXF = (() => {
     const writeObjectsSection = (out, modelLayoutHandle, paperLayoutHandle) => {
         out.push('0', 'SECTION', '2', 'OBJECTS');
 
-        // Root named object dictionary (handle A is conventional)
-        const rootDictHandle = 'A';
+        // Root named object dictionary (use conventional low handle like 'C')
+        const rootDictHandle = 'C';
         out.push('0', 'DICTIONARY');
         out.push('5', rootDictHandle);
         out.push('330', '0');
