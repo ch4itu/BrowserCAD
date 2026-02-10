@@ -1199,10 +1199,15 @@ const DXF = (() => {
     const writeEntityLwPolyline = (out, entity, ownerHandle) => {
         const points = entity.points || [];
         const bulges = entity.bulges || [];
+        if (points.length < 2) return;
         const closedFlag = entity.closed ? 1 : 0;
         writeEntityHeader(out, 'LWPOLYLINE', entity, ownerHandle);
         writeCommonStyle(out, entity);
         out.push('100', 'AcDbPolyline');
+        // Explicit defaults improve compatibility with stricter DXF readers.
+        out.push('38', '0.0'); // elevation
+        out.push('39', '0.0'); // thickness
+        out.push('43', '0.0'); // constant width
         out.push('90', String(points.length));
         out.push('70', String(closedFlag));
         points.forEach((point, idx) => {
@@ -1214,7 +1219,9 @@ const DXF = (() => {
             // Check both point.bulge and entity.bulges array
             const bulge = point.bulge || bulges[idx] || 0;
             if (Math.abs(bulge) > 1e-10) {
-                out.push('42', formatNumber(bulge));
+                // BrowserCAD bulge orientation is opposite of AutoCAD's DXF
+                // convention for exported LWPOLYLINE segments.
+                out.push('42', formatNumber(-bulge));
             }
         });
     };
