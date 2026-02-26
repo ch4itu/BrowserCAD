@@ -1181,7 +1181,7 @@ const DXF = (() => {
         writeCommonStyle(out, entity);
         out.push('100', 'AcDbCircle');
         out.push('10', formatNumber(entity.center?.x), '20', formatNumber(fy(entity.center?.y)), '30', formatNumber(entity.center?.z || 0));
-        out.push('40', formatNumber(entity.r || 0));
+        out.push('40', formatNumber(entity.radius || entity.r || 0));
     };
 
     const writeEntityArc = (out, entity, ownerHandle) => {
@@ -1189,29 +1189,35 @@ const DXF = (() => {
         writeCommonStyle(out, entity);
         out.push('100', 'AcDbCircle');
         out.push('10', formatNumber(entity.center?.x), '20', formatNumber(fy(entity.center?.y)), '30', formatNumber(entity.center?.z || 0));
-        out.push('40', formatNumber(entity.r || 0));
+        out.push('40', formatNumber(entity.radius || entity.r || 0));
         out.push('100', 'AcDbArc');
-        // Convert internal radians to DXF degrees
-        out.push('50', formatNumber((entity.start || 0) * RAD2DEG));
-        out.push('51', formatNumber((entity.end || 0) * RAD2DEG));
+        
+        // Support both startAngle (from geometry classes) and start (from dxf parser)
+        const startRad = entity.startAngle !== undefined ? entity.startAngle : (entity.start || 0);
+        const endRad = entity.endAngle !== undefined ? entity.endAngle : (entity.end || 0);
+        
+        out.push('50', formatNumber(startRad * RAD2DEG));
+        out.push('51', formatNumber(endRad * RAD2DEG));
     };
 
     const writeEntityLwPolyline = (out, entity, ownerHandle) => {
-        const points = entity.points || [];
+        // Handle both 'points' (from DXF parser) and 'vertices' (from geometry builder)
+        const points = entity.points || entity.vertices || [];
         const bulges = entity.bulges || [];
         const closedFlag = entity.closed ? 1 : 0;
+        
         writeEntityHeader(out, 'LWPOLYLINE', entity, ownerHandle);
         writeCommonStyle(out, entity);
         out.push('100', 'AcDbPolyline');
         out.push('90', String(points.length));
         out.push('70', String(closedFlag));
+        
         points.forEach((point, idx) => {
             out.push('10', formatNumber(point.x));
             out.push('20', formatNumber(fy(point.y)));
-            if (point.z !== undefined) {
-                out.push('30', formatNumber(point.z));
-            }
-            // Check both point.bulge and entity.bulges array
+            // STRICT COMPLIANCE: AcDbPolyline vertices must be 2D only. 
+            // Do NOT add a '30' code for Z here, it corrupts the polyline for standard CAD editors!
+            
             const bulge = point.bulge || bulges[idx] || 0;
             if (Math.abs(bulge) > 1e-10) {
                 out.push('42', formatNumber(bulge));
@@ -1360,56 +1366,79 @@ const DXF = (() => {
     };
 
     const writeEntityHatch = (out, entity, state, ownerHandle) => {
-        const edges = getHatchBoundaryEdges(entity, state);
-        if (!edges.length) return;
         const rawPattern = entity.patternName || entity.pattern || entity.hatch?.pattern || 'ANSI31';
         const pattern = rawPattern.toUpperCase();
         const scale = entity.scale || 1;
         const angle = entity.angle || 0;
         const isSolid = entity.solid === 1 || rawPattern.toLowerCase() === 'solid';
+
         writeEntityHeader(out, 'HATCH', entity, ownerHandle);
         writeCommonStyle(out, entity);
         out.push('100', 'AcDbHatch');
-        out.push('10', '0.0');
-        out.push('20', '0.0');
-        out.push('30', '0.0');
-        out.push('210', '0.0');
-        out.push('220', '0.0');
-        out.push('230', '1.0');
+        out.push('10', '0.0', '20', '0.0', '30', '0.0');
+        out.push('210', '0.0', '220', '0.0', '230', '1.0');
         out.push('2', pattern);
         out.push('70', isSolid ? '1' : '0');
-        out.push('71', '0');
-        out.push('91', '1');
-        out.push('92', '1');
-        out.push('93', String(edges.length));
-        edges.forEach(edge => {
-            if (edge.type === 'arc') {
-                out.push('72', '2');
-                out.push('10', formatNumber(edge.center.x));
-                out.push('20', formatNumber(fy(edge.center.y)));
-                out.push('40', formatNumber(edge.radius ?? edge.r ?? 0));
-                // Edge angles are in internal radians, convert to DXF degrees
-                const startDeg = (edge.start || 0) * RAD2DEG;
-                const endDeg = (edge.end || 0) * RAD2DEG;
-                out.push('50', formatNumber(startDeg));
-                out.push('51', formatNumber(endDeg));
-                out.push('73', '1');
-            } else {
-                out.push('72', '1');
-                const start = edge.start || edge.p1;
-                const end = edge.end || edge.p2;
-                out.push('10', formatNumber(start.x));
-                out.push('20', formatNumber(fy(start.y)));
-                out.push('11', formatNumber(end.x));
-                out.push('21', formatNumber(fy(end.y)));
-            }
-        });
+        out.push('71', '0'); // Non-associative
+
+        // ROBUST: Determine loops from generated geometry or parsed fallback data
+        const loops = entity.loops || (entity.boundaryPoints ? [entity.boundaryPoints] : []);
+
+        if (loops.length > 0) {
+            out.push('91', String(loops.length));
+            loops.forEach(loop => {
+                out.push('92', '2'); // Path type: Polyline (Highly compatible)
+                const hasBulge = loop.some(p => Math.abs(p.bulge || 0) > 1e-10);
+                out.push('72', hasBulge ? '1' : '0');
+                out.push('73', '1'); // Closed
+                out.push('93', String(loop.length));
+                loop.forEach(pt => {
+                    out.push('10', formatNumber(pt.x));
+                    out.push('20', formatNumber(fy(pt.y)));
+                    if (hasBulge) {
+                        out.push('42', formatNumber(pt.bulge || 0));
+                    }
+                });
+            });
+        } else {
+            // Fallback to unstructured edges if loops don't exist
+            const edges = getHatchBoundaryEdges(entity, state);
+            if (!edges.length) return;
+            out.push('91', '1');
+            out.push('92', '1'); // Path type: Edges
+            out.push('93', String(edges.length));
+            edges.forEach(edge => {
+                if (edge.type === 'arc') {
+                    out.push('72', '2');
+                    out.push('10', formatNumber(edge.center?.x || 0));
+                    out.push('20', formatNumber(fy(edge.center?.y || 0)));
+                    out.push('40', formatNumber(edge.radius ?? edge.r ?? 0));
+                    const startDeg = (edge.startAngle !== undefined ? edge.startAngle : (edge.start || 0)) * RAD2DEG;
+                    const endDeg = (edge.endAngle !== undefined ? edge.endAngle : (edge.end || 0)) * RAD2DEG;
+                    out.push('50', formatNumber(startDeg));
+                    out.push('51', formatNumber(endDeg));
+                    // 73: 1 = CCW, 0 = CW
+                    out.push('73', edge.ccw === false ? '0' : '1');
+                } else {
+                    out.push('72', '1');
+                    const start = edge.start || edge.p1 || {x:0, y:0};
+                    const end = edge.end || edge.p2 || {x:0, y:0};
+                    out.push('10', formatNumber(start.x));
+                    out.push('20', formatNumber(fy(start.y)));
+                    out.push('11', formatNumber(end.x));
+                    out.push('21', formatNumber(fy(end.y)));
+                }
+            });
+        }
+
         out.push('75', '0');
         out.push('76', '1');
-        out.push('52', formatNumber(angle));
-        out.push('41', formatNumber(scale));
-        out.push('77', '0');
-        out.push('78', '0');
+        if (!isSolid) {
+            out.push('52', formatNumber(angle));
+            out.push('41', formatNumber(scale));
+            out.push('77', '0');
+            out.push('78', '0');
+        }
     };
 
     const writeEntityDimension = (out, entity, ownerHandle) => {
@@ -1471,9 +1500,9 @@ const DXF = (() => {
         } else if (entity.dimType === 'angular' || entity.dimType === 'arclength') {
             const center = entity.center;
             if (!center) return;
-            const r = entity.radius || 0;
-            const startA = entity.startAngle || 0;
-            const endA = entity.endAngle || 0;
+            const r = entity.radius || entity.r || 0;
+            const startA = entity.startAngle || entity.start || 0;
+            const endA = entity.endAngle || entity.end || 0;
             const textH = entity.textHeight || 2.5;
             const dimR = r + 15;
 
