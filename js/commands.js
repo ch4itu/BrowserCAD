@@ -3258,7 +3258,7 @@ const Commands = {
         if (entity.type === 'circle' || entity.type === 'rect' || entity.type === 'ellipse') {
             return true;
         }
-        return entity.type === 'polyline' && Utils.isPolygonClosed(entity.points);
+        return entity.type === 'polyline' && (entity.closed || Utils.isPolygonClosed(entity.points));
     },
 
     applyHatch(entity) {
