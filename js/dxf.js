@@ -1428,8 +1428,12 @@ const DXF = (() => {
                     out.push('20', formatNumber(fy(edge.center?.y || 0)));
                     out.push('40', formatNumber(edge.radius ?? edge.r ?? 0));
                     // Arc edge angles from internal geometry are in radians; convert to degrees
-                    const startDeg = (edge.startAngle !== undefined ? edge.startAngle : (edge.start || 0)) * RAD2DEG;
-                    const endDeg = (edge.endAngle !== undefined ? edge.endAngle : (edge.end || 0)) * RAD2DEG;
+                    const startDeg = edge.startAngle !== undefined
+                        ? edge.startAngle * RAD2DEG   // Geometry: radians → degrees
+                        : (edge.start || 0);           // DXF parser: already in degrees
+                    const endDeg = edge.endAngle !== undefined
+                        ? edge.endAngle * RAD2DEG     // Geometry: radians → degrees
+                        : (edge.end || 0);             // DXF parser: already in degrees
                     out.push('50', formatNumber(startDeg));
                     out.push('51', formatNumber(endDeg));
                     // 73: 1 = CCW, 0 = CW
