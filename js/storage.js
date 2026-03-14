@@ -2234,32 +2234,37 @@ const Storage = {
                         y: p.y || 0
                     }));
                 } else if (entity.boundary && entity.boundary.length > 0) {
-                    // Extract points from edge definitions
-                    entity.boundary.forEach(edge => {
-                        if (edge.type === 'line') {
-                            hatchPoints.push({
-                                x: edge.start.x,
-                                y: edge.start.y || 0
-                            });
-                        } else if (edge.type === 'arc') {
-                            // Tessellate arc edges into points
-                            const cx = edge.center.x;
-                            const cy = edge.center.y;
-                            const r = edge.radius || 0;
-                            const startDeg = edge.start || 0;
-                            const endDeg = edge.end || 360;
-                            let sweep = endDeg - startDeg;
-                            if (sweep <= 0) sweep += 360;
-                            const steps = Math.max(8, Math.ceil(sweep / 10));
-                            for (let i = 0; i <= steps; i++) {
-                                const a = (startDeg + (sweep * i / steps)) * (Math.PI / 180);
+                    if (entity.boundary[0]?.x !== undefined && !entity.boundary[0]?.type) {
+                        // Plain {x,y} points — use directly
+                        hatchPoints = entity.boundary.map(p => ({ x: p.x ?? 0, y: p.y ?? 0 }));
+                    } else {
+                        // Extract points from edge definitions
+                        entity.boundary.forEach(edge => {
+                            if (edge.type === 'line') {
                                 hatchPoints.push({
-                                    x: cx + r * Math.cos(a),
-                                    y: cy + r * Math.sin(a)
+                                    x: edge.start.x,
+                                    y: edge.start.y || 0
                                 });
+                            } else if (edge.type === 'arc') {
+                                // Tessellate arc edges into points
+                                const cx = edge.center.x;
+                                const cy = edge.center.y;
+                                const r = edge.radius || 0;
+                                const startDeg = edge.start || 0;
+                                const endDeg = edge.end || 360;
+                                let sweep = endDeg - startDeg;
+                                if (sweep <= 0) sweep += 360;
+                                const steps = Math.max(8, Math.ceil(sweep / 10));
+                                for (let i = 0; i <= steps; i++) {
+                                    const a = (startDeg + (sweep * i / steps)) * (Math.PI / 180);
+                                    hatchPoints.push({
+                                        x: cx + r * Math.cos(a),
+                                        y: cy + r * Math.sin(a)
+                                    });
+                                }
                             }
-                        }
-                    });
+                        });
+                    }
                 } else if (entity.points) {
                     hatchPoints = (entity.points || []).map(p => ({
                         x: p.x || 0,
@@ -3338,8 +3343,14 @@ const Storage = {
     },
 
     getDXFHatchPolyline(data) {
-        const xCoords = Array.isArray(data[10]) ? data[10] : (data[10] !== undefined ? [data[10]] : []);
-        const yCoords = Array.isArray(data[20]) ? data[20] : (data[20] !== undefined ? [data[20]] : []);
+        let xCoords = Array.isArray(data[10]) ? data[10] : (data[10] !== undefined ? [data[10]] : []);
+        let yCoords = Array.isArray(data[20]) ? data[20] : (data[20] !== undefined ? [data[20]] : []);
+
+        // The first code-10/20 pair is the hatch elevation plane (usually 0,0), not a boundary vertex
+        if (xCoords.length > 1) {
+            xCoords = xCoords.slice(1);
+            yCoords = yCoords.slice(1);
+        }
 
         const points = [];
         for (let i = 0; i < Math.min(xCoords.length, yCoords.length); i++) {
