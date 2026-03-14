@@ -3037,7 +3037,7 @@ const Storage = {
                 const vy = parseFloat(vertexData[20]);
                 if (!isNaN(vx) && !isNaN(vy)) {
                     points.push({ x: vx, y: vy });
-                    bulges.push((parseFloat(vertexData[42]) || 0));
+                    bulges.push(-(parseFloat(vertexData[42]) || 0)); // Negate: DXF→internal convention
                 }
             }
 
@@ -3076,7 +3076,7 @@ const Storage = {
                 x: parseFloat(xCoords[j]) || 0,
                 y: parseFloat(yCoords[j]) || 0
             });
-            bulges.push((parseFloat(bulgeValues[j]) || 0));
+            bulges.push(-(parseFloat(bulgeValues[j]) || 0)); // Negate: DXF→internal convention
         }
 
         // Check closed flag (group code 70, bit 1)

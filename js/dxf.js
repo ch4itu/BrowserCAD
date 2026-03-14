@@ -290,7 +290,7 @@ const DXF = (() => {
             } else if (tag.code === 30 && current) {
                 current.z = parseNumber(tag.value);
             } else if (tag.code === 42 && current) {
-                current.bulge = parseNumber(tag.value);
+                current.bulge = -parseNumber(tag.value); // Negate: DXF positive=CCW/upward; BrowserCAD negative=upward
             }
         });
         if (current) points.push(current);
@@ -821,7 +821,7 @@ const DXF = (() => {
                             const vtags = parseEntityTags(reader);
                             const vx = parseNumber(vtags[10]);
                             const vy = parseNumber(vtags[20]);
-                            polylineHeader.points.push({ x: vx, y: vy, bulge: parseNumber(vtags[42]) });
+                            polylineHeader.points.push({ x: vx, y: vy, bulge: -parseNumber(vtags[42]) }); // Negate: DXF→internal convention
                         } else if (entityType === 'SEQEND' && polylineHeader) {
                             parseEntityTags(reader); // consume SEQEND tags
                             entities.push(polylineHeader);
@@ -1228,7 +1228,7 @@ const DXF = (() => {
             
             const bulge = point.bulge || bulges[idx] || 0;
             if (Math.abs(bulge) > 1e-10) {
-                out.push('42', formatNumber(bulge));
+                out.push('42', formatNumber(-bulge)); // Negate: BrowserCAD internal→DXF convention
             }
         });
     };
