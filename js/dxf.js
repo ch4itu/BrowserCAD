@@ -644,7 +644,7 @@ const DXF = (() => {
                     }
                 }
                 if (hasBoundaryFlag || edges.length === 0) {
-                    // Collect all 10/20 pairs that are boundary vertices
+                    // Collect all 10/20 pairs that are boundary vertices, preserving bulge (code 42)
                     let inBoundary = false;
                     for (let i = 0; i < tags.list.length; i++) {
                         const t = tags.list[i];
@@ -656,9 +656,17 @@ const DXF = (() => {
                             inBoundary = false;
                         }
                         if (inBoundary && t.code === 10) {
-                            const pt = { x: parseNumber(t.value), y: 0 };
+                            const pt = { x: parseNumber(t.value), y: 0, bulge: 0 };
                             if (i + 1 < tags.list.length && tags.list[i + 1].code === 20) {
                                 pt.y = parseNumber(tags.list[i + 1].value);
+                            }
+                            // Look ahead for bulge (code 42) following this vertex
+                            for (let j = i + 1; j < Math.min(i + 4, tags.list.length); j++) {
+                                if (tags.list[j].code === 42) {
+                                    pt.bulge = parseNumber(tags.list[j].value);
+                                    break;
+                                }
+                                if (tags.list[j].code === 10) break; // next vertex, stop
                             }
                             boundaryPoints.push(pt);
                         }
@@ -1381,8 +1389,13 @@ const DXF = (() => {
         out.push('70', isSolid ? '1' : '0');
         out.push('71', '0'); // Non-associative
 
-        // ROBUST: Determine loops from generated geometry or parsed fallback data
-        const loops = entity.loops || (entity.boundaryPoints ? [entity.boundaryPoints] : []);
+        // ROBUST: Determine loops from generated geometry or parsed fallback data.
+        // Check entity.loops, entity.boundaryPoints, or entity.boundary (tessellated points array).
+        const boundaryAsLoop = Array.isArray(entity.boundary) && entity.boundary.length >= 3
+            && entity.boundary[0]?.x !== undefined ? entity.boundary : null;
+        const loops = entity.loops
+            || (entity.boundaryPoints && entity.boundaryPoints.length >= 3 ? [entity.boundaryPoints] : null)
+            || (boundaryAsLoop ? [boundaryAsLoop] : []);
 
         if (loops.length > 0) {
             out.push('91', String(loops.length));
@@ -1399,6 +1412,7 @@ const DXF = (() => {
                         out.push('42', formatNumber(pt.bulge || 0));
                     }
                 });
+                out.push('97', '0'); // Source boundary objects count (required by DXF spec)
             });
         } else {
             // Fallback to unstructured edges if loops don't exist
@@ -1413,6 +1427,7 @@ const DXF = (() => {
                     out.push('10', formatNumber(edge.center?.x || 0));
                     out.push('20', formatNumber(fy(edge.center?.y || 0)));
                     out.push('40', formatNumber(edge.radius ?? edge.r ?? 0));
+                    // Arc edge angles from internal geometry are in radians; convert to degrees
                     const startDeg = (edge.startAngle !== undefined ? edge.startAngle : (edge.start || 0)) * RAD2DEG;
                     const endDeg = (edge.endAngle !== undefined ? edge.endAngle : (edge.end || 0)) * RAD2DEG;
                     out.push('50', formatNumber(startDeg));
@@ -1429,6 +1444,7 @@ const DXF = (() => {
                     out.push('21', formatNumber(fy(end.y)));
                 }
             });
+            out.push('97', '0'); // Source boundary objects count (required by DXF spec)
         }
 
         out.push('75', '0');
