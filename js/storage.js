@@ -1462,10 +1462,10 @@ const Storage = {
                             const r = dist * (1 + s * s) / (4 * Math.abs(s));
                             // large-arc-flag: arc > 180 degrees when |bulge| > 1
                             const largeArc = Math.abs(s) > 1 ? 1 : 0;
-                            // sweep-flag: SVG sweep=1 means clockwise
-                            // bulge > 0 means CCW arc, so sweep = 0
-                            // bulge < 0 means CW arc, so sweep = 1
-                            const sweep = s < 0 ? 1 : 0;
+                            // sweep-flag: SVG sweep=1 means CW in SVG's Y-down coords.
+                            // DXF positive bulge = CCW in Y-up = CW in SVG Y-down = sweep 1
+                            // DXF negative bulge = CW in Y-up = CCW in SVG Y-down = sweep 0
+                            const sweep = s > 0 ? 1 : 0;
                             d += ` A ${r} ${r} 0 ${largeArc} ${sweep} ${p2.x} ${p2.y}`;
                         }
                     }
@@ -3037,7 +3037,7 @@ const Storage = {
                 const vy = parseFloat(vertexData[20]);
                 if (!isNaN(vx) && !isNaN(vy)) {
                     points.push({ x: vx, y: vy });
-                    bulges.push(-(parseFloat(vertexData[42]) || 0)); // Negate: DXF→internal convention
+                    bulges.push(parseFloat(vertexData[42]) || 0); // DXF convention used internally
                 }
             }
 
@@ -3076,7 +3076,7 @@ const Storage = {
                 x: parseFloat(xCoords[j]) || 0,
                 y: parseFloat(yCoords[j]) || 0
             });
-            bulges.push(-(parseFloat(bulgeValues[j]) || 0)); // Negate: DXF→internal convention
+            bulges.push(parseFloat(bulgeValues[j]) || 0); // DXF convention used internally
         }
 
         // Check closed flag (group code 70, bit 1)

@@ -2640,8 +2640,10 @@ const Renderer = {
             const cy = midY + h * ny;
             const startAngle = Math.atan2(p1.y - cy, p1.x - cx);
             const endAngle = Math.atan2(p2.y - cy, p2.x - cx);
-            // positive bulge = CCW arc in world space (Y-up)
-            const counterClockwise = bulge > 0;
+            // DXF convention: positive bulge = CCW in Y-up world.
+            // Canvas counterClockwise is inverted under Y-flip transform,
+            // so CCW in world needs counterClockwise=false.
+            const counterClockwise = bulge < 0;
             ctx.arc(cx, cy, r, startAngle, endAngle, counterClockwise);
         }
     },

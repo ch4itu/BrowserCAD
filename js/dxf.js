@@ -290,7 +290,7 @@ const DXF = (() => {
             } else if (tag.code === 30 && current) {
                 current.z = parseNumber(tag.value);
             } else if (tag.code === 42 && current) {
-                current.bulge = -parseNumber(tag.value); // Negate: DXF positive=CCW/upward; BrowserCAD negative=upward
+                current.bulge = parseNumber(tag.value); // DXF convention: positive=CCW, negative=CW
             }
         });
         if (current) points.push(current);
@@ -1228,7 +1228,7 @@ const DXF = (() => {
             
             const bulge = point.bulge || bulges[idx] || 0;
             if (Math.abs(bulge) > 1e-10) {
-                out.push('42', formatNumber(-bulge)); // Negate: BrowserCAD internal→DXF convention
+                out.push('42', formatNumber(bulge)); // DXF convention used internally, write directly
             }
         });
     };
