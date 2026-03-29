@@ -3294,7 +3294,7 @@ const Commands = {
             return Geometry.getSplineBoundaryPoints(entity.points, entity.closed);
         }
         // For polylines with bulges, generate arc-interpolated boundary points
-        if (entity.type === 'polyline' && entity.bulges && entity.bulges.length > 0 && entity.points) {
+        if (entity.type === 'polyline' && this._polylineHasBulges(entity) && entity.points) {
             return this._getPolylineWithArcsBoundaryPoints(entity);
         }
         if (entity.points && entity.points.length) return entity.points;
@@ -3342,13 +3342,17 @@ const Commands = {
 
     _getPolylineWithArcsBoundaryPoints(entity) {
         const points = entity.points || [];
-        const bulges = entity.bulges || [];
         const result = [];
-        const numPoints = entity.closed ? points.length : points.length - 1;
+        const isClosed = entity.closed || Utils.isPolygonClosed(points);
+        let arcPoints = points;
+        if (isClosed && points.length > 1 && Utils.isPolygonClosed(points)) {
+            arcPoints = points.slice(0, -1);
+        }
+        const numPoints = isClosed ? arcPoints.length : arcPoints.length - 1;
         for (let i = 0; i < numPoints; i++) {
-            const p1 = points[i];
-            const p2 = points[(i + 1) % points.length];
-            const bulge = bulges[i] || 0;
+            const p1 = arcPoints[i];
+            const p2 = arcPoints[(i + 1) % arcPoints.length];
+            const bulge = this._getPolylineBulgeValue(entity, i);
             result.push({ ...p1 });
             if (Math.abs(bulge) > 1e-10) {
                 // Generate arc points between p1 and p2
@@ -3378,10 +3382,29 @@ const Commands = {
                 }
             }
         }
-        if (!entity.closed && points.length > 0) {
-            result.push({ ...points[points.length - 1] });
+        if (!isClosed && arcPoints.length > 0) {
+            result.push({ ...arcPoints[arcPoints.length - 1] });
         }
         return result;
+    },
+
+    _polylineHasBulges(entity) {
+        if (!entity || entity.type !== 'polyline') return false;
+        if (Array.isArray(entity.bulges) && entity.bulges.some(b => b && Math.abs(b) > 1e-10)) {
+            return true;
+        }
+        if (Array.isArray(entity.points)) {
+            return entity.points.some(point => point?.bulge && Math.abs(point.bulge) > 1e-10);
+        }
+        return false;
+    },
+
+    _getPolylineBulgeValue(entity, index) {
+        if (entity?.bulges && entity.bulges[index] !== undefined) {
+            return entity.bulges[index] || 0;
+        }
+        const pointBulge = entity?.points?.[index]?.bulge;
+        return pointBulge || 0;
     },
 
     createHatchEntity(boundaryPoints, clipIds = [], sourceEntity = null, sourceEntities = null) {
@@ -3495,7 +3518,7 @@ const Commands = {
                 let testPoints;
                 if (entity.isSpline && entity.points.length >= 2) {
                     testPoints = Geometry.getSplineBoundaryPoints(entity.points, entity.closed);
-                } else if (entity.bulges && entity.bulges.length > 0) {
+                } else if (this._polylineHasBulges(entity)) {
                     testPoints = this._getPolylineWithArcsBoundaryPoints(entity);
                 } else {
                     testPoints = Utils.isPolygonClosed(entity.points)
@@ -3526,7 +3549,7 @@ const Commands = {
                     if (entity.closed && pts.length > 1) {
                         segments.push({ p1: pts[pts.length - 1], p2: pts[0] });
                     }
-                } else if (entity.bulges && entity.bulges.length > 0) {
+                } else if (this._polylineHasBulges(entity)) {
                     // Interpolate arcs to segments
                     const pts = this._getPolylineWithArcsBoundaryPoints(entity);
                     for (let i = 0; i < pts.length - 1; i++) {
