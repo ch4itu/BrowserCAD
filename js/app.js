@@ -872,10 +872,15 @@ const MobileUI = {
         this._updateDrawBarState();
 
         // Show/hide Close button for polyline-like commands
-        const closable = ['polyline', 'polygon', 'spline'].includes(CAD.activeCmd);
-        const hasPoints = CAD.points && CAD.points.length >= 2;
+        let canClose = false;
+        if (['polyline', 'polygon', 'spline'].includes(CAD.activeCmd)) {
+            canClose = CAD.points && CAD.points.length >= 2;
+        } else if (CAD.activeCmd === 'line') {
+            // Line chain closes back to the first point; needs >= 2 segments drawn
+            canClose = ((CAD.cmdOptions && CAD.cmdOptions.lineSegCount) || 0) >= 2;
+        }
         if (this._els.closeBtn) {
-            this._els.closeBtn.classList.toggle('visible', closable && hasPoints);
+            this._els.closeBtn.classList.toggle('visible', !!canClose);
         }
 
         this.updateSubActions();
@@ -932,7 +937,10 @@ const MobileUI = {
         const actions = [];
         const cmd = CAD.activeCmd || '';
 
-        if (cmd === 'polyline') {
+        if (cmd === 'line') {
+            actions.push({ label: 'Close', value: 'C' });
+            actions.push({ label: 'Undo', value: 'U' });
+        } else if (cmd === 'polyline') {
             actions.push({ label: 'Arc', value: 'A' });
             actions.push({ label: 'Line', value: 'L' });
             actions.push({ label: 'Close', value: 'C' });

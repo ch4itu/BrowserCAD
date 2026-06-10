@@ -1675,10 +1675,47 @@ const Geometry = {
     // ENTITY TRANSFORMATIONS
     // ==========================================
 
+    /**
+     * Apply a point transform to all stored geometry of a hatch entity:
+     * boundary, pre-generated renderLines, clip sources, and source shapes.
+     * Mutates the (already cloned) hatch in place.
+     */
+    _transformHatchGeometry(hatch, fn) {
+        if (hatch.boundary && Array.isArray(hatch.boundary)) {
+            hatch.boundary = hatch.boundary.map(p => (p && p.x !== undefined) ? fn(p) : p);
+        }
+        if (hatch.points && Array.isArray(hatch.points)) {
+            hatch.points = hatch.points.map(p => (p && p.x !== undefined) ? fn(p) : p);
+        }
+        if (hatch.renderLines && Array.isArray(hatch.renderLines)) {
+            hatch.renderLines = hatch.renderLines.map(s =>
+                (s && s.p1 && s.p2) ? { p1: fn(s.p1), p2: fn(s.p2) } : s);
+        }
+        if (hatch.clipSources && Array.isArray(hatch.clipSources)) {
+            hatch.clipSources = hatch.clipSources.map(src => {
+                if (!src) return src;
+                const out = { ...src };
+                if (out.center) out.center = fn(out.center);
+                if (out.points && Array.isArray(out.points)) out.points = out.points.map(fn);
+                return out;
+            });
+        }
+        if (hatch.sourceCircle && hatch.sourceCircle.center) {
+            hatch.sourceCircle = { ...hatch.sourceCircle, center: fn(hatch.sourceCircle.center) };
+        }
+        if (hatch.sourceEllipse && hatch.sourceEllipse.center) {
+            hatch.sourceEllipse = { ...hatch.sourceEllipse, center: fn(hatch.sourceEllipse.center) };
+        }
+        return hatch;
+    },
+
     moveEntity(entity, delta) {
         const moved = JSON.parse(JSON.stringify(entity));
 
         switch (moved.type) {
+            case 'hatch':
+                this._transformHatchGeometry(moved, p => ({ ...p, x: p.x + delta.x, y: p.y + delta.y }));
+                break;
             case 'line':
                 moved.p1.x += delta.x;
                 moved.p1.y += delta.y;
@@ -1749,6 +1786,16 @@ const Geometry = {
         const rotated = JSON.parse(JSON.stringify(entity));
 
         switch (rotated.type) {
+            case 'hatch':
+                this._transformHatchGeometry(rotated, p => Utils.rotatePoint(p, center, angle));
+                // Keep pattern angle consistent for any future regeneration
+                if (rotated.angle !== undefined) {
+                    rotated.angle = (rotated.angle || 0) + angle * (180 / Math.PI);
+                }
+                if (rotated.sourceEllipse) {
+                    rotated.sourceEllipse.rotation = (rotated.sourceEllipse.rotation || 0) + angle;
+                }
+                break;
             case 'line':
                 rotated.p1 = Utils.rotatePoint(rotated.p1, center, angle);
                 rotated.p2 = Utils.rotatePoint(rotated.p2, center, angle);
@@ -1826,6 +1873,28 @@ const Geometry = {
         const scaled = JSON.parse(JSON.stringify(entity));
 
         switch (scaled.type) {
+            case 'hatch':
+                this._transformHatchGeometry(scaled, p => Utils.scalePoint(p, center, scale));
+                // Scale pattern spacing and stored source radii to match
+                if (scaled.scale !== undefined) {
+                    scaled.scale = (scaled.scale || 1) * scale;
+                }
+                if (scaled.sourceCircle) {
+                    scaled.sourceCircle.r *= scale;
+                }
+                if (scaled.sourceEllipse) {
+                    scaled.sourceEllipse.rx *= scale;
+                    scaled.sourceEllipse.ry *= scale;
+                }
+                if (scaled.clipSources) {
+                    scaled.clipSources.forEach(src => {
+                        if (!src) return;
+                        if (src.r !== undefined) src.r *= scale;
+                        if (src.rx !== undefined) src.rx *= scale;
+                        if (src.ry !== undefined) src.ry *= scale;
+                    });
+                }
+                break;
             case 'line':
                 scaled.p1 = Utils.scalePoint(scaled.p1, center, scale);
                 scaled.p2 = Utils.scalePoint(scaled.p2, center, scale);
@@ -1911,23 +1980,40 @@ const Geometry = {
             case 'circle':
                 mirrored.center = Utils.mirrorPoint(mirrored.center, lineP1, lineP2);
                 break;
-            case 'arc':
+            case 'arc': {
                 mirrored.center = Utils.mirrorPoint(mirrored.center, lineP1, lineP2);
-                // Swap and negate angles for mirror
-                const tempStart = mirrored.start;
-                mirrored.start = -mirrored.end;
-                mirrored.end = -tempStart;
+                // Reflect angles across the mirror line direction and swap
+                // start/end to preserve the CCW sweep convention
+                const mirrorPhi = Math.atan2(lineP2.y - lineP1.y, lineP2.x - lineP1.x);
+                const newStart = 2 * mirrorPhi - mirrored.end;
+                const newEnd = 2 * mirrorPhi - mirrored.start;
+                mirrored.start = newStart;
+                mirrored.end = newEnd;
                 break;
-            case 'ellipse':
+            }
+            case 'ellipse': {
                 mirrored.center = Utils.mirrorPoint(mirrored.center, lineP1, lineP2);
-                mirrored.rotation = -(mirrored.rotation || 0);
+                const ellPhi = Math.atan2(lineP2.y - lineP1.y, lineP2.x - lineP1.x);
+                mirrored.rotation = 2 * ellPhi - (mirrored.rotation || 0);
                 break;
+            }
             case 'rect':
                 mirrored.p1 = Utils.mirrorPoint(mirrored.p1, lineP1, lineP2);
                 mirrored.p2 = Utils.mirrorPoint(mirrored.p2, lineP1, lineP2);
                 break;
             case 'polyline':
                 mirrored.points = mirrored.points.map(p => Utils.mirrorPoint(p, lineP1, lineP2));
+                // Mirroring reverses arc direction: negate bulges
+                if (mirrored.bulges && mirrored.bulges.length) {
+                    mirrored.bulges = mirrored.bulges.map(b => -(b || 0));
+                }
+                break;
+            case 'hatch':
+                this._transformHatchGeometry(mirrored, p => Utils.mirrorPoint(p, lineP1, lineP2));
+                if (mirrored.sourceEllipse) {
+                    const hPhi = Math.atan2(lineP2.y - lineP1.y, lineP2.x - lineP1.x);
+                    mirrored.sourceEllipse.rotation = 2 * hPhi - (mirrored.sourceEllipse.rotation || 0);
+                }
                 break;
             case 'text':
                 mirrored.position = Utils.mirrorPoint(mirrored.position, lineP1, lineP2);

@@ -2329,6 +2329,7 @@ const Commands = {
                 p2: { ...state.points[1] }
             });
             state.points = [state.points[1]];
+            state.cmdOptions.lineSegCount = (state.cmdOptions.lineSegCount || 0) + 1;
             UI.log('LINE: Specify next point or [Close/Undo]:', 'prompt');
         } else {
             UI.log('LINE: Specify next point:', 'prompt');
@@ -4050,7 +4051,8 @@ const Commands = {
             UI.log('Spline closed.');
             this.finishCommand();
             Renderer.draw();
-        } else if (state.activeCmd === 'line' && state.lineChainStart && state.points.length >= 1) {
+        } else if (state.activeCmd === 'line' && state.lineChainStart && state.points.length >= 1 &&
+                   (state.cmdOptions.lineSegCount || 0) >= 2) {
             CAD.addEntity({
                 type: 'line',
                 p1: { ...state.points[0] },
@@ -4152,13 +4154,44 @@ const Commands = {
                 CAD.removeEntity(entity.id, true);
                 explodedCount++;
             } else if (entity.type === 'polyline' && entity.points.length > 1) {
-                // Explode polyline to lines
-                for (let i = 0; i < entity.points.length - 1; i++) {
-                    CAD.addEntity({
-                        type: 'line',
-                        p1: { ...entity.points[i] },
-                        p2: { ...entity.points[i + 1] }
-                    }, true);
+                // Explode polyline to lines (and arcs for bulge segments)
+                const plPts = entity.points;
+                const plBulges = entity.bulges || [];
+                const segCount = entity.closed ? plPts.length : plPts.length - 1;
+                for (let i = 0; i < segCount; i++) {
+                    const p1 = plPts[i];
+                    const p2 = plPts[(i + 1) % plPts.length];
+                    const bulge = plBulges[i] || 0;
+                    if (Math.abs(bulge) > 1e-10) {
+                        // Reconstruct arc from bulge (same math as renderer)
+                        const dx = p2.x - p1.x;
+                        const dy = p2.y - p1.y;
+                        const d = Math.sqrt(dx * dx + dy * dy);
+                        if (d < 1e-10) continue;
+                        const r = d * (1 + bulge * bulge) / (4 * Math.abs(bulge));
+                        const h = d * (1 - bulge * bulge) / (4 * bulge);
+                        const cx = (p1.x + p2.x) / 2 + h * (-dy / d);
+                        const cy = (p1.y + p2.y) / 2 + h * (dx / d);
+                        const a1 = Math.atan2(p1.y - cy, p1.x - cx);
+                        const a2 = Math.atan2(p2.y - cy, p2.x - cx);
+                        // Arc entities render CCW from start to end;
+                        // negative bulge (CW p1->p2) maps to CCW p2->p1
+                        CAD.addEntity({
+                            type: 'arc',
+                            center: { x: cx, y: cy },
+                            r: r,
+                            start: bulge > 0 ? a1 : a2,
+                            end: bulge > 0 ? a2 : a1,
+                            layer: entity.layer
+                        }, true);
+                    } else {
+                        CAD.addEntity({
+                            type: 'line',
+                            p1: { ...p1 },
+                            p2: { ...p2 },
+                            layer: entity.layer
+                        }, true);
+                    }
                 }
                 CAD.removeEntity(entity.id, true);
                 explodedCount++;
@@ -6900,6 +6933,23 @@ const Commands = {
         selected.forEach(ent => {
             if (ent.type === 'polyline' && ent.points) {
                 ent.points.reverse();
+                // Bulges must be remapped to the new segment order and negated
+                // (reversing traversal flips each arc's direction)
+                if (ent.bulges && ent.bulges.length) {
+                    const n = ent.points.length;
+                    const old = ent.bulges;
+                    const nb = new Array(n).fill(0);
+                    if (ent.closed) {
+                        for (let j = 0; j < n; j++) {
+                            nb[j] = -(old[(2 * n - 2 - j) % n] || 0);
+                        }
+                    } else {
+                        for (let j = 0; j < n - 1; j++) {
+                            nb[j] = -(old[n - 2 - j] || 0);
+                        }
+                    }
+                    ent.bulges = nb;
+                }
                 count++;
             } else if (ent.type === 'line') {
                 const temp = { ...ent.p1 };
@@ -8474,18 +8524,40 @@ const Commands = {
         // Undo last point during LINE or POLYLINE drawing
         if ((inputLower === 'u' || inputLower === 'undo') &&
             (state.activeCmd === 'line' || state.activeCmd === 'polyline' || state.activeCmd === 'spline')) {
+            // LINE keeps only the last point in state.points; undo by removing
+            // the last created line entity and stepping back to its start point.
+            if (state.activeCmd === 'line') {
+                const segCount = state.cmdOptions.lineSegCount || 0;
+                const lastEntity = CAD.entities[CAD.entities.length - 1];
+                if (segCount > 0 && lastEntity && lastEntity.type === 'line') {
+                    state.points = [{ ...lastEntity.p1 }];
+                    CAD.removeEntity(lastEntity.id, true);
+                    state.cmdOptions.lineSegCount = segCount - 1;
+                    if (state.cmdOptions.lineSegCount === 0) {
+                        // Back at the chain start
+                        state.points = state.lineChainStart ? [{ ...state.lineChainStart }] : [];
+                    }
+                    UI.log('LINE: Last segment undone. Specify next point:', 'prompt');
+                    Renderer.draw();
+                } else if (state.points.length === 1) {
+                    state.points = [];
+                    state.lineChainStart = null;
+                    UI.log('LINE: Cannot undo - specify first point:', 'prompt');
+                } else {
+                    UI.log('Nothing to undo.', 'error');
+                }
+                return true;
+            }
             if (state.points.length > 1) {
                 // Remove the last point
                 state.points.pop();
-                // For line, we also need to undo the last created entity
-                if (state.activeCmd === 'line' && CAD.entities.length > 0) {
-                    const lastEntity = CAD.entities[CAD.entities.length - 1];
-                    if (lastEntity.type === 'line') {
-                        CAD.removeEntity(lastEntity.id, true);
-                        UI.log('LINE: Last segment undone. Specify next point:', 'prompt');
-                    }
-                }
                 if (state.activeCmd === 'polyline') {
+                    // Clear the bulge of the removed segment so it doesn't
+                    // apply to the next segment drawn
+                    if (state.cmdOptions.polylineBulges) {
+                        state.cmdOptions.polylineBulges[state.points.length - 1] = 0;
+                        state.cmdOptions.polylineBulges.length = state.points.length;
+                    }
                     UI.log('PLINE: Last point undone. Specify next point or [Arc/Close/Undo]:', 'prompt');
                 }
                 if (state.activeCmd === 'spline') {
