@@ -2903,7 +2903,7 @@ class Hatch {
     }
 
     /**
-     * Pattern definitions matching AutoCAD standards.
+     * Pattern definitions matching standard CADs.
      * Each pattern has one or more line families with:
      *   angle: degrees from horizontal
      *   spacing: base spacing in drawing units (scaled by this.scale)
