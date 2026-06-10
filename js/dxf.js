@@ -322,7 +322,7 @@ const DXF = (() => {
     const getEntityStyle = (tags) => {
         const style = {};
         // Layer (code 8 - already extracted)
-        // Color: index color (code 62), True color (code 420)
+        // Color: ACI color (code 62), True color (code 420)
         if (tags[420]) {
             style.trueColor = intToHex(tags[420]);
         }
@@ -947,7 +947,7 @@ const DXF = (() => {
     // ==========================================
 
     const writeColor = (out, entity) => {
-        // Write index color (code 62) and/or true color (code 420)
+        // Write ACI color (code 62) and/or true color (code 420)
         const color = entity.color;
         if (color && typeof color === 'string' && color.startsWith('#')) {
             out.push('420', String(hexToInt(color)));

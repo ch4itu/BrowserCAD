@@ -9,7 +9,7 @@
     --bg-medium: #252526;
     --bg-light: #2d2d30;
     --bg-lighter: #3e3e42;
-    --bg-canvas: #212830;
+    --bg-canvas: #1a1a1a;
 
     /* Accent colors */
     --accent-blue: #007acc;
@@ -34,13 +34,13 @@
     --selection-green: rgba(16, 185, 129, 0.3);
 
     /* Command line */
-    --cmd-bg: #2b2b2b;
-    --cmd-text: #d8dde2;
+    --cmd-bg: #1a1a1a;
+    --cmd-text: #00ff00;
 
     /* Grid */
-    --grid-minor: #2b333d;
-    --grid-major: #39434e;
-    --grid-axis: #4a5560;
+    --grid-minor: #2a2a2a;
+    --grid-major: #3a3a3a;
+    --grid-axis: #505050;
 }
 
 /* Reset and Base */
@@ -84,7 +84,7 @@ body {
 .title-bar {
     display: flex;
     align-items: center;
-    background: #2b2b2b;
+    background: linear-gradient(180deg, #3d3d3d 0%, #2d2d30 100%);
     height: 28px;
     padding: 0 8px;
     border-bottom: 1px solid var(--border-dark);
@@ -786,13 +786,12 @@ body {
     left: 0;
 }
 
-/* Layout tabs (Model / Paper space) — docked below the drawing area */
+/* Viewport tabs (for multiple drawings) */
 .viewport-tabs {
     display: flex;
     background: var(--bg-light);
-    border-top: 1px solid var(--border-medium);
+    border-bottom: 1px solid var(--border-medium);
     height: 24px;
-    order: 2;
 }
 
 .viewport-tab {
@@ -821,7 +820,7 @@ body {
 }
 
 .viewport-tab.active {
-    background: var(--accent-blue);
+    background: var(--bg-canvas);
     color: var(--text-bright);
 }
 
@@ -1030,15 +1029,13 @@ body {
     font-family: 'Consolas', monospace;
     color: var(--text-secondary);
     min-width: 180px;
-    text-align: left;
+    text-align: right;
 }
 
 .status-mode {
-    color: var(--text-secondary);
+    color: var(--text-muted);
     padding: 0 8px;
     border-left: 1px solid var(--border-medium);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
 }
 
 /* ============================================
@@ -1282,7 +1279,7 @@ body {
 }
 
 /* ============================================
-   CAD-STYLE COLOR PICKER DIALOG
+   AUTOCAD-STYLE COLOR PICKER DIALOG
    ============================================ */
 
 .color-picker-dialog {
@@ -1355,18 +1352,18 @@ body {
     min-height: 200px;
 }
 
-/* Index color palette - Top row of 9 primary colors */
-.idx-standard-colors {
+/* ACI Standard Colors - Top row of 9 primary colors */
+.aci-standard-colors {
     margin-bottom: 10px;
 }
 
-.idx-row {
+.aci-row {
     display: flex;
     gap: 2px;
     justify-content: center;
 }
 
-.idx-color {
+.aci-color {
     width: 28px;
     height: 28px;
     border: 1px solid rgba(255, 255, 255, 0.2);
@@ -1374,34 +1371,34 @@ body {
     transition: transform 0.1s;
 }
 
-.idx-color:hover {
+.aci-color:hover {
     transform: scale(1.15);
     border-color: white;
     z-index: 1;
 }
 
-.idx-color.selected {
+.aci-color.selected {
     border: 2px solid white;
     box-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
 }
 
 /* Gray colors row */
-.idx-gray-colors {
+.aci-gray-colors {
     display: flex;
     gap: 2px;
     justify-content: center;
     margin-bottom: 10px;
 }
 
-/* Full index color palette */
-.idx-full-palette {
+/* Full ACI Palette */
+.aci-full-palette {
     display: grid;
     grid-template-columns: repeat(24, 1fr);
     gap: 1px;
     margin-top: 10px;
 }
 
-.idx-full-palette .idx-color {
+.aci-full-palette .aci-color {
     width: 100%;
     height: 14px;
 }

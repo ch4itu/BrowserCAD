@@ -1751,7 +1751,7 @@ LISP:
     },
 
     // ==========================================
-    // CAD-STYLE COLOR PICKER
+    // AUTOCAD-STYLE COLOR PICKER
     // ==========================================
 
     // CAD Color Index palette
@@ -1775,7 +1775,7 @@ LISP:
         { index: 255, hex: '#ffffff' }
     ],
 
-    // Generate full index color palette (colors 10-249)
+    // Generate full ACI palette (colors 10-249)
     generateAciPalette() {
         const palette = [];
         // Generate spectrum colors
@@ -1867,14 +1867,14 @@ LISP:
 
     buildColorPalette() {
         // Build primary row (colors 1-9)
-        const primaryRow = document.querySelector('.idx-row.idx-primary');
+        const primaryRow = document.querySelector('.aci-row.aci-primary');
         if (primaryRow) {
             primaryRow.innerHTML = '';
             for (let i = 1; i <= 9; i++) {
                 const color = this.aciColors.find(c => c.index === i);
                 if (color) {
                     const div = document.createElement('div');
-                    div.className = 'idx-color';
+                    div.className = 'aci-color';
                     div.style.backgroundColor = color.hex;
                     div.title = `${color.name || 'Color ' + i} (${i})`;
                     div.dataset.color = color.hex;
@@ -1885,13 +1885,13 @@ LISP:
         }
 
         // Build gray row
-        const grayRow = document.querySelector('.idx-gray-colors');
+        const grayRow = document.querySelector('.aci-gray-colors');
         if (grayRow) {
             grayRow.innerHTML = '';
             const grays = ['#000000', '#333333', '#464646', '#585858', '#6b6b6b', '#808080', '#969696', '#b0b0b0', '#c0c0c0', '#e0e0e0', '#ffffff'];
             grays.forEach((hex, i) => {
                 const div = document.createElement('div');
-                div.className = 'idx-color';
+                div.className = 'aci-color';
                 div.style.backgroundColor = hex;
                 div.title = `Gray ${i + 1}`;
                 div.dataset.color = hex;
@@ -1901,13 +1901,13 @@ LISP:
         }
 
         // Build full palette
-        const fullPalette = document.querySelector('.idx-full-palette');
+        const fullPalette = document.querySelector('.aci-full-palette');
         if (fullPalette) {
             fullPalette.innerHTML = '';
             const palette = this.generateAciPalette();
             palette.forEach(color => {
                 const div = document.createElement('div');
-                div.className = 'idx-color';
+                div.className = 'aci-color';
                 div.style.backgroundColor = color.hex;
                 div.title = `Color ${color.index}`;
                 div.dataset.color = color.hex;
@@ -1940,12 +1940,12 @@ LISP:
         this.updateColorPreview(hex);
 
         // Remove selection from all
-        document.querySelectorAll('.idx-color.selected').forEach(el => {
+        document.querySelectorAll('.aci-color.selected').forEach(el => {
             el.classList.remove('selected');
         });
 
         // Add selection to clicked one
-        const selected = document.querySelector(`.idx-color[data-color="${hex}"]`);
+        const selected = document.querySelector(`.aci-color[data-color="${hex}"]`);
         if (selected) {
             selected.classList.add('selected');
         }

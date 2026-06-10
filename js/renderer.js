@@ -9,11 +9,11 @@ const Renderer = {
 
     // Colors
     colors: {
-        background: '#212830',
-        gridMinor: '#2b333d',
-        gridMajor: '#39434e',
-        axisX: '#8a3a3a',
-        axisY: '#3a8a3a',
+        background: '#1a1a1a',
+        gridMinor: '#252525',
+        gridMajor: '#353535',
+        axisX: '#803030',
+        axisY: '#308030',
         cursor: '#ffffff',
         selection: '#3399ff',
         selectionFill: 'rgba(51, 153, 255, 0.15)',
@@ -1823,7 +1823,7 @@ const Renderer = {
                 }
                 ctx.stroke();
 
-                // Draw preview segment dashed (arc-aware, CAD-style)
+                // Draw preview segment dashed (arc-aware, AutoCAD-style)
                 ctx.beginPath();
                 ctx.setLineDash([4 / state.zoom, 4 / state.zoom]);
                 let previewBulge = 0;
@@ -2284,7 +2284,7 @@ const Renderer = {
                 break;
 
             case 'quadrant':
-                // Diamond rotated 45 degrees (standard CAD quadrant indicator)
+                // Diamond rotated 45 degrees (AutoCAD standard quadrant indicator)
                 ctx.moveTo(screen.x, screen.y - size);
                 ctx.lineTo(screen.x + size, screen.y);
                 ctx.lineTo(screen.x, screen.y + size);
@@ -2301,7 +2301,7 @@ const Renderer = {
                 break;
 
             case 'node':
-                // Circle with cross (standard CAD node/point indicator)
+                // Circle with cross (AutoCAD standard node/point indicator)
                 ctx.arc(screen.x, screen.y, size * 0.7, 0, Math.PI * 2);
                 ctx.stroke();
                 ctx.beginPath();

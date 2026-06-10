@@ -1395,7 +1395,7 @@ const Storage = {
 
         let svg = `<?xml version="1.0" encoding="UTF-8"?>\n`;
         svg += `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX - padding} ${minY - padding} ${width} ${height}" width="${width}" height="${height}">\n`;
-        svg += `<rect x="${minX - padding}" y="${minY - padding}" width="${width}" height="${height}" fill="#212830"/>\n`;
+        svg += `<rect x="${minX - padding}" y="${minY - padding}" width="${width}" height="${height}" fill="#1a1a1a"/>\n`;
 
         CAD.entities.forEach(entity => {
             svg += this.entityToSVG(entity);
@@ -1634,7 +1634,7 @@ const Storage = {
                 const dc = entity.center || { x: 0, y: 0 };
                 let svg = `<circle cx="${dc.x}" cy="${dc.y}" r="${entity.outerRadius}" fill="${color}" opacity="0.3" stroke="${color}"/>`;
                 if (entity.innerRadius > 0) {
-                    svg += `<circle cx="${dc.x}" cy="${dc.y}" r="${entity.innerRadius}" fill="#212830" stroke="${color}"/>`;
+                    svg += `<circle cx="${dc.x}" cy="${dc.y}" r="${entity.innerRadius}" fill="#1a1a1a" stroke="${color}"/>`;
                 }
                 return svg;
             }

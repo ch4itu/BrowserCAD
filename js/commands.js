@@ -1464,7 +1464,7 @@ const Commands = {
                 this.executeSelectPrevious();
                 break;
 
-            // ===== EXTENDED CAD FEATURES =====
+            // ===== NEW AUTOCAD LT FEATURES =====
 
             case 'mleader':
                 UI.log('MLEADER: Specify leader arrowhead location:', 'prompt');
@@ -2277,7 +2277,7 @@ const Commands = {
                 this.handlePasteBlockClick(point);
                 break;
 
-            // ===== EXTENDED CAD FEATURE CLICK HANDLERS =====
+            // ===== NEW AUTOCAD LT FEATURE CLICK HANDLERS =====
             case 'mleader':
                 this.handleMLeaderClick(point);
                 break;
@@ -2352,7 +2352,7 @@ const Commands = {
         if (mode === 'arc' && state.points.length >= 1) {
             const startPoint = state.points[state.points.length - 1];
 
-            // 'Second pt' (S) override: standard 3-point arc —
+            // 'Second pt' (S) override: AutoCAD 3-point arc —
             // first click = second point on arc, next click = endpoint. One-shot.
             if (state.cmdOptions.polylineArcSecondPt) {
                 if (!state.cmdOptions.polylineArcStep) {
@@ -2380,7 +2380,7 @@ const Commands = {
                 return;
             }
 
-            // Default behavior: arc starts tangent to the previous
+            // Default AutoCAD behavior: arc starts tangent to the previous
             // segment; a single click specifies the arc endpoint.
             const tangent = this._plineEndTangent(state);
             const bulge = this._bulgeFromTangent(startPoint, tangent, point);
@@ -2408,7 +2408,7 @@ const Commands = {
 
     /**
      * Bulge for an arc that starts at `start` tangent to `tangentAngle`
-     * and ends at `end` (standard PLINE arc behavior).
+     * and ends at `end` (AutoCAD PLINE arc default behavior).
      * Returns null for zero-length, 0 for collinear (straight).
      */
     _bulgeFromTangent(start, tangentAngle, end) {
@@ -3181,7 +3181,7 @@ const Commands = {
     },
 
     handleHatchClick(point) {
-        // Standard CAD pick-point semantics: hatch the smallest region enclosing
+        // AutoCAD pick-point semantics: hatch the smallest region enclosing
         // the click, excluding islands.
         const targets = this.findHatchTargets(point)
             .map(e => ({ e, pts: this.getHatchBoundaryPoints(e) }))
@@ -3376,7 +3376,7 @@ const Commands = {
     },
 
     /**
-     * Closed entities lying entirely inside `outerPoly` — CAD-style
+     * Closed entities lying entirely inside `outerPoly` — AutoCAD-style
      * islands to exclude from hatching. Returns [{id, points}].
      */
     _findClosedIslandsInside(outerPoly, excludeIds = []) {
@@ -3743,7 +3743,7 @@ const Commands = {
     },
 
     /**
-     * CAD-style pick-point boundary detection by raster flood fill.
+     * AutoCAD-style pick-point boundary detection by raster flood fill.
      * Rasterizes all visible boundary segments over the current view,
      * flood-fills from the picked point, and traces the filled region's
      * contour back to world coordinates. Handles crossing lines,
@@ -4226,7 +4226,7 @@ const Commands = {
                 this.executeReverse();
                 break;
 
-            // Extended CAD features
+            // New AutoCAD LT features
             case 'attedit':
                 this.executeAttEdit();
                 break;
@@ -4318,7 +4318,7 @@ const Commands = {
 
         if (state.activeCmd === 'polyline' && state.points.length >= 2) {
             const bulges = state.cmdOptions.polylineBulges || [];
-            // Standard CAD parity: Close in arc mode closes with a tangent arc
+            // AutoCAD parity: Close in arc mode closes with a tangent arc
             if ((state.cmdOptions.polylineMode || 'line') === 'arc' && !state.cmdOptions.polylineArcSecondPt) {
                 const lastPt = state.points[state.points.length - 1];
                 const tangent = this._plineEndTangent(state);
@@ -7663,7 +7663,7 @@ const Commands = {
                 return true;
             }
 
-            // Extended CAD feature empty-input handlers
+            // New AutoCAD LT feature empty-input handlers
             if (state.activeCmd === 'mleader' && state.step === 2) {
                 UI.log('MLEADER: Text required to finish multileader.', 'error');
                 return true;
@@ -9272,7 +9272,7 @@ const Commands = {
             return true;
         }
 
-        // ===== EXTENDED CAD FEATURE INPUT HANDLERS =====
+        // ===== NEW AUTOCAD LT FEATURE INPUT HANDLERS =====
 
         // MLEADER - text input (step 2)
         if (state.activeCmd === 'mleader' && state.step === 2) {
@@ -9357,7 +9357,7 @@ const Commands = {
     },
 
     // ==========================================
-    // EXTENDED CAD FEATURE IMPLEMENTATIONS
+    // NEW AUTOCAD LT FEATURE IMPLEMENTATIONS
     // ==========================================
 
     // --- MLEADER ---
