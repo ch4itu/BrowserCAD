@@ -3181,38 +3181,39 @@ const Commands = {
     },
 
     handleHatchClick(point) {
-        const targets = this.findHatchTargets(point);
+        // AutoCAD pick-point semantics: hatch the smallest region enclosing
+        // the click, excluding islands.
+        const targets = this.findHatchTargets(point)
+            .map(e => ({ e, pts: this.getHatchBoundaryPoints(e) }))
+            .filter(t => t.pts && t.pts.length >= 3)
+            .sort((a, b) => this._polygonArea(a.pts) - this._polygonArea(b.pts));
 
-        // Multiple overlapping closed entities -> compute intersection
-        if (targets.length > 1) {
-            let intersectionPoly = this.getHatchBoundaryPoints(targets[0]);
-            for (let i = 1; i < targets.length; i++) {
-                const otherPoly = this.getHatchBoundaryPoints(targets[i]);
-                const clipped = Geometry.clipPolygon(intersectionPoly, otherPoly);
-                if (clipped && clipped.length >= 3) {
-                    intersectionPoly = clipped;
-                }
-                // If clipping fails, keep the last good polygon
-            }
-            if (intersectionPoly && intersectionPoly.length >= 3) {
-                CAD.saveUndoState('Hatch');
-                const hatchEntity = this.createHatchEntity(
-                    intersectionPoly,
-                    targets.map(entity => entity.id),
-                    null,
-                    targets
-                );
-                CAD.addEntity(hatchEntity);
-                UI.log('Hatch applied to intersection.');
+        if (targets.length > 0) {
+            const outer = targets[0];
+            // If other geometry crosses this boundary, the interior is
+            // subdivided — fall through to flood-fill region detection.
+            if (!this._anySegmentsCrossPolygon(outer.pts, [outer.e.id])) {
+                const islands = this._findClosedIslandsInside(outer.pts, [outer.e.id]);
+                this.applyHatch(outer.e, islands);
                 this.finishCommand();
                 return;
             }
         }
 
-        // Single closed entity containing the point
-        if (targets.length === 1) {
-            this.applyHatch(targets[0]);
+        // Region detection by flood fill: handles crossing lines,
+        // overshoots, overlapping shapes, mixed entity boundaries.
+        const region = this._detectBoundaryByFloodFill(point);
+        if (region) {
+            const islands = this._findClosedIslandsInside(region, []);
+            CAD.saveUndoState('Hatch');
+            const hatchEntity = this.createHatchEntity(
+                region, [], null, null, islands.map(i => i.points));
+            CAD.addEntity(hatchEntity);
+            UI.log(islands.length
+                ? `Hatch applied (${islands.length} island${islands.length > 1 ? 's' : ''} excluded).`
+                : 'Hatch applied from detected boundary.');
             this.finishCommand();
+            Renderer.draw();
             return;
         }
 
@@ -3220,7 +3221,10 @@ const Commands = {
         const hit = this.hitTest(point);
         if (hit) {
             if (this.entitySupportsHatch(hit)) {
-                this.applyHatch(hit);
+                const hitPts = this.getHatchBoundaryPoints(hit);
+                const islands = (hitPts && hitPts.length >= 3)
+                    ? this._findClosedIslandsInside(hitPts, [hit.id]) : [];
+                this.applyHatch(hit, islands);
             } else {
                 UI.log('Object is not closed. Cannot hatch.', 'error');
             }
@@ -3228,7 +3232,7 @@ const Commands = {
             return;
         }
 
-        // Last resort: try to find a closed loop from intersecting line/polyline segments
+        // Last resort: endpoint-connected loop tracing
         const loop = this.findLineLoopContainingPoint(point);
         if (loop) {
             CAD.saveUndoState('Hatch');
@@ -3320,13 +3324,73 @@ const Commands = {
         return entity.type === 'polyline' && (entity.closed || Utils.isPolygonClosed(entity.points));
     },
 
-    applyHatch(entity) {
+    applyHatch(entity, islands = null) {
         CAD.saveUndoState('Hatch');
         const boundary = this.getHatchBoundaryPoints(entity);
-        const hatchEntity = this.createHatchEntity(boundary, [entity.id], entity);
+        const holePolys = (islands || []).map(i => i.points);
+        const clipIds = [entity.id, ...(islands || []).map(i => i.id)];
+        const hatchEntity = this.createHatchEntity(boundary, clipIds, entity, null, holePolys);
         CAD.addEntity(hatchEntity);
-        UI.log('Hatch applied.');
+        UI.log(islands && islands.length
+            ? `Hatch applied (${islands.length} island${islands.length > 1 ? 's' : ''} excluded).`
+            : 'Hatch applied.');
         Renderer.draw();
+    },
+
+    /** Shoelace area of a point loop (absolute). */
+    _polygonArea(pts) {
+        if (!pts || pts.length < 3) return 0;
+        let a = 0;
+        for (let i = 0; i < pts.length; i++) {
+            const p = pts[i];
+            const q = pts[(i + 1) % pts.length];
+            a += p.x * q.y - q.x * p.y;
+        }
+        return Math.abs(a) / 2;
+    },
+
+    _segmentsIntersect(a1, a2, b1, b2) {
+        const d = (a2.x - a1.x) * (b2.y - b1.y) - (a2.y - a1.y) * (b2.x - b1.x);
+        if (Math.abs(d) < 1e-12) return false;
+        const t = ((b1.x - a1.x) * (b2.y - b1.y) - (b1.y - a1.y) * (b2.x - b1.x)) / d;
+        const u = ((b1.x - a1.x) * (a2.y - a1.y) - (b1.y - a1.y) * (a2.x - a1.x)) / d;
+        const eps = 1e-9;
+        return t > eps && t < 1 - eps && u > eps && u < 1 - eps;
+    },
+
+    /**
+     * True if any visible entity's geometry (other than excluded ids)
+     * properly crosses the given polygon's edges — meaning the polygon's
+     * interior is subdivided into smaller regions.
+     */
+    _anySegmentsCrossPolygon(poly, excludeIds = []) {
+        const segments = this._collectBoundarySegments(excludeIds);
+        for (const s of segments) {
+            for (let i = 0; i < poly.length; i++) {
+                const e1 = poly[i];
+                const e2 = poly[(i + 1) % poly.length];
+                if (this._segmentsIntersect(s.p1, s.p2, e1, e2)) return true;
+            }
+        }
+        return false;
+    },
+
+    /**
+     * Closed entities lying entirely inside `outerPoly` — AutoCAD-style
+     * islands to exclude from hatching. Returns [{id, points}].
+     */
+    _findClosedIslandsInside(outerPoly, excludeIds = []) {
+        const islands = [];
+        CAD.getVisibleEntities().forEach(e => {
+            if (!e || excludeIds.includes(e.id)) return;
+            if (e.type === 'hatch') return;
+            if (!this.entitySupportsHatch(e)) return;
+            const pts = this.getHatchBoundaryPoints(e);
+            if (!pts || pts.length < 3) return;
+            const inside = pts.every(p => Utils.pointInPolygon(p, outerPoly));
+            if (inside) islands.push({ id: e.id, points: pts });
+        });
+        return islands;
     },
 
     applyHatchToSelection() {
@@ -3443,7 +3507,7 @@ const Commands = {
         return result;
     },
 
-    createHatchEntity(boundaryPoints, clipIds = [], sourceEntity = null, sourceEntities = null) {
+    createHatchEntity(boundaryPoints, clipIds = [], sourceEntity = null, sourceEntities = null, holes = null) {
         const pattern = (CAD.hatchPattern || 'ansi31').toLowerCase();
         const userScale = CAD.hatchScale || 1;
         const userAngle = CAD.hatchAngle || 0;
@@ -3458,9 +3522,11 @@ const Commands = {
         const effectiveScale = autoScale * userScale;
 
         // Generate render lines for non-solid patterns
+        const holeLoops = (holes || []).filter(h => h && h.length >= 3);
+
         let renderLines = [];
         if (pattern !== 'solid') {
-            const hatch = new Geometry.Hatch(boundaryPoints, pattern, effectiveScale, userAngle);
+            const hatch = new Geometry.Hatch(boundaryPoints, pattern, effectiveScale, userAngle, holeLoops);
             renderLines = hatch.generateRenderLines();
         }
 
@@ -3474,6 +3540,9 @@ const Commands = {
             renderLines,
             clipIds
         };
+        if (holeLoops.length) {
+            result.holes = holeLoops;
+        }
 
         // Store multiple source entities for intersection clip paths
         if (sourceEntities && sourceEntities.length > 1) {
@@ -3569,10 +3638,36 @@ const Commands = {
     },
 
     findLineLoopContainingPoint(point) {
+        const segments = this._collectBoundarySegments();
+        if (segments.length === 0) {
+            return null;
+        }
+
+        const loops = this.buildLineLoops(segments);
+        // Prefer the smallest loop containing the point (innermost region)
+        let best = null;
+        let bestArea = Infinity;
+        for (const loop of loops) {
+            if (Utils.pointInPolygon(point, loop)) {
+                const a = this._polygonArea(loop);
+                if (a < bestArea) { bestArea = a; best = loop; }
+            }
+        }
+        return best;
+    },
+
+    /**
+     * Convert all visible hatch-relevant entities into straight segments
+     * (arcs/circles/ellipses/splines interpolated). Used by boundary
+     * detection. `excludeIds` entities are skipped.
+     */
+    _collectBoundarySegments(excludeIds = []) {
         const segments = [];
         const entities = CAD.getVisibleEntities();
 
         entities.forEach(entity => {
+            if (entity.type === 'hatch') return;
+            if (excludeIds && excludeIds.includes(entity.id)) return;
             if (entity.type === 'line') {
                 segments.push({ p1: entity.p1, p2: entity.p2 });
             } else if (entity.type === 'polyline' && entity.points.length > 1) {
@@ -3644,18 +3739,156 @@ const Commands = {
             }
         });
 
-        if (segments.length === 0) {
-            return null;
-        }
+        return segments;
+    },
 
-        const loops = this.buildLineLoops(segments);
-        for (const loop of loops) {
-            if (Utils.pointInPolygon(point, loop)) {
-                return loop;
+    /**
+     * AutoCAD-style pick-point boundary detection by raster flood fill.
+     * Rasterizes all visible boundary segments over the current view,
+     * flood-fills from the picked point, and traces the filled region's
+     * contour back to world coordinates. Handles crossing lines,
+     * overshoots, and arbitrary entity combinations. Returns a polygon
+     * or null if the region is open (fill escapes the view).
+     */
+    _detectBoundaryByFloodFill(point) {
+        const segments = this._collectBoundarySegments();
+        if (!segments.length) return null;
+
+        // World window = current view, expanded slightly
+        const cw = Renderer.canvas.width;
+        const ch = Renderer.canvas.height;
+        const tl = Renderer.screenToWorld(0, 0);
+        const br = Renderer.screenToWorld(cw, ch);
+        let minX = Math.min(tl.x, br.x), maxX = Math.max(tl.x, br.x);
+        let minY = Math.min(tl.y, br.y), maxY = Math.max(tl.y, br.y);
+        const exX = (maxX - minX) * 0.05, exY = (maxY - minY) * 0.05;
+        minX -= exX; maxX += exX; minY -= exY; maxY += exY;
+        if (point.x <= minX || point.x >= maxX || point.y <= minY || point.y >= maxY) return null;
+
+        const N = 800;
+        const W = N;
+        const H = Math.max(64, Math.min(N, Math.round(N * (maxY - minY) / (maxX - minX))));
+        const cellW = (maxX - minX) / W;
+        const cellH = (maxY - minY) / H;
+        const grid = new Uint8Array(W * H); // 0 empty, 1 stroke, 2 filled
+
+        // Rasterize segments: half-cell stepping gives an 8-connected
+        // stroke, which blocks 4-connected flood fill (no diagonal leaks)
+        const step = Math.min(cellW, cellH) * 0.5;
+        for (const s of segments) {
+            const dx = s.p2.x - s.p1.x;
+            const dy = s.p2.y - s.p1.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            const n = Math.max(1, Math.ceil(len / step));
+            for (let i = 0; i <= n; i++) {
+                const x = s.p1.x + (dx * i) / n;
+                const y = s.p1.y + (dy * i) / n;
+                const cx = Math.floor((x - minX) / cellW);
+                const cy = Math.floor((y - minY) / cellH);
+                if (cx >= 0 && cx < W && cy >= 0 && cy < H) grid[cy * W + cx] = 1;
             }
         }
 
-        return null;
+        // Flood fill (4-connected) from the picked cell
+        const startCx = Math.floor((point.x - minX) / cellW);
+        const startCy = Math.floor((point.y - minY) / cellH);
+        if (grid[startCy * W + startCx] === 1) return null; // picked on a stroke
+
+        const stack = [startCy * W + startCx];
+        grid[stack[0]] = 2;
+        let escaped = false;
+        while (stack.length) {
+            const idx = stack.pop();
+            const cx = idx % W;
+            const cy = (idx / W) | 0;
+            if (cx === 0 || cx === W - 1 || cy === 0 || cy === H - 1) { escaped = true; break; }
+            const tryCell = (i) => { if (grid[i] === 0) { grid[i] = 2; stack.push(i); } };
+            tryCell(idx - 1);
+            tryCell(idx + 1);
+            tryCell(idx - W);
+            tryCell(idx + W);
+        }
+        if (escaped) return null;
+
+        // Trace outer contour of the filled region (Moore neighbor tracing)
+        let sx = -1, sy = -1;
+        outer:
+        for (let cy = 0; cy < H; cy++) {
+            for (let cx = 0; cx < W; cx++) {
+                if (grid[cy * W + cx] === 2) { sx = cx; sy = cy; break outer; }
+            }
+        }
+        if (sx < 0) return null;
+
+        const dirs = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+        const isFilled = (cx, cy) => cx >= 0 && cx < W && cy >= 0 && cy < H && grid[cy * W + cx] === 2;
+        const contour = [];
+        let px = sx, py = sy;
+        let dir = 6; // came from below-left scan; start looking up-ish
+        const maxSteps = W * H;
+        for (let stepCount = 0; stepCount < maxSteps; stepCount++) {
+            contour.push({ cx: px, cy: py });
+            let found = false;
+            // Search neighbors clockwise starting from backtrack direction
+            for (let k = 0; k < 8; k++) {
+                const d = (dir + 6 + k) % 8; // start 90deg CCW from entry dir
+                const nx = px + dirs[d][0];
+                const ny = py + dirs[d][1];
+                if (isFilled(nx, ny)) {
+                    px = nx; py = ny; dir = d; found = true;
+                    break;
+                }
+            }
+            if (!found) break; // single-cell region
+            if (px === sx && py === sy && contour.length > 2) break;
+        }
+        if (contour.length < 3) return null;
+
+        // Cells -> world coords (cell centers), then simplify
+        let poly = contour.map(c => ({
+            x: minX + (c.cx + 0.5) * cellW,
+            y: minY + (c.cy + 0.5) * cellH
+        }));
+        poly = this._simplifyPolygon(poly, 1.6 * Math.max(cellW, cellH));
+        return (poly && poly.length >= 3) ? poly : null;
+    },
+
+    /** Ramer-Douglas-Peucker simplification on a closed loop. */
+    _simplifyPolygon(pts, eps) {
+        if (!pts || pts.length < 4) return pts;
+        const dseg = (p, a, b) => {
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const l2 = dx * dx + dy * dy;
+            if (l2 < 1e-20) return Math.hypot(p.x - a.x, p.y - a.y);
+            let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2;
+            t = Math.max(0, Math.min(1, t));
+            return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+        };
+        const rdp = (arr, lo, hi, keep) => {
+            let maxD = -1, maxI = -1;
+            for (let i = lo + 1; i < hi; i++) {
+                const d = dseg(arr[i], arr[lo], arr[hi]);
+                if (d > maxD) { maxD = d; maxI = i; }
+            }
+            if (maxD > eps) {
+                keep[maxI] = true;
+                rdp(arr, lo, maxI, keep);
+                rdp(arr, maxI, hi, keep);
+            }
+        };
+        const keep = new Array(pts.length).fill(false);
+        keep[0] = true;
+        keep[pts.length - 1] = true;
+        // Split at the farthest point from pts[0] for stable closed-loop RDP
+        let far = 0, farD = -1;
+        for (let i = 1; i < pts.length; i++) {
+            const d = Math.hypot(pts[i].x - pts[0].x, pts[i].y - pts[0].y);
+            if (d > farD) { farD = d; far = i; }
+        }
+        keep[far] = true;
+        rdp(pts, 0, far, keep);
+        rdp(pts, far, pts.length - 1, keep);
+        return pts.filter((_, i) => keep[i]);
     },
 
     handleXClipClick(point) {

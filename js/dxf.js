@@ -1397,10 +1397,16 @@ const DXF = (() => {
             || (entity.boundaryPoints && entity.boundaryPoints.length >= 3 ? [entity.boundaryPoints] : null)
             || (boundaryAsLoop ? [boundaryAsLoop] : []);
 
-        if (loops.length > 0) {
-            out.push('91', String(loops.length));
-            loops.forEach(loop => {
-                out.push('92', '2'); // Path type: Polyline (Highly compatible)
+        // Island holes follow the outer loop as additional boundary paths
+        const holeLoops = (entity.holes || []).filter(h => Array.isArray(h) && h.length >= 3);
+        const loopFlags = loops.map(() => 2 | 1)           // Polyline | External
+            .concat(holeLoops.map(() => 2 | 16));          // Polyline | Outermost (island)
+        const allLoops = loops.concat(holeLoops);
+
+        if (allLoops.length > 0) {
+            out.push('91', String(allLoops.length));
+            allLoops.forEach((loop, li) => {
+                out.push('92', String(loopFlags[li]));
                 const hasBulge = loop.some(p => Math.abs(p.bulge || 0) > 1e-10);
                 out.push('72', hasBulge ? '1' : '0');
                 out.push('73', '1'); // Closed

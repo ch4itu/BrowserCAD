@@ -866,6 +866,28 @@ const Renderer = {
             ctx.clip();
         }
 
+        // Exclude island holes: intersect current clip with
+        // (bounding rect minus hole loops) using even-odd rule
+        if (entity.holes && entity.holes.length) {
+            let hMinX = Infinity, hMinY = Infinity, hMaxX = -Infinity, hMaxY = -Infinity;
+            boundaryPoints.forEach(p => {
+                if (p.x < hMinX) hMinX = p.x;
+                if (p.y < hMinY) hMinY = p.y;
+                if (p.x > hMaxX) hMaxX = p.x;
+                if (p.y > hMaxY) hMaxY = p.y;
+            });
+            const hm = Math.max(hMaxX - hMinX, hMaxY - hMinY) * 0.1 + 1;
+            ctx.beginPath();
+            ctx.rect(hMinX - hm, hMinY - hm, (hMaxX - hMinX) + 2 * hm, (hMaxY - hMinY) + 2 * hm);
+            entity.holes.forEach(h => {
+                if (!h || h.length < 3) return;
+                ctx.moveTo(h[0].x, h[0].y);
+                for (let i = 1; i < h.length; i++) ctx.lineTo(h[i].x, h[i].y);
+                ctx.closePath();
+            });
+            ctx.clip('evenodd');
+        }
+
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         boundaryPoints.forEach(p => {
             if (p.x < minX) minX = p.x;
@@ -1535,7 +1557,7 @@ const Renderer = {
         }
         if (typeof Geometry !== 'undefined' && Geometry.Hatch) {
             const pattern = entity.patternName || entity.pattern || entity.hatch?.pattern || 'ANSI31';
-            const hatch = new Geometry.Hatch(boundary, pattern, entity.scale || 1, entity.angle || 0);
+            const hatch = new Geometry.Hatch(boundary, pattern, entity.scale || 1, entity.angle || 0, entity.holes || null);
             entity.renderLines = hatch.generateRenderLines();
             return entity.renderLines;
         }

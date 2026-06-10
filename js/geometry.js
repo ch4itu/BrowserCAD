@@ -1687,6 +1687,10 @@ const Geometry = {
         if (hatch.points && Array.isArray(hatch.points)) {
             hatch.points = hatch.points.map(p => (p && p.x !== undefined) ? fn(p) : p);
         }
+        if (hatch.holes && Array.isArray(hatch.holes)) {
+            hatch.holes = hatch.holes.map(loop =>
+                Array.isArray(loop) ? loop.map(p => (p && p.x !== undefined) ? fn(p) : p) : loop);
+        }
         if (hatch.renderLines && Array.isArray(hatch.renderLines)) {
             hatch.renderLines = hatch.renderLines.map(s =>
                 (s && s.p1 && s.p2) ? { p1: fn(s.p1), p2: fn(s.p2) } : s);
@@ -2888,12 +2892,13 @@ class Insert {
 }
 
 class Hatch {
-    constructor(boundary = [], patternName = 'ANSI31', scale = 1, angle = 0) {
+    constructor(boundary = [], patternName = 'ANSI31', scale = 1, angle = 0, holes = null) {
         this.type = 'hatch';
         this.boundary = boundary;
         this.patternName = (patternName || 'ANSI31').toLowerCase();
         this.scale = scale || 1;
         this.angle = angle || 0;
+        this.holes = holes || [];
         this.renderLines = [];
     }
 
@@ -3140,6 +3145,13 @@ class Hatch {
             return this.renderLines;
         }
 
+        // Outer boundary first, then island (hole) loops; scanline even-odd
+        // pairing across all loop edges excludes hole interiors automatically.
+        const loops = [boundaryPoints];
+        (this.holes || []).forEach(h => {
+            if (h && h.length >= 3) loops.push(h);
+        });
+
         const allSegments = [];
 
         patternDef.families.forEach(family => {
@@ -3149,7 +3161,7 @@ class Hatch {
             const effectiveSpacing = (family.spacing || 3.175) * this.scale;
 
             const segs = Hatch._generateScanlines(
-                boundaryPoints, effectiveAngle, effectiveSpacing,
+                loops, effectiveAngle, effectiveSpacing,
                 family.dashes, family.phase
             );
             segs.forEach(s => allSegments.push(s));
@@ -3163,8 +3175,13 @@ class Hatch {
      * Generate scanlines at a given angle through a boundary polygon.
      * Returns array of {p1, p2} segments clipped to the boundary.
      */
-    static _generateScanlines(boundaryPoints, angleDeg, spacing, dashes, phaseOffset) {
-        if (!boundaryPoints || boundaryPoints.length < 3) return [];
+    static _generateScanlines(loopsOrPoints, angleDeg, spacing, dashes, phaseOffset) {
+        if (!loopsOrPoints || !loopsOrPoints.length) return [];
+        // Back-compat: a flat array of points is a single loop
+        const loops = (loopsOrPoints[0] && loopsOrPoints[0].x !== undefined)
+            ? [loopsOrPoints]
+            : loopsOrPoints;
+        if (!loops[0] || loops[0].length < 3) return [];
 
         const radians = angleDeg * (Math.PI / 180);
         const cos = Math.cos(-radians);
@@ -3180,7 +3197,8 @@ class Hatch {
             y: p.x * invSin + p.y * invCos
         });
 
-        const rotated = boundaryPoints.map(rotatePoint);
+        const rotatedLoops = loops.map(loop => loop.map(rotatePoint));
+        const rotated = rotatedLoops[0];
         const bbox = Hatch.getPointsBoundingBox(rotated);
 
         const effSpacing = Math.max(spacing, 0.001);
@@ -3198,13 +3216,15 @@ class Hatch {
             if (y < bbox.minY) continue;
 
             const intersections = [];
-            for (let i = 0; i < rotated.length; i++) {
-                const a = rotated[i];
-                const b = rotated[(i + 1) % rotated.length];
-                if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
-                    const t = (y - a.y) / (b.y - a.y);
-                    const x = a.x + t * (b.x - a.x);
-                    intersections.push(x);
+            for (const loop of rotatedLoops) {
+                for (let i = 0; i < loop.length; i++) {
+                    const a = loop[i];
+                    const b = loop[(i + 1) % loop.length];
+                    if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
+                        const t = (y - a.y) / (b.y - a.y);
+                        const x = a.x + t * (b.x - a.x);
+                        intersections.push(x);
+                    }
                 }
             }
             intersections.sort((a, b) => a - b);
