@@ -26,7 +26,7 @@ BrowserCAD has strong support for core 2D primitives.
 - [x] Tables (TABLE)
 - [x] Multiline Styles (MLSTYLE)
 - [x] Trace (TRACE)
-- [ ] Helix (HELIX) — 3D feature, out of scope for the 2D engine
+- [ ] Helix (HELIX) — 3D feature, not in AutoCAD LT
 
 ## 2) Modify & Edit Commands
 A broad set of 2D editing tools is implemented.
@@ -102,7 +102,7 @@ Basic internal block handling is present; external reference features are missin
 - [x] Insert Block (INSERT)
 - [x] Define Attributes (ATTDEF)
 - [x] Edit Attributes (ATTEDIT / EATTEDIT)
-- [ ] Dynamic Blocks (Parameters/Actions)
+- [ ] Dynamic Blocks (Parameters/Actions) — not in AutoCAD LT
 - [ ] External References (XREF)
 - [x] Image Clip (IMAGECLIP)
 
@@ -114,8 +114,9 @@ Core navigation exists; 3D navigation is not present.
 - [x] Regen (REGEN)
 - [x] Draw Order (DRAWORDER)
 - [x] Isolate/Hide Objects (ISOLATEOBJECTS, HIDEOBJECTS)
-- [ ] 3D Orbit
-- [ ] 3D navigation widgets (view cube / navigation wheel)
+- [ ] Orbit (3DORBIT)
+- [ ] Steering Wheels
+- [ ] Viewcube
 
 ## 7) System & Utilities
 A strong set of utilities and drafting aids is implemented.
@@ -136,14 +137,14 @@ A strong set of utilities and drafting aids is implemented.
 - [ ] Parametric Constraints
 - [x] Calculator (QUICKCALC)
 - [x] Count (COUNT) — entity count by type and block references
-- [ ] Content library browser palette
+- [ ] Design Center (ADCENTER)
 
 ## 8) Programming & Scripting
 Lisp support exists; advanced IDE/integration does not.
 - [x] Lisp Interpreter
 - [x] Load Script (APPLOAD)
-- [ ] Integrated Lisp script editor
-- [ ] Plugin/macro API
+- [ ] Visual LISP Editor (VLIDE)
+- [ ] VBA / .NET Support
 - [ ] Action Recorder
 
 ## 9) Paper Space & Layouts (Partial)
@@ -172,7 +173,7 @@ The engine is strictly 2D.
 - [x] Export - SVG
 - [x] Export - JSON
 - [x] Google Drive Open/Save
-- [ ] Proprietary binary drawing format support
+- [ ] DWG Support
 - [ ] PDF Import/Export
 - [x] Plot/Print (PLOT)
 

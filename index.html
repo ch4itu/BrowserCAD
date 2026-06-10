@@ -791,7 +791,7 @@
             <div class="command-input-row">
                 <span class="command-prompt" id="commandPrompt">Command:</span>
                 <input type="text" id="cmdInput" class="command-input"
-                       placeholder="Type a command" autocomplete="off" autofocus>
+                       placeholder="Type command here..." autocomplete="off" autofocus>
             </div>
             <div class="desktop-hatch-swatches" id="desktopHatchSwatches"></div>
         </div>
@@ -975,17 +975,17 @@
         <!-- Status Bar -->
         <div class="status-bar">
             <div class="status-left">
-                <span class="status-coords" id="coordDisplay">0.0000, 0.0000, 0.0000</span>
+                <span class="status-mode">Model</span>
             </div>
             <div class="status-center">
+                <button class="status-btn active" id="statusOsnap" onclick="UI.toggleOsnap()" title="Object Snap (F3)">OSNAP</button>
                 <button class="status-btn" id="statusGridSnap" onclick="UI.toggleGridSnap()" title="Grid Snap (F9)">SNAP</button>
                 <button class="status-btn active" id="statusGrid" onclick="UI.toggleGrid()" title="Grid Display (F7)">GRID</button>
                 <button class="status-btn" id="statusOrtho" onclick="UI.toggleOrtho()" title="Ortho Mode (F8)">ORTHO</button>
                 <button class="status-btn" id="statusPolar" onclick="UI.togglePolar()" title="Polar Tracking (F10)">POLAR</button>
-                <button class="status-btn active" id="statusOsnap" onclick="UI.toggleOsnap()" title="Object Snap (F3)">OSNAP</button>
             </div>
             <div class="status-right">
-                <span class="status-mode">Model</span>
+                <span class="status-coords" id="coordDisplay">0.0000, 0.0000, 0.0000</span>
             </div>
         </div>
     </div>
@@ -1004,11 +1004,11 @@
             <div class="color-picker-body">
                 <!-- Index Colors Tab -->
                 <div class="color-tab-content" id="colorTabIndex">
-                    <div class="idx-standard-colors">
-                        <div class="idx-row idx-primary"></div>
+                    <div class="aci-standard-colors">
+                        <div class="aci-row aci-primary"></div>
                     </div>
-                    <div class="idx-gray-colors"></div>
-                    <div class="idx-full-palette"></div>
+                    <div class="aci-gray-colors"></div>
+                    <div class="aci-full-palette"></div>
                 </div>
                 <!-- True Color Tab -->
                 <div class="color-tab-content" id="colorTabTrue" style="display: none;">
