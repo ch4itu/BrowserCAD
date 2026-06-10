@@ -1801,11 +1801,26 @@ const Renderer = {
                 }
                 ctx.stroke();
 
-                // Draw preview segment dashed
+                // Draw preview segment dashed (arc-aware, AutoCAD-style)
                 ctx.beginPath();
                 ctx.setLineDash([4 / state.zoom, 4 / state.zoom]);
-                ctx.moveTo(lastPoint.x, lastPoint.y);
-                ctx.lineTo(endPoint.x, endPoint.y);
+                let previewBulge = 0;
+                if ((state.cmdOptions.polylineMode || 'line') === 'arc' &&
+                    typeof Commands !== 'undefined') {
+                    if (state.cmdOptions.polylineArcSecondPt && state.cmdOptions.polylineArcStep === 1 &&
+                        state.cmdOptions.polylineArcMid) {
+                        // Second-pt flow: 3-point arc through the fixed mid point
+                        const b3 = Commands._computeBulgeFromThreePoints(
+                            lastPoint, state.cmdOptions.polylineArcMid, endPoint);
+                        previewBulge = (b3 === null) ? 0 : b3;
+                    } else if (!state.cmdOptions.polylineArcSecondPt) {
+                        // Default: tangent-continuous arc to the cursor
+                        const tangent = Commands._plineEndTangent(state);
+                        const bt = Commands._bulgeFromTangent(lastPoint, tangent, endPoint);
+                        previewBulge = (bt === null) ? 0 : bt;
+                    }
+                }
+                this._drawPolylineSegment(ctx, lastPoint, endPoint, previewBulge, true);
                 break;
             }
 

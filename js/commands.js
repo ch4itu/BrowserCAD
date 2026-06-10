@@ -556,7 +556,8 @@ const Commands = {
             case 'polyline':
                 CAD.cmdOptions.polylineMode = 'line';
                 CAD.cmdOptions.polylineArcStep = 0;
-                CAD.cmdOptions.polylineArcEnd = null;
+                CAD.cmdOptions.polylineArcMid = null;
+                CAD.cmdOptions.polylineArcSecondPt = false;
                 CAD.cmdOptions.polylineBulges = [];
                 UI.log('PLINE: Specify start point:', 'prompt');
                 break;
@@ -2328,6 +2329,9 @@ const Commands = {
                 p1: { ...state.points[0] },
                 p2: { ...state.points[1] }
             });
+            CAD.lastSegmentDirection = Math.atan2(
+                state.points[1].y - state.points[0].y,
+                state.points[1].x - state.points[0].x);
             state.points = [state.points[1]];
             state.cmdOptions.lineSegCount = (state.cmdOptions.lineSegCount || 0) + 1;
             UI.log('LINE: Specify next point or [Close/Undo]:', 'prompt');
@@ -2346,44 +2350,98 @@ const Commands = {
         }
 
         if (mode === 'arc' && state.points.length >= 1) {
-            if (!state.cmdOptions.polylineArcStep) {
-                state.cmdOptions.polylineArcEnd = point;
-                state.cmdOptions.polylineArcStep = 1;
-                UI.log('PLINE: Specify point on arc:', 'prompt');
+            const startPoint = state.points[state.points.length - 1];
+
+            // 'Second pt' (S) override: AutoCAD 3-point arc —
+            // first click = second point on arc, next click = endpoint. One-shot.
+            if (state.cmdOptions.polylineArcSecondPt) {
+                if (!state.cmdOptions.polylineArcStep) {
+                    state.cmdOptions.polylineArcMid = point;
+                    state.cmdOptions.polylineArcStep = 1;
+                    UI.log('PLINE: Specify end point of arc:', 'prompt');
+                    return;
+                }
+                const midPoint = state.cmdOptions.polylineArcMid;
+                const bulge = this._computeBulgeFromThreePoints(startPoint, midPoint, point);
+                if (bulge !== null) {
+                    state.cmdOptions.polylineBulges[state.points.length - 1] = bulge;
+                    CAD.lastSegmentDirection = Math.atan2(point.y - startPoint.y, point.x - startPoint.x) + 2 * Math.atan(bulge);
+                } else {
+                    state.cmdOptions.polylineBulges[state.points.length - 1] = 0;
+                    CAD.lastSegmentDirection = Math.atan2(point.y - startPoint.y, point.x - startPoint.x);
+                    UI.log('PLINE: Arc points invalid, used straight segment.', 'error');
+                }
+                state.points.push({ ...point });
+                state.step++;
+                state.cmdOptions.polylineArcStep = 0;
+                state.cmdOptions.polylineArcMid = null;
+                state.cmdOptions.polylineArcSecondPt = false;
+                UI.log('PLINE: Specify endpoint of arc or [Line/Second pt/Close/Undo]:', 'prompt');
                 return;
             }
 
-            const startPoint = state.points[state.points.length - 1];
-            const midPoint = point;
-            const endPoint = state.cmdOptions.polylineArcEnd;
-
-            // Compute bulge from three points (start, midpoint-on-arc, end)
-            const bulge = this._computeBulgeFromThreePoints(startPoint, midPoint, endPoint);
-
-            if (bulge !== null) {
-                // Store the bulge for the segment from startPoint to endPoint
-                state.cmdOptions.polylineBulges[state.points.length - 1] = bulge;
-                state.points.push({ ...endPoint });
-            } else {
-                // Fallback to straight segment
-                state.cmdOptions.polylineBulges[state.points.length - 1] = 0;
-                state.points.push({ ...endPoint });
-                UI.log('PLINE: Arc points invalid, used straight segment.', 'error');
-            }
-
-            state.cmdOptions.polylineArcStep = 0;
-            state.cmdOptions.polylineArcEnd = null;
-            UI.log('PLINE: Specify next point or [Arc/Line/Close/Undo]:', 'prompt');
+            // Default AutoCAD behavior: arc starts tangent to the previous
+            // segment; a single click specifies the arc endpoint.
+            const tangent = this._plineEndTangent(state);
+            const bulge = this._bulgeFromTangent(startPoint, tangent, point);
+            if (bulge === null) return; // zero-length click, ignore
+            state.cmdOptions.polylineBulges[state.points.length - 1] = bulge;
+            state.points.push({ ...point });
+            state.step++;
+            CAD.lastSegmentDirection = Math.atan2(point.y - startPoint.y, point.x - startPoint.x) + 2 * Math.atan(bulge);
+            UI.log('PLINE: Specify endpoint of arc or [Line/Second pt/Close/Undo]:', 'prompt');
             return;
         }
 
         // Line mode: push point with 0 bulge for preceding segment
         if (state.points.length > 0) {
             state.cmdOptions.polylineBulges[state.points.length - 1] = 0;
+            const prev = state.points[state.points.length - 1];
+            if (Math.abs(point.x - prev.x) > 1e-12 || Math.abs(point.y - prev.y) > 1e-12) {
+                CAD.lastSegmentDirection = Math.atan2(point.y - prev.y, point.x - prev.x);
+            }
         }
         state.points.push(point);
         state.step++;
         UI.log('PLINE: Specify next point or [Arc/Line/Close/Undo]:', 'prompt');
+    },
+
+    /**
+     * Bulge for an arc that starts at `start` tangent to `tangentAngle`
+     * and ends at `end` (AutoCAD PLINE arc default behavior).
+     * Returns null for zero-length, 0 for collinear (straight).
+     */
+    _bulgeFromTangent(start, tangentAngle, end) {
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        if (Math.abs(dx) < 1e-12 && Math.abs(dy) < 1e-12) return null;
+        const chordAng = Math.atan2(dy, dx);
+        let dev = chordAng - tangentAngle;
+        while (dev > Math.PI) dev -= 2 * Math.PI;
+        while (dev < -Math.PI) dev += 2 * Math.PI;
+        // Included angle is twice the tangent-to-chord deviation
+        if (Math.abs(dev) < 1e-9) return 0;                       // straight ahead
+        if (Math.abs(Math.abs(dev) - Math.PI) < 1e-9) return 0;   // directly behind: degenerate
+        return Math.tan(dev / 2); // tan(theta/4), theta = 2*dev
+    },
+
+    /**
+     * Direction (radians) at the end of the in-progress polyline:
+     * tangent of the last segment (arc-aware). Falls back to the most
+     * recent segment direction drawn this session, then +X.
+     */
+    _plineEndTangent(state) {
+        const pts = state.points;
+        const n = pts.length;
+        if (n >= 2) {
+            const p1 = pts[n - 2];
+            const p2 = pts[n - 1];
+            const chordAng = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+            const b = (state.cmdOptions.polylineBulges || [])[n - 2] || 0;
+            // End tangent of a bulge arc = chord angle + theta/2, theta = 4*atan(b)
+            return chordAng + 2 * Math.atan(b);
+        }
+        return (typeof CAD.lastSegmentDirection === 'number') ? CAD.lastSegmentDirection : 0;
     },
 
     _computeBulgeFromThreePoints(start, mid, end) {
@@ -4027,6 +4085,15 @@ const Commands = {
 
         if (state.activeCmd === 'polyline' && state.points.length >= 2) {
             const bulges = state.cmdOptions.polylineBulges || [];
+            // AutoCAD parity: Close in arc mode closes with a tangent arc
+            if ((state.cmdOptions.polylineMode || 'line') === 'arc' && !state.cmdOptions.polylineArcSecondPt) {
+                const lastPt = state.points[state.points.length - 1];
+                const tangent = this._plineEndTangent(state);
+                const closeBulge = this._bulgeFromTangent(lastPt, tangent, state.points[0]);
+                if (closeBulge !== null && Math.abs(closeBulge) > 1e-12) {
+                    bulges[state.points.length - 1] = closeBulge;
+                }
+            }
             const hasBulges = bulges.some(b => b && Math.abs(b) > 1e-10);
             const entityData = {
                 type: 'polyline',
@@ -7039,7 +7106,7 @@ const Commands = {
             // never have input blocked here.
             const allowed = {
                 line: ['c', 'close', 'u', 'undo'],
-                polyline: ['a', 'arc', 'l', 'line', 'c', 'close', 'u', 'undo'],
+                polyline: ['a', 'arc', 'l', 'line', 's', 'second', 'c', 'close', 'u', 'undo'],
                 spline: ['c', 'close', 'u', 'undo'],
                 revcloud: ['c', 'close'],
                 hatch: ['list']
@@ -7049,15 +7116,25 @@ const Commands = {
                 if (inputLower === 'a' || inputLower === 'arc') {
                     state.cmdOptions.polylineMode = 'arc';
                     state.cmdOptions.polylineArcStep = 0;
-                    state.cmdOptions.polylineArcEnd = null;
-                    UI.log('PLINE: Arc mode. Specify arc endpoint:', 'prompt');
+                    state.cmdOptions.polylineArcMid = null;
+                    state.cmdOptions.polylineArcSecondPt = false;
+                    UI.log('PLINE: Arc mode. Specify endpoint of arc or [Line/Second pt/Close/Undo]:', 'prompt');
                     return true;
                 }
                 if (inputLower === 'l' || inputLower === 'line') {
                     state.cmdOptions.polylineMode = 'line';
                     state.cmdOptions.polylineArcStep = 0;
-                    state.cmdOptions.polylineArcEnd = null;
+                    state.cmdOptions.polylineArcMid = null;
+                    state.cmdOptions.polylineArcSecondPt = false;
                     UI.log('PLINE: Line mode. Specify next point:', 'prompt');
+                    return true;
+                }
+                if ((inputLower === 's' || inputLower === 'second') &&
+                    state.cmdOptions.polylineMode === 'arc') {
+                    state.cmdOptions.polylineArcSecondPt = true;
+                    state.cmdOptions.polylineArcStep = 0;
+                    state.cmdOptions.polylineArcMid = null;
+                    UI.log('PLINE: Specify second point on arc:', 'prompt');
                     return true;
                 }
                 if (inputLower === 'c' || inputLower === 'close') {

@@ -943,6 +943,9 @@ const MobileUI = {
         } else if (cmd === 'polyline') {
             actions.push({ label: 'Arc', value: 'A' });
             actions.push({ label: 'Line', value: 'L' });
+            if (CAD.cmdOptions && CAD.cmdOptions.polylineMode === 'arc') {
+                actions.push({ label: '2nd Pt', value: 'S' });
+            }
             actions.push({ label: 'Close', value: 'C' });
             actions.push({ label: 'Undo', value: 'U' });
         } else if (cmd === 'spline') {
